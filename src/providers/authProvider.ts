@@ -25,6 +25,34 @@ const post = async (path: string, body: unknown): Promise<any> => {
   return json?.data;
 };
 
+const authGet = async (path: string): Promise<any> => {
+  const token = getAccessToken();
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    headers: { Authorization: `Bearer ${token ?? ''}`, Accept: 'application/json' },
+  });
+  let json: any = null;
+  try {
+    json = await res.json();
+  } catch {
+    json = null;
+  }
+  if (!res.ok || json?.error) {
+    throw new Error(json?.error?.message ?? 'Ошибка запроса');
+  }
+  return json?.data;
+};
+
+// Роль + список организаций пользователя для RBAC-гейтинга и OrgSwitcher.
+export interface OrgPermission {
+  id: string;
+  name: string;
+  my_role: string | null;
+}
+export interface Permissions {
+  role: string;
+  organizations: OrgPermission[];
+}
+
 export const authProvider: AuthProvider = {
   // react-admin шлёт username/password; маппим username → email.
   login: async ({ username, password }) => {
@@ -50,7 +78,7 @@ export const authProvider: AuthProvider = {
 
   checkError: async (error) => {
     const status = (error as { status?: number })?.status;
-    if (status === 401 || status === 403) {
+    if (status === 401) {
       const refresh = getRefreshToken();
       if (refresh) {
         try {
@@ -64,27 +92,28 @@ export const authProvider: AuthProvider = {
       clearTokens();
       throw new Error('Сессия истекла');
     }
+    // 403 — нет прав на конкретное действие; не разлогиниваем.
   },
 
   getIdentity: async () => {
-    const token = getAccessToken();
-    const res = await fetch(`${API_BASE_URL}/users/me`, {
-      headers: { Authorization: `Bearer ${token ?? ''}`, Accept: 'application/json' },
-    });
-    const json = await res.json();
-    const user = json?.data ?? {};
-    return { id: user.id, fullName: user.name ?? user.email, role: user.role };
+    const user = (await authGet('/users/me')) ?? {};
+    return { id: user.id ?? '', fullName: user.name ?? user.email ?? '', role: user.role };
   },
 
-  getPermissions: async () => {
-    const token = getAccessToken();
-    if (!token) return null;
+  getPermissions: async (): Promise<Permissions | null> => {
+    if (!getAccessToken()) return null;
     try {
-      const res = await fetch(`${API_BASE_URL}/users/me`, {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-      });
-      const json = await res.json();
-      return json?.data?.role ?? null;
+      const me = await authGet('/users/me');
+      const role: string = me?.role ?? 'user';
+      let organizations: OrgPermission[] = [];
+      try {
+        const orgs = await authGet('/organizations');
+        const items: any[] = orgs?.items ?? [];
+        organizations = items.map((o) => ({ id: o.id, name: o.name, my_role: o.my_role ?? null }));
+      } catch {
+        organizations = [];
+      }
+      return { role, organizations };
     } catch {
       return null;
     }

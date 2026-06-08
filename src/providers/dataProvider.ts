@@ -1,19 +1,12 @@
-import { DataProvider, HttpError } from 'react-admin';
-import { API_BASE_URL, getAccessToken } from '../config';
+import { DataProvider, GetListParams, HttpError } from 'react-admin';
+import { API_BASE_URL, getAccessToken, getCurrentOrgId } from '../config';
 
-// Маппинг ресурсов react-admin → пути бэка.
-// Списки super_admin (/admin/*) отдают { data: { items, total, limit, offset } }.
-const RESOURCES: Record<string, { list: string; one: (id: string) => string }> = {
-  users: { list: '/admin/users', one: (id) => `/admin/users/${id}` },
-  // деталь организации берём из существующего org-эндпоинта (super_admin имеет сквозной доступ)
-  organizations: { list: '/admin/organizations', one: (id) => `/organizations/${id}` },
-};
-
-const endpoint = (resource: string) => {
-  const cfg = RESOURCES[resource];
-  if (!cfg) throw new Error(`Неизвестный ресурс: ${resource}`);
-  return cfg;
-};
+// Категории ресурсов:
+//  - PLATFORM_SERVER — серверная пагинация через /admin/* ({items,total,limit,offset}).
+//  - org-shifts      — серверная пагинация через /organizations/{org}/shifts.
+//  - ORG_CLIENT      — ограниченные org-списки: грузим целиком, режем/сортируем на клиенте.
+const PLATFORM_SERVER = new Set(['users', 'organizations']);
+const ORG_CLIENT = new Set(['members', 'roles', 'work-locations', 'checklist-templates']);
 
 // Единая точка запроса: Bearer + разворачивание конверта {data, error}.
 const request = async (path: string, options: RequestInit = {}): Promise<any> => {
@@ -34,12 +27,102 @@ const request = async (path: string, options: RequestInit = {}): Promise<any> =>
   }
   if (!res.ok || (json && json.error)) {
     const err = json?.error;
-    throw new HttpError(err?.message ?? res.statusText ?? 'Ошибка запроса', res.status, err);
+    const body: any = err ? { ...err } : { message: res.statusText };
+    // VALIDATION_ERROR → ошибки полей формы (react-admin читает error.body.errors).
+    if (err?.code === 'VALIDATION_ERROR' && Array.isArray(err.validation)) {
+      body.errors = {};
+      for (const v of err.validation) {
+        if (v?.field) body.errors[v.field] = v.message;
+      }
+    }
+    throw new HttpError(err?.message ?? res.statusText ?? 'Ошибка запроса', res.status, body);
   }
   return json ? json.data : null;
 };
 
-const buildListQuery = (params: any): string => {
+// Базовый путь текущей организации (для org-ресурсов и кастомных методов).
+const orgBase = (): string => {
+  const id = getCurrentOrgId();
+  if (!id) {
+    throw new HttpError('Организация не выбрана', 400, {
+      code: 'NO_ORG_SELECTED',
+      message: 'Организация не выбрана',
+    });
+  }
+  return `/organizations/${id}`;
+};
+
+const clientListPath = (resource: string): string => {
+  switch (resource) {
+    case 'members':
+      return `${orgBase()}/members`;
+    case 'roles':
+      return `${orgBase()}/roles`;
+    case 'work-locations':
+      return `${orgBase()}/locations`;
+    case 'checklist-templates':
+      return `${orgBase()}/checklist-templates`;
+    default:
+      throw new Error(`Нет client-пути для ресурса: ${resource}`);
+  }
+};
+
+const deleteOnePath = (resource: string, id: string): string => {
+  switch (resource) {
+    case 'roles':
+      return `${orgBase()}/roles/${id}`;
+    case 'work-locations':
+      return `${orgBase()}/locations/${id}`;
+    case 'checklist-templates':
+      return `${orgBase()}/checklist-templates/${id}`;
+    default:
+      throw new Error(`Удаление не поддержано для ресурса: ${resource}`);
+  }
+};
+
+// member → добавляем плоский custom_role_id для SelectInput'а в форме.
+const mapMember = (m: any): any => ({ ...m, custom_role_id: m?.custom_role?.id ?? null });
+
+const loadClient = async (resource: string): Promise<any[]> => {
+  const data = await request(clientListPath(resource));
+  const items: any[] = data?.items ?? [];
+  return resource === 'members' ? items.map(mapMember) : items;
+};
+
+// Клиентская пагинация/сортировка/фильтрация для ограниченных org-списков.
+const clientPaginate = (rows: any[], params: GetListParams) => {
+  const { q, ...rest } = (params.filter ?? {}) as Record<string, unknown>;
+  let filtered = rows;
+  if (typeof q === 'string' && q.trim() !== '') {
+    const needle = q.toLowerCase();
+    filtered = filtered.filter((row) =>
+      Object.values(row).some(
+        (v) => typeof v === 'string' && v.toLowerCase().includes(needle),
+      ),
+    );
+  }
+  for (const [key, value] of Object.entries(rest)) {
+    if (value === undefined || value === null || value === '') continue;
+    filtered = filtered.filter((row) => String(row[key]) === String(value));
+  }
+
+  const { field, order } = params.sort ?? { field: 'id', order: 'ASC' };
+  const sorted = [...filtered].sort((a, b) => {
+    const av = a[field];
+    const bv = b[field];
+    if (av === bv) return 0;
+    if (av === undefined || av === null) return 1;
+    if (bv === undefined || bv === null) return -1;
+    const cmp = av < bv ? -1 : 1;
+    return order === 'DESC' ? -cmp : cmp;
+  });
+
+  const { page, perPage } = params.pagination ?? { page: 1, perPage: 25 };
+  const start = (page - 1) * perPage;
+  return { data: sorted.slice(start, start + perPage), total: sorted.length };
+};
+
+const buildServerQuery = (params: GetListParams): string => {
   const { page, perPage } = params.pagination ?? { page: 1, perPage: 25 };
   const { field, order } = params.sort ?? { field: 'created_at', order: 'DESC' };
   const query = new URLSearchParams({
@@ -56,52 +139,219 @@ const buildListQuery = (params: any): string => {
   return query.toString();
 };
 
+const buildShiftQuery = (params: GetListParams): string => {
+  const { page, perPage } = params.pagination ?? { page: 1, perPage: 25 };
+  const { field, order } = params.sort ?? { field: 'started_at', order: 'DESC' };
+  const query = new URLSearchParams({
+    limit: String(perPage),
+    offset: String((page - 1) * perPage),
+    sort: field,
+    order,
+  });
+  for (const key of ['user_id', 'status', 'date_from', 'date_to']) {
+    const value = (params.filter ?? {})[key];
+    if (value !== undefined && value !== null && value !== '') {
+      query.set(key, String(value));
+    }
+  }
+  return query.toString();
+};
+
 const notImplemented = async (): Promise<never> => {
-  throw new Error('Метод не реализован в каркасе админки');
+  throw new Error('Метод не поддержан для этого ресурса');
 };
 
 export const dataProvider: DataProvider = {
   getList: async (resource, params) => {
-    const data = await request(`${endpoint(resource).list}?${buildListQuery(params)}`);
-    return { data: data?.items ?? [], total: data?.total ?? 0 };
+    if (PLATFORM_SERVER.has(resource)) {
+      const path = resource === 'users' ? '/admin/users' : '/admin/organizations';
+      const data = await request(`${path}?${buildServerQuery(params)}`);
+      return { data: data?.items ?? [], total: data?.total ?? 0 };
+    }
+    if (resource === 'org-shifts') {
+      if (!getCurrentOrgId()) return { data: [], total: 0 };
+      const data = await request(`${orgBase()}/shifts?${buildShiftQuery(params)}`);
+      return { data: data?.items ?? [], total: data?.total ?? 0 };
+    }
+    if (ORG_CLIENT.has(resource)) {
+      if (!getCurrentOrgId()) return { data: [], total: 0 };
+      return clientPaginate(await loadClient(resource), params);
+    }
+    throw new Error(`getList: неизвестный ресурс ${resource}`);
   },
 
   getOne: async (resource, params) => {
-    const data = await request(endpoint(resource).one(String(params.id)));
-    return { data };
+    const id = String(params.id);
+    if (resource === 'users') return { data: await request(`/admin/users/${id}`) };
+    if (resource === 'organizations') return { data: await request(`/organizations/${id}`) };
+    if (resource === 'settings') {
+      const s = await request(`${orgBase()}/settings`);
+      return { data: { ...(s ?? {}), id: s?.organization_id ?? id } };
+    }
+    if (resource === 'checklist-templates') {
+      // детальная схема с пунктами
+      return { data: await request(`${orgBase()}/checklist-templates/${id}`) };
+    }
+    if (ORG_CLIENT.has(resource)) {
+      const found = (await loadClient(resource)).find((r) => String(r.id) === id);
+      if (!found) throw new HttpError('Запись не найдена', 404, { code: 'NOT_FOUND' });
+      return { data: found };
+    }
+    throw new Error(`getOne: неизвестный ресурс ${resource}`);
   },
 
   getMany: async (resource, params) => {
-    const data = await Promise.all(
-      params.ids.map((id) => request(endpoint(resource).one(String(id)))),
-    );
+    const ids = params.ids.map(String);
+    if (ORG_CLIENT.has(resource)) {
+      const rows = await loadClient(resource);
+      return { data: rows.filter((r) => ids.includes(String(r.id))) };
+    }
+    if (resource === 'users') {
+      const data = await Promise.all(ids.map((id) => request(`/admin/users/${id}`)));
+      return { data };
+    }
+    const data = await Promise.all(ids.map((id) => request(`/organizations/${id}`)));
     return { data };
   },
 
-  update: async (resource, params) => {
-    if (resource === 'users') {
-      const data = await request(`/admin/users/${params.id}/role`, {
-        method: 'PATCH',
-        body: JSON.stringify({ role: params.data.role }),
-      });
-      return { data: data ?? params.data };
-    }
-    return notImplemented();
-  },
+  getManyReference: notImplemented,
 
   create: async (resource, params) => {
+    const d = params.data;
     if (resource === 'organizations') {
-      const data = await request('/organizations', {
-        method: 'POST',
-        body: JSON.stringify({ name: params.data.name }),
-      });
-      return { data };
+      return { data: await request('/organizations', { method: 'POST', body: JSON.stringify({ name: d.name }) }) };
+    }
+    if (resource === 'roles') {
+      return { data: await request(`${orgBase()}/roles`, { method: 'POST', body: JSON.stringify({ name: d.name }) }) };
+    }
+    if (resource === 'work-locations') {
+      const body = {
+        name: d.name,
+        latitude: Number(d.latitude),
+        longitude: Number(d.longitude),
+        radius_meters: Number(d.radius_meters ?? 100),
+      };
+      return { data: await request(`${orgBase()}/locations`, { method: 'POST', body: JSON.stringify(body) }) };
+    }
+    if (resource === 'checklist-templates') {
+      const body = { name: d.name, type: d.type, is_required: Boolean(d.is_required) };
+      return { data: await request(`${orgBase()}/checklist-templates`, { method: 'POST', body: JSON.stringify(body) }) };
     }
     return notImplemented();
   },
 
-  getManyReference: notImplemented,
+  update: async (resource, params) => {
+    const { id, data, previousData } = params;
+    if (resource === 'users') {
+      const updated = await request(`/admin/users/${id}/role`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role: data.role }),
+      });
+      return { data: updated ?? { ...data, id } };
+    }
+    if (resource === 'settings') {
+      const body: Record<string, unknown> = {};
+      for (const k of ['geo_check_enabled', 'auto_finish_hours', 'max_pause_minutes', 'max_pauses_per_shift']) {
+        if (k in data) body[k] = data[k] === '' ? null : data[k];
+      }
+      const s = await request(`${orgBase()}/settings`, { method: 'PATCH', body: JSON.stringify(body) });
+      return { data: { ...(s ?? {}), id: s?.organization_id ?? id } };
+    }
+    if (resource === 'roles') {
+      const updated = await request(`${orgBase()}/roles/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: data.name }),
+      });
+      return { data: updated ?? { ...data, id } };
+    }
+    if (resource === 'work-locations') {
+      const body = {
+        name: data.name,
+        latitude: Number(data.latitude),
+        longitude: Number(data.longitude),
+        radius_meters: Number(data.radius_meters),
+      };
+      const updated = await request(`${orgBase()}/locations/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+      return { data: updated ?? { ...data, id } };
+    }
+    if (resource === 'checklist-templates') {
+      const body: Record<string, unknown> = {};
+      for (const k of ['name', 'type', 'is_required']) {
+        if (k in data) body[k] = data[k];
+      }
+      const updated = await request(`${orgBase()}/checklist-templates/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+      return { data: { ...updated, id } };
+    }
+    if (resource === 'members') {
+      const userId = data.user_id ?? previousData?.user_id;
+      if (!userId) {
+        throw new HttpError('Не указан пользователь', 400, { code: 'VALIDATION_ERROR' });
+      }
+      let result: any = previousData;
+      if (data.role !== undefined && data.role !== previousData?.role) {
+        result = await request(`${orgBase()}/members/${userId}/role`, {
+          method: 'PATCH',
+          body: JSON.stringify({ role: data.role }),
+        });
+      }
+      const prevCustom = previousData?.custom_role?.id ?? previousData?.custom_role_id ?? null;
+      // SelectInput отдаёт '' при «нет роли» — нормализуем в null (контракт: role_id uuid|null).
+      const nextCustom = data.custom_role_id ? data.custom_role_id : null;
+      if (nextCustom !== prevCustom) {
+        result = await request(`${orgBase()}/members/${userId}/custom-role`, {
+          method: 'PATCH',
+          body: JSON.stringify({ role_id: nextCustom }),
+        });
+      }
+      return { data: mapMember({ ...previousData, ...data, ...(result ?? {}) }) };
+    }
+    return notImplemented();
+  },
+
   updateMany: notImplemented,
-  delete: notImplemented,
-  deleteMany: notImplemented,
+
+  delete: async (resource, params) => {
+    const id = String(params.id);
+    const fallback = (params.previousData ?? { id: params.id }) as any;
+    if (resource === 'members') {
+      const userId = params.previousData?.user_id;
+      if (!userId) {
+        throw new HttpError('Не указан пользователь', 400, { code: 'VALIDATION_ERROR' });
+      }
+      await request(`${orgBase()}/members/${userId}`, { method: 'DELETE' });
+      return { data: fallback };
+    }
+    await request(deleteOnePath(resource, id), { method: 'DELETE' });
+    return { data: fallback };
+  },
+
+  deleteMany: async (resource, params) => {
+    // members не поддерживают bulk-delete (нужен user_id, а не id записи) — отключено в UI.
+    await Promise.all(params.ids.map((id) => request(deleteOnePath(resource, String(id)), { method: 'DELETE' })));
+    return { data: params.ids };
+  },
+
+  // --- Кастомные методы (вызываются через useDataProvider) ---
+  getPlatformStats: () => request('/admin/stats'),
+  getOrgStats: (period: string) => request(`${orgBase()}/stats?period=${encodeURIComponent(period)}`),
+  getShiftChecklists: async (shiftId: string) => {
+    const data = await request(`/shifts/${shiftId}/checklists`);
+    return data?.items ?? [];
+  },
+  getTemplateAssignments: (templateId: string) =>
+    request(`${orgBase()}/checklist-templates/${templateId}/assignments`),
+  addTemplateItem: (templateId: string, body: { text: string; is_required: boolean }) =>
+    request(`${orgBase()}/checklist-templates/${templateId}/items`, { method: 'POST', body: JSON.stringify(body) }),
+  updateTemplateItem: (templateId: string, itemId: string, body: Record<string, unknown>) =>
+    request(`${orgBase()}/checklist-templates/${templateId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteTemplateItem: (templateId: string, itemId: string) =>
+    request(`${orgBase()}/checklist-templates/${templateId}/items/${itemId}`, { method: 'DELETE' }),
+  reorderTemplateItems: (templateId: string, itemIds: string[]) =>
+    request(`${orgBase()}/checklist-templates/${templateId}/items/reorder`, { method: 'PUT', body: JSON.stringify({ item_ids: itemIds }) }),
+  setTemplateRoles: (templateId: string, roleIds: string[]) =>
+    request(`${orgBase()}/checklist-templates/${templateId}/roles`, { method: 'PUT', body: JSON.stringify({ role_ids: roleIds }) }),
+  setTemplatePersonal: (templateId: string, userId: string, type: 'add' | 'remove') =>
+    request(`${orgBase()}/checklist-templates/${templateId}/personal/${userId}`, { method: 'PUT', body: JSON.stringify({ type }) }),
+  deleteTemplatePersonal: (templateId: string, userId: string) =>
+    request(`${orgBase()}/checklist-templates/${templateId}/personal/${userId}`, { method: 'DELETE' }),
 };
