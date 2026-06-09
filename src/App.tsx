@@ -28,7 +28,7 @@ import {
   ChecklistTemplateCreate,
   ChecklistTemplateEdit,
 } from './resources/checklistTemplates';
-import { OrgShiftList } from './resources/orgShifts';
+import { OrgShiftList, OrgShiftShow } from './resources/orgShifts';
 import { SettingsPage } from './resources/settings';
 import { OrgStatsPage } from './resources/orgStats';
 
@@ -87,7 +87,12 @@ export const App = () => (
             edit={ChecklistTemplateEdit}
             icon={ChecklistIcon}
           />
-          <Resource name="org-shifts" list={OrgShiftList} icon={AccessTimeIcon} />
+          <Resource
+            name="org-shifts"
+            list={OrgShiftList}
+            show={OrgShiftShow}
+            icon={AccessTimeIcon}
+          />
 
           <CustomRoutes>
             <Route path="/settings" element={<SettingsPage />} />

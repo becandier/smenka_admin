@@ -10,6 +10,27 @@ export const formatDuration = (seconds: number | null | undefined): string => {
   return parts.join(' ');
 };
 
+// Дата-время ISO → локальная строка ru-RU (для вложенных полей вне DateField).
+export const formatDateTime = (value: string | null | undefined): string => {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('ru-RU');
+};
+
+export const MEMBER_ROLE_LABELS: Record<string, string> = {
+  admin: 'Администратор',
+  employee: 'Сотрудник',
+};
+
+// Системная роль участника. null/неизвестно (исключён из org / персональный контекст) → «—».
+export const memberRoleLabel = (role: string | null | undefined): string =>
+  (role && MEMBER_ROLE_LABELS[role]) || '—';
+
+// Choices для SelectInput/SelectField — единый источник с MEMBER_ROLE_LABELS.
+export const MEMBER_ROLE_CHOICES = Object.entries(MEMBER_ROLE_LABELS).map(
+  ([id, name]) => ({ id, name }),
+);
+
 export const SHIFT_STATUS_LABELS: Record<string, string> = {
   active: 'Активна',
   paused: 'На паузе',

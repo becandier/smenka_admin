@@ -122,34 +122,25 @@ const clientPaginate = (rows: any[], params: GetListParams) => {
   return { data: sorted.slice(start, start + perPage), total: sorted.length };
 };
 
-const buildServerQuery = (params: GetListParams): string => {
+// Query серверной пагинации/сортировки/фильтров. filterKeys — whitelist параметров
+// (для org-shifts); без него прокидываются все непустые фильтры (платформенные списки).
+const buildQuery = (
+  params: GetListParams,
+  opts: { defaultSort: string; filterKeys?: string[] },
+): string => {
   const { page, perPage } = params.pagination ?? { page: 1, perPage: 25 };
-  const { field, order } = params.sort ?? { field: 'created_at', order: 'DESC' };
+  const { field, order } = params.sort ?? { field: opts.defaultSort, order: 'DESC' };
   const query = new URLSearchParams({
     limit: String(perPage),
     offset: String((page - 1) * perPage),
     sort: field,
     order,
   });
-  Object.entries(params.filter ?? {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      query.set(key, String(value));
-    }
-  });
-  return query.toString();
-};
-
-const buildShiftQuery = (params: GetListParams): string => {
-  const { page, perPage } = params.pagination ?? { page: 1, perPage: 25 };
-  const { field, order } = params.sort ?? { field: 'started_at', order: 'DESC' };
-  const query = new URLSearchParams({
-    limit: String(perPage),
-    offset: String((page - 1) * perPage),
-    sort: field,
-    order,
-  });
-  for (const key of ['user_id', 'status', 'date_from', 'date_to']) {
-    const value = (params.filter ?? {})[key];
+  const filter = (params.filter ?? {}) as Record<string, unknown>;
+  const entries = opts.filterKeys
+    ? opts.filterKeys.map((key) => [key, filter[key]] as const)
+    : Object.entries(filter);
+  for (const [key, value] of entries) {
     if (value !== undefined && value !== null && value !== '') {
       query.set(key, String(value));
     }
@@ -165,12 +156,16 @@ export const dataProvider: DataProvider = {
   getList: async (resource, params) => {
     if (PLATFORM_SERVER.has(resource)) {
       const path = resource === 'users' ? '/admin/users' : '/admin/organizations';
-      const data = await request(`${path}?${buildServerQuery(params)}`);
+      const data = await request(`${path}?${buildQuery(params, { defaultSort: 'created_at' })}`);
       return { data: data?.items ?? [], total: data?.total ?? 0 };
     }
     if (resource === 'org-shifts') {
       if (!getCurrentOrgId()) return { data: [], total: 0 };
-      const data = await request(`${orgBase()}/shifts?${buildShiftQuery(params)}`);
+      const shiftQuery = buildQuery(params, {
+        defaultSort: 'started_at',
+        filterKeys: ['user_id', 'status', 'date_from', 'date_to'],
+      });
+      const data = await request(`${orgBase()}/shifts?${shiftQuery}`);
       return { data: data?.items ?? [], total: data?.total ?? 0 };
     }
     if (ORG_CLIENT.has(resource)) {
@@ -187,6 +182,10 @@ export const dataProvider: DataProvider = {
     if (resource === 'settings') {
       const s = await request(`${orgBase()}/settings`);
       return { data: { ...(s ?? {}), id: s?.organization_id ?? id } };
+    }
+    if (resource === 'org-shifts') {
+      // деталь чужой орг-смены: GET /organizations/{org}/shifts/{shift_id}
+      return { data: await request(`${orgBase()}/shifts/${id}`) };
     }
     if (resource === 'checklist-templates') {
       // детальная схема с пунктами
@@ -338,6 +337,8 @@ export const dataProvider: DataProvider = {
     const data = await request(`/shifts/${shiftId}/checklists`);
     return data?.items ?? [];
   },
+  getShiftChecklistInstance: (shiftId: string, instanceId: string) =>
+    request(`/shifts/${shiftId}/checklists/${instanceId}`),
   getTemplateAssignments: (templateId: string) =>
     request(`${orgBase()}/checklist-templates/${templateId}/assignments`),
   addTemplateItem: (templateId: string, body: { text: string; is_required: boolean }) =>
