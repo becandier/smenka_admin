@@ -1,11 +1,5 @@
 import { AuthProvider } from 'react-admin';
-import {
-  API_BASE_URL,
-  getAccessToken,
-  getRefreshToken,
-  setTokens,
-  clearTokens,
-} from '../config';
+import { API_BASE_URL, getAccessToken, getRefreshToken, setTokens, clearTokens } from '../config';
 
 const post = async (path: string, body: unknown): Promise<any> => {
   const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -13,7 +7,7 @@ const post = async (path: string, body: unknown): Promise<any> => {
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(body),
   });
-  let json: any = null;
+  let json: any;
   try {
     json = await res.json();
   } catch {
@@ -30,7 +24,7 @@ const authGet = async (path: string): Promise<any> => {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     headers: { Authorization: `Bearer ${token ?? ''}`, Accept: 'application/json' },
   });
-  let json: any = null;
+  let json: any;
   try {
     json = await res.json();
   } catch {
@@ -72,9 +66,8 @@ export const authProvider: AuthProvider = {
     clearTokens();
   },
 
-  checkAuth: async () => {
-    if (!getAccessToken()) throw new Error('Не авторизован');
-  },
+  checkAuth: () =>
+    getAccessToken() ? Promise.resolve() : Promise.reject(new Error('Не авторизован')),
 
   checkError: async (error) => {
     const status = (error as { status?: number })?.status;

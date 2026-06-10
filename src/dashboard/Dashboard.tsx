@@ -2,15 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Title, useDataProvider, usePermissions } from 'react-admin';
 import { Card, CardContent, Typography, Grid, Box, CircularProgress } from '@mui/material';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { Permissions } from '../providers/authProvider';
 
 interface PlatformStats {

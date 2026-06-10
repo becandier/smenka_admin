@@ -46,19 +46,11 @@ const MyMenu = () => {
       {orgOpen && <Divider sx={{ my: 1 }} />}
       {orgOpen && <Menu.Item to="/members" primaryText="Сотрудники" leftIcon={<GroupIcon />} />}
       {orgOpen && <Menu.Item to="/roles" primaryText="Роли" leftIcon={<BadgeIcon />} />}
+      {orgOpen && <Menu.Item to="/work-locations" primaryText="Точки" leftIcon={<PlaceIcon />} />}
       {orgOpen && (
-        <Menu.Item to="/work-locations" primaryText="Точки" leftIcon={<PlaceIcon />} />
+        <Menu.Item to="/checklist-templates" primaryText="Чек-листы" leftIcon={<ChecklistIcon />} />
       )}
-      {orgOpen && (
-        <Menu.Item
-          to="/checklist-templates"
-          primaryText="Чек-листы"
-          leftIcon={<ChecklistIcon />}
-        />
-      )}
-      {orgOpen && (
-        <Menu.Item to="/org-shifts" primaryText="Смены" leftIcon={<AccessTimeIcon />} />
-      )}
+      {orgOpen && <Menu.Item to="/org-shifts" primaryText="Смены" leftIcon={<AccessTimeIcon />} />}
       {orgOpen && <Menu.Item to="/settings" primaryText="Настройки" leftIcon={<SettingsIcon />} />}
       {orgOpen && (
         <Menu.Item to="/org-stats" primaryText="Статистика" leftIcon={<BarChartIcon />} />

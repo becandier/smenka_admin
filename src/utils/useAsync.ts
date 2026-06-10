@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 
 // Одноразовая загрузка данных при монтировании/смене deps.
 // Возвращает {data, error}; data=null пока грузится. Гонки гасит флагом active.
-export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): {
+export function useAsync<T>(
+  fn: () => Promise<T>,
+  deps: unknown[],
+): {
   data: T | null;
   error: boolean;
 } {

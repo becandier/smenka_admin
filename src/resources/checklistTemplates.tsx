@@ -175,7 +175,10 @@ const ItemsEditor = ({
 
   const add = () =>
     run(async () => {
-      await dataProvider.addTemplateItem(templateId, { text: newText.trim(), is_required: newRequired });
+      await dataProvider.addTemplateItem(templateId, {
+        text: newText.trim(),
+        is_required: newRequired,
+      });
       setNewText('');
       setNewRequired(false);
     }, 'Пункт добавлен');
@@ -197,7 +200,7 @@ const ItemsEditor = ({
     if (target < 0 || target >= sorted.length) return;
     const ids = sorted.map((it) => it.id);
     [ids[index], ids[target]] = [ids[target], ids[index]];
-    run(() => dataProvider.reorderTemplateItems(templateId, ids), 'Порядок обновлён');
+    void run(() => dataProvider.reorderTemplateItems(templateId, ids), 'Порядок обновлён');
   };
 
   return (
@@ -211,7 +214,11 @@ const ItemsEditor = ({
             {sorted.map((it, index) => (
               <TableRow key={it.id}>
                 <TableCell sx={{ width: 80 }}>
-                  <IconButton size="small" disabled={busy || index === 0} onClick={() => move(index, -1)}>
+                  <IconButton
+                    size="small"
+                    disabled={busy || index === 0}
+                    onClick={() => move(index, -1)}
+                  >
                     <ArrowUpwardIcon fontSize="small" />
                   </IconButton>
                   <IconButton
@@ -290,7 +297,9 @@ const ItemsEditor = ({
             sx={{ minWidth: 280 }}
           />
           <FormControlLabel
-            control={<Checkbox checked={newRequired} onChange={(e) => setNewRequired(e.target.checked)} />}
+            control={
+              <Checkbox checked={newRequired} onChange={(e) => setNewRequired(e.target.checked)} />
+            }
             label="Обяз."
           />
           <Button startIcon={<AddIcon />} disabled={busy || !newText.trim()} onClick={add}>
@@ -444,7 +453,7 @@ export const ChecklistTemplateEdit = () => {
   const { id } = useParams();
   const dataProvider = useDataProvider();
   const { data: template, isLoading, refetch } = useGetOne('checklist-templates', { id: id ?? '' });
-  const [assignments, setAssignments] = useState<any | null>(null);
+  const [assignments, setAssignments] = useState<any>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const reloadAssignments = useCallback(() => {
@@ -461,7 +470,7 @@ export const ChecklistTemplateEdit = () => {
 
   const onChanged = () => {
     setReloadKey((k) => k + 1);
-    refetch();
+    void refetch();
   };
 
   if (isLoading || !template) {

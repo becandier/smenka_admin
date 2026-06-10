@@ -1,6 +1,5 @@
 // Единственное место с базовым URL и хранением токенов/текущей организации.
-export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
 const ACCESS_KEY = 'smenka_admin_access_token';
 const REFRESH_KEY = 'smenka_admin_refresh_token';

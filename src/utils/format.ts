@@ -27,9 +27,10 @@ export const memberRoleLabel = (role: string | null | undefined): string =>
   (role && MEMBER_ROLE_LABELS[role]) || '—';
 
 // Choices для SelectInput/SelectField — единый источник с MEMBER_ROLE_LABELS.
-export const MEMBER_ROLE_CHOICES = Object.entries(MEMBER_ROLE_LABELS).map(
-  ([id, name]) => ({ id, name }),
-);
+export const MEMBER_ROLE_CHOICES = Object.entries(MEMBER_ROLE_LABELS).map(([id, name]) => ({
+  id,
+  name,
+}));
 
 export const SHIFT_STATUS_LABELS: Record<string, string> = {
   active: 'Активна',

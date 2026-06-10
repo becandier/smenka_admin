@@ -18,11 +18,7 @@ import { UserList, UserEdit, UserShow } from './resources/users';
 import { OrganizationList, OrganizationCreate } from './resources/organizations';
 import { MemberList, MemberEdit } from './resources/members';
 import { RoleList, RoleEdit, RoleCreate } from './resources/roles';
-import {
-  WorkLocationList,
-  WorkLocationEdit,
-  WorkLocationCreate,
-} from './resources/workLocations';
+import { WorkLocationList, WorkLocationEdit, WorkLocationCreate } from './resources/workLocations';
 import {
   ChecklistTemplateList,
   ChecklistTemplateCreate,
