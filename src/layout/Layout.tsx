@@ -10,8 +10,10 @@ import ChecklistIcon from '@mui/icons-material/Checklist';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import SettingsIcon from '@mui/icons-material/Settings';
 import BarChartIcon from '@mui/icons-material/BarChart';
+import CurrencyRubleIcon from '@mui/icons-material/CurrencyRuble';
 import { OrgSwitcher } from '../components/OrgSwitcher';
 import { useCurrentOrg } from '../orgContext';
+import { useMyOrgRole } from '../utils/useMyOrgRole';
 import type { Permissions } from '../providers/authProvider';
 
 const MyAppBar = () => (
@@ -26,9 +28,12 @@ const MyMenu = () => {
   const { org } = useCurrentOrg();
   const isSuper = permissions?.role === 'super_admin';
   // org-меню показываем, только если в текущей орг роль owner/admin (super_admin — сквозной доступ).
-  const myRole = permissions?.organizations?.find((o) => o.id === org?.id)?.my_role;
+  const myRole = useMyOrgRole();
   const canManage = isSuper || myRole === 'owner' || myRole === 'admin';
   const orgOpen = Boolean(org) && canManage;
+  // Зарплата — только фактическим owner/admin организации; super_admin сквозным
+  // доступом её не видит (не его рабочий инструмент, ТЗ payroll).
+  const isOrgManager = myRole === 'owner' || myRole === 'admin';
 
   return (
     <Menu>
@@ -57,6 +62,9 @@ const MyMenu = () => {
       {orgOpen && <Menu.Item to="/settings" primaryText="Настройки" leftIcon={<SettingsIcon />} />}
       {orgOpen && (
         <Menu.Item to="/org-stats" primaryText="Статистика" leftIcon={<BarChartIcon />} />
+      )}
+      {orgOpen && isOrgManager && (
+        <Menu.Item to="/payroll" primaryText="Зарплата" leftIcon={<CurrencyRubleIcon />} />
       )}
     </Menu>
   );

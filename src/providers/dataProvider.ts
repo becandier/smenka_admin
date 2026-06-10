@@ -185,6 +185,15 @@ export interface OrgStatsQuery {
   date_to?: string;
 }
 
+// Query-строка из непустых значений (для кастомных методов вне GetListParams).
+const toSearch = (query: Record<string, string | undefined>): string => {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value) search.set(key, value);
+  }
+  return search.toString();
+};
+
 export const dataProvider: DataProvider = {
   getList: async (resource, params) => {
     if (PLATFORM_SERVER.has(resource)) {
@@ -369,13 +378,7 @@ export const dataProvider: DataProvider = {
 
   // --- Кастомные методы (вызываются через useDataProvider) ---
   getPlatformStats: () => request('/admin/stats'),
-  getOrgStats: (query: OrgStatsQuery) => {
-    const search = new URLSearchParams();
-    for (const [key, value] of Object.entries(query)) {
-      if (value) search.set(key, value);
-    }
-    return request(`${orgBase()}/stats?${search.toString()}`);
-  },
+  getOrgStats: (query: OrgStatsQuery) => request(`${orgBase()}/stats?${toSearch({ ...query })}`),
   getShiftChecklists: async (shiftId: string) => {
     const data = await request(`/shifts/${shiftId}/checklists`);
     return data?.items ?? [];
@@ -398,4 +401,21 @@ export const dataProvider: DataProvider = {
     request(`${orgBase()}/checklist-templates/${templateId}/personal/${userId}`, { method: 'PUT', body: JSON.stringify({ type }) }),
   deleteTemplatePersonal: (templateId: string, userId: string) =>
     request(`${orgBase()}/checklist-templates/${templateId}/personal/${userId}`, { method: 'DELETE' }),
+
+  // --- Ставки участника (payroll): вложенный CRUD по member_id (id записи участника) ---
+  getMemberRates: async (memberId: string) => {
+    const data = await request(`${orgBase()}/members/${memberId}/rates`);
+    return data?.items ?? [];
+  },
+  createMemberRate: (memberId: string, body: Record<string, unknown>) =>
+    request(`${orgBase()}/members/${memberId}/rates`, { method: 'POST', body: JSON.stringify(body) }),
+  updateMemberRate: (memberId: string, rateId: string, body: Record<string, unknown>) =>
+    request(`${orgBase()}/members/${memberId}/rates/${rateId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteMemberRate: (memberId: string, rateId: string) =>
+    request(`${orgBase()}/members/${memberId}/rates/${rateId}`, { method: 'DELETE' }),
+  // Отчёт «сколько кому заплатить»; границы — UTC ISO, date_to включительно (как в date_filters).
+  getPayroll: (query: { date_from?: string; date_to?: string }) => {
+    const qs = toSearch({ ...query });
+    return request(`${orgBase()}/payroll${qs ? `?${qs}` : ''}`);
+  },
 };

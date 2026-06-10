@@ -27,3 +27,20 @@ export const isDayRangeInvalid = (from?: unknown, to?: unknown): boolean =>
   typeof from === 'string' && from !== '' && typeof to === 'string' && to !== '' && from > to;
 
 export const INVALID_RANGE_MESSAGE = 'Дата начала позже даты конца';
+
+// Значение инпута datetime-local (локаль пользователя) → UTC ISO8601.
+export const localInputToUtcIso = (value: string): string | undefined => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+};
+
+// UTC ISO8601 → значение для инпута datetime-local (локаль, без секунд).
+export const utcIsoToLocalInput = (iso: string | null | undefined): string => {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}`;
+};

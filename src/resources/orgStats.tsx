@@ -10,7 +10,6 @@ import {
   MenuItem,
   Select,
   Stack,
-  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -25,6 +24,7 @@ import {
   YAxis,
 } from 'recharts';
 import { useCurrentOrg } from '../orgContext';
+import { DateRangeFields } from '../components/DateRangeFields';
 import { formatDateTime, formatDuration } from '../utils/format';
 import {
   INVALID_RANGE_MESSAGE,
@@ -189,27 +189,13 @@ export const OrgStatsPage = () => {
               ))}
             </Select>
           ) : (
-            <>
-              <TextField
-                size="small"
-                type="date"
-                label="С даты"
-                InputLabelProps={{ shrink: true }}
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                error={rangeInvalid}
-                helperText={rangeInvalid ? INVALID_RANGE_MESSAGE : undefined}
-              />
-              <TextField
-                size="small"
-                type="date"
-                label="По дату"
-                InputLabelProps={{ shrink: true }}
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                error={rangeInvalid}
-              />
-            </>
+            <DateRangeFields
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              onChangeFrom={setDateFrom}
+              onChangeTo={setDateTo}
+              invalid={rangeInvalid}
+            />
           )}
         </Stack>
       </Box>
