@@ -1,18 +1,22 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// @mui/icons-material исключён из dep-оптимизации: иначе deep-импорты иконок внутри
-// пред-оптимизированного react-admin (напр. SidebarToggleButton → `@mui/icons-material/Menu`)
-// интероп-ятся как `{default}`-объекты и React падает «Element type is invalid».
-// Прод-сборка (rollup) этим не страдает.
+// @mui/icons-material@5 в корне пакета — CommonJS, и deep-импорты иконок
+// (`@mui/icons-material/AccountCircle` — так их импортирует и react-admin, и наш src)
+// в dev-режиме ломают esbuild-интероп: страница падает с
+// «does not provide an export named 'default'» / «Element type is invalid» (белый экран).
+// Алиас направляет все deep-импорты в ESM-сборку пакета (esm/*) — без интеропа вовсе.
+// Прод-сборка (rollup) работает и без алиаса, но с ним dev и prod резолвят одинаково.
 export default defineConfig({
   plugins: [react()],
   server: { port: 5173 },
   preview: { port: 5173 },
   resolve: {
-    dedupe: ['react', 'react-dom', '@mui/material', '@mui/icons-material', '@mui/system'],
-  },
-  optimizeDeps: {
-    exclude: ['@mui/icons-material'],
+    alias: [
+      {
+        find: /^@mui\/icons-material\/(?!esm\/)(.+)$/,
+        replacement: '@mui/icons-material/esm/$1',
+      },
+    ],
   },
 });
