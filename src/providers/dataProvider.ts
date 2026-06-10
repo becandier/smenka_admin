@@ -1,5 +1,11 @@
 import { DataProvider, GetListParams, HttpError } from 'react-admin';
 import { API_BASE_URL, getAccessToken, getCurrentOrgId } from '../config';
+import {
+  INVALID_RANGE_MESSAGE,
+  isDayRangeInvalid,
+  localDayEndToUtcIso,
+  localDayStartToUtcIso,
+} from '../utils/dates';
 
 // Категории ресурсов:
 //  - PLATFORM_SERVER — серверная пагинация через /admin/* ({items,total,limit,offset}).
@@ -152,6 +158,33 @@ const notImplemented = async (): Promise<never> => {
   throw new Error('Метод не поддержан для этого ресурса');
 };
 
+// DateInput фильтров отдаёт календарный день (YYYY-MM-DD) — переводим в UTC-границы
+// дня (контракт date_filters). Невалидный диапазон режем до сети: бэкенд вернул бы
+// 400 INVALID_DATE_RANGE, ТЗ требует превентивную клиентскую валидацию.
+const toUtcDayRangeFilter = (filter: Record<string, unknown>): Record<string, unknown> => {
+  if (isDayRangeInvalid(filter.date_from, filter.date_to)) {
+    throw new HttpError(INVALID_RANGE_MESSAGE, 400, {
+      code: 'INVALID_DATE_RANGE',
+      message: INVALID_RANGE_MESSAGE,
+    });
+  }
+  const result = { ...filter };
+  if (typeof result.date_from === 'string' && result.date_from !== '') {
+    result.date_from = localDayStartToUtcIso(result.date_from);
+  }
+  if (typeof result.date_to === 'string' && result.date_to !== '') {
+    result.date_to = localDayEndToUtcIso(result.date_to);
+  }
+  return result;
+};
+
+// Окно орг-статистики: ровно один источник — period ЛИБО date_from/date_to (UTC ISO).
+export interface OrgStatsQuery {
+  period?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
 export const dataProvider: DataProvider = {
   getList: async (resource, params) => {
     if (PLATFORM_SERVER.has(resource)) {
@@ -161,10 +194,14 @@ export const dataProvider: DataProvider = {
     }
     if (resource === 'org-shifts') {
       if (!getCurrentOrgId()) return { data: [], total: 0 };
-      const shiftQuery = buildQuery(params, {
-        defaultSort: 'started_at',
-        filterKeys: ['user_id', 'status', 'date_from', 'date_to'],
-      });
+      const filter = toUtcDayRangeFilter((params.filter ?? {}) as Record<string, unknown>);
+      const shiftQuery = buildQuery(
+        { ...params, filter },
+        {
+          defaultSort: 'started_at',
+          filterKeys: ['user_id', 'status', 'date_from', 'date_to'],
+        },
+      );
       const data = await request(`${orgBase()}/shifts?${shiftQuery}`);
       return { data: data?.items ?? [], total: data?.total ?? 0 };
     }
@@ -332,7 +369,13 @@ export const dataProvider: DataProvider = {
 
   // --- Кастомные методы (вызываются через useDataProvider) ---
   getPlatformStats: () => request('/admin/stats'),
-  getOrgStats: (period: string) => request(`${orgBase()}/stats?period=${encodeURIComponent(period)}`),
+  getOrgStats: (query: OrgStatsQuery) => {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value) search.set(key, value);
+    }
+    return request(`${orgBase()}/stats?${search.toString()}`);
+  },
   getShiftChecklists: async (shiftId: string) => {
     const data = await request(`/shifts/${shiftId}/checklists`);
     return data?.items ?? [];

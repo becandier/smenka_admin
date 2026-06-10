@@ -19,6 +19,7 @@ import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
+  Alert,
   Box,
   Card,
   CardContent,
@@ -36,6 +37,7 @@ import {
   shiftStatusLabel,
 } from '../utils/format';
 import { useAsync } from '../utils/useAsync';
+import { INVALID_RANGE_MESSAGE, isDayRangeInvalid } from '../utils/dates';
 
 const statusChoices = [
   { id: 'active', name: 'Активна' },
@@ -56,10 +58,23 @@ const EmployeeFilter = (props: { source: string; alwaysOn?: boolean }) => {
 const shiftFilters = [
   <EmployeeFilter key="user_id" source="user_id" alwaysOn />,
   <SelectInput key="status" source="status" label="Статус" choices={statusChoices} alwaysOn />,
-  // date_from/date_to — имена владеет фича date_filters, здесь только резервируем в фильтр-баре.
+  // Окно по started_at, обе границы включительно; день → UTC-границы конвертирует dataProvider.
   <DateInput key="date_from" source="date_from" label="С даты" />,
   <DateInput key="date_to" source="date_to" label="По дату" />,
 ];
+
+// Фильтр-форма react-admin не поддерживает валидацию инпутов, поэтому ошибку
+// «date_from > date_to» показываем баннером над списком; сам запрос блокирует
+// dataProvider до сети (превентивно, вместо серверного INVALID_DATE_RANGE).
+const DateRangeAlert = () => {
+  const { filterValues } = useListContext();
+  if (!isDayRangeInvalid(filterValues?.date_from, filterValues?.date_to)) return null;
+  return (
+    <Alert severity="error" sx={{ mb: 1 }}>
+      {INVALID_RANGE_MESSAGE}
+    </Alert>
+  );
+};
 
 // Empty-state для пустого/отфильтрованного результата. Текст зависит от наличия
 // активных фильтров (для отфильтрованного — формулировка из ТЗ).
@@ -90,7 +105,10 @@ const requiredBadge = (r: RaRecord) =>
 // в react-admin v5 НЕ рендерится при активных фильтрах, а ТЗ требует кастомный
 // empty-state и для отфильтрованного результата (фильтр по сотруднику без смен).
 const OrgShiftDatagrid = () => {
-  const { isPending, data } = useListContext();
+  const { isPending, data, filterValues } = useListContext();
+  // При невалидном диапазоне запрос заблокирован (см. DateRangeAlert) — не показываем
+  // вводящий в заблуждение empty-state/устаревшие данные под баннером ошибки.
+  if (isDayRangeInvalid(filterValues?.date_from, filterValues?.date_to)) return null;
   if (!isPending && (data ?? []).length === 0) return <ShiftsEmpty />;
   return (
     <Datagrid bulkActionButtons={false} rowClick="show">
@@ -117,6 +135,7 @@ export const OrgShiftList = () => (
     exporter={false}
     empty={false}
   >
+    <DateRangeAlert />
     <OrgShiftDatagrid />
   </List>
 );
