@@ -13,15 +13,11 @@ import {
   DeleteButton,
   SelectField,
 } from 'react-admin';
-
-const memberRoleChoices = [
-  { id: 'admin', name: 'Администратор' },
-  { id: 'employee', name: 'Сотрудник' },
-];
+import { MEMBER_ROLE_CHOICES } from '../utils/format';
 
 const memberFilters = [
   <SearchInput key="q" source="q" alwaysOn />,
-  <SelectInput key="role" source="role" label="Системная роль" choices={memberRoleChoices} />,
+  <SelectInput key="role" source="role" label="Системная роль" choices={MEMBER_ROLE_CHOICES} />,
 ];
 
 export const MemberList = () => (
@@ -29,7 +25,7 @@ export const MemberList = () => (
     <Datagrid rowClick="edit" bulkActionButtons={false}>
       <TextField source="user_name" label="Имя" />
       <EmailField source="user_email" label="Email" />
-      <SelectField source="role" label="Системная роль" choices={memberRoleChoices} />
+      <SelectField source="role" label="Системная роль" choices={MEMBER_ROLE_CHOICES} />
       <TextField source="custom_role.name" label="Кастомная роль" emptyText="—" />
       <DateField source="joined_at" label="Присоединился" showTime />
     </Datagrid>
@@ -41,7 +37,7 @@ export const MemberEdit = () => (
     <SimpleForm>
       <TextInput source="user_name" label="Имя" disabled />
       <TextInput source="user_email" label="Email" disabled />
-      <SelectInput source="role" label="Системная роль" choices={memberRoleChoices} />
+      <SelectInput source="role" label="Системная роль" choices={MEMBER_ROLE_CHOICES} />
       <ReferenceInput source="custom_role_id" reference="roles">
         <SelectInput label="Кастомная роль" optionText="name" emptyText="— нет —" />
       </ReferenceInput>
