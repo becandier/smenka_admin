@@ -31,6 +31,7 @@ import {
 import { OrgShiftList, OrgShiftShow } from './resources/orgShifts';
 import { SettingsPage } from './resources/settings';
 import { OrgStatsPage } from './resources/orgStats';
+import { PayrollPage } from './resources/payroll';
 
 // Доступ к ресурсам: платформенные (users/organizations) — только super_admin;
 // org-ресурсы доступны при выбранной организации (owner/admin — свои; super_admin — любую).
@@ -97,6 +98,7 @@ export const App = () => (
           <CustomRoutes>
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/org-stats" element={<OrgStatsPage />} />
+            <Route path="/payroll" element={<PayrollPage />} />
           </CustomRoutes>
         </>
       )}

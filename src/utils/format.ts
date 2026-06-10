@@ -46,5 +46,73 @@ export const CHECKLIST_STATUS_LABELS: Record<string, string> = {
 export const shiftStatusLabel = (status: string | null | undefined): string =>
   (status && SHIFT_STATUS_LABELS[status]) || status || '—';
 
+// Дата без времени: ISO → «01.03.2026».
+export const formatDate = (value: string | null | undefined): string => {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('ru-RU');
+};
+
+// --- Деньги (payroll): хранение в копейках, отображение в рублях ---
+
+// Копейки → число рублей строкой; копейки показываем, только когда они есть.
+export const formatRubles = (minor: number): string => {
+  const digits = minor % 100 === 0 ? 0 : 2;
+  return (minor / 100).toLocaleString('ru-RU', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+};
+
+export const formatMoneyMinor = (minor: number | null | undefined): string =>
+  minor === null || minor === undefined ? '—' : `${formatRubles(minor)} ₽`;
+
+// Ввод суммы в рублях → копейки (целое > 0); максимум 2 знака после запятой.
+export const parseRublesToMinor = (raw: string): number | null => {
+  const normalized = raw.trim().replace(',', '.');
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null;
+  const minor = Math.round(Number(normalized) * 100);
+  return minor > 0 ? minor : null;
+};
+
+// Отработанное время в денежных отчётах: «чч:мм» (ТЗ payroll).
+export const formatClockDuration = (seconds: number | null | undefined): string => {
+  const total = Math.max(0, Math.floor(seconds ?? 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return `${hours}:${String(minutes).padStart(2, '0')}`;
+};
+
+// --- Ставки сотрудника ---
+
+const RATE_TYPE_UNITS: Record<string, string> = {
+  hourly: '₽/час',
+  per_shift: '₽/смена',
+};
+
+export const RATE_TYPE_LABELS: Record<string, string> = {
+  hourly: 'За час',
+  per_shift: 'За смену',
+};
+
+export const RATE_TYPE_CHOICES = Object.entries(RATE_TYPE_LABELS).map(([id, name]) => ({
+  id,
+  name,
+}));
+
+export interface CurrentRate {
+  rate_amount_minor: number;
+  rate_type: string;
+  currency: string;
+  effective_from: string;
+}
+
+// Бейдж ставки: «180 ₽/час, с 01.03.2026».
+export const formatRateBadge = (rate: CurrentRate | null | undefined): string => {
+  if (!rate) return 'Ставка не задана';
+  const unit = RATE_TYPE_UNITS[rate.rate_type] ?? rate.rate_type;
+  return `${formatRubles(rate.rate_amount_minor)} ${unit}, с ${formatDate(rate.effective_from)}`;
+};
+
 export const checklistStatusLabel = (status: string | null | undefined): string =>
   (status && CHECKLIST_STATUS_LABELS[status]) || status || '—';
