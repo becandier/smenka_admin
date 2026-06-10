@@ -162,7 +162,9 @@ const ShiftHeader = () => {
       <InfoRow label="Кастомная роль">{record.custom_role_name ?? '—'}</InfoRow>
       <InfoRow label="Статус">{shiftStatusLabel(record.status)}</InfoRow>
       <InfoRow label="Начало">{formatDateTime(record.started_at)}</InfoRow>
-      <InfoRow label="Конец">{record.finished_at ? formatDateTime(record.finished_at) : '—'}</InfoRow>
+      <InfoRow label="Конец">
+        {record.finished_at ? formatDateTime(record.finished_at) : '—'}
+      </InfoRow>
       <InfoRow label="Отработано">{formatDuration(record.worked_seconds)}</InfoRow>
     </Stack>
   );

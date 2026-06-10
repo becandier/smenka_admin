@@ -87,9 +87,7 @@ const RateDialog = ({
 }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
-  const [amount, setAmount] = useState(
-    editing ? String(editing.rate_amount_minor / 100) : '',
-  );
+  const [amount, setAmount] = useState(editing ? String(editing.rate_amount_minor / 100) : '');
   const [rateType, setRateType] = useState(editing?.rate_type ?? 'hourly');
   const [effectiveFrom, setEffectiveFrom] = useState(
     editing ? utcIsoToLocalInput(editing.effective_from) : '',
@@ -317,10 +315,7 @@ export const MemberRatesSection = () => {
             {rates.map((rate) => {
               const isCurrent = current?.id === rate.id;
               return (
-                <TableRow
-                  key={rate.id}
-                  sx={isCurrent ? { bgcolor: 'action.selected' } : undefined}
-                >
+                <TableRow key={rate.id} sx={isCurrent ? { bgcolor: 'action.selected' } : undefined}>
                   <TableCell>
                     {formatDateTime(rate.effective_from)}
                     {isCurrent && (
@@ -372,8 +367,8 @@ export const MemberRatesSection = () => {
             <Typography>
               {formatRubles(deleting.rate_amount_minor)} ₽ (
               {RATE_TYPE_LABELS[deleting.rate_type] ?? deleting.rate_type}), действует с{' '}
-              {formatDateTime(deleting.effective_from)}. Действующая ставка для затронутых
-              периодов может измениться.
+              {formatDateTime(deleting.effective_from)}. Действующая ставка для затронутых периодов
+              может измениться.
             </Typography>
           </DialogContent>
           <DialogActions>

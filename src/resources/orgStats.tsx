@@ -14,15 +14,7 @@ import {
   ToggleButtonGroup,
   Typography,
 } from '@mui/material';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useCurrentOrg } from '../orgContext';
 import { DateRangeFields } from '../components/DateRangeFields';
 import { formatDateTime, formatDuration } from '../utils/format';
@@ -214,9 +206,7 @@ export const OrgStatsPage = () => {
         </Alert>
       )}
       {rangeEmpty && !loading && (
-        <Typography color="text.secondary">
-          Укажите хотя бы одну границу диапазона.
-        </Typography>
+        <Typography color="text.secondary">Укажите хотя бы одну границу диапазона.</Typography>
       )}
       {loading && <CircularProgress />}
 
@@ -250,7 +240,7 @@ export const OrgStatsPage = () => {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
                     <YAxis />
-                    <Tooltip formatter={(value) => [`${value} ч`, 'Отработано']} />
+                    <Tooltip formatter={(value) => [`${String(value ?? '')} ч`, 'Отработано']} />
                     <Bar dataKey="hours" fill="#4A90D9" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>

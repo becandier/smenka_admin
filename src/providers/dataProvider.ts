@@ -25,7 +25,7 @@ const request = async (path: string, options: RequestInit = {}): Promise<any> =>
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
   const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-  let json: any = null;
+  let json: any;
   try {
     json = await res.json();
   } catch {
@@ -102,13 +102,14 @@ const clientPaginate = (rows: any[], params: GetListParams) => {
   if (typeof q === 'string' && q.trim() !== '') {
     const needle = q.toLowerCase();
     filtered = filtered.filter((row) =>
-      Object.values(row).some(
-        (v) => typeof v === 'string' && v.toLowerCase().includes(needle),
-      ),
+      Object.values(row).some((v) => typeof v === 'string' && v.toLowerCase().includes(needle)),
     );
   }
   for (const [key, value] of Object.entries(rest)) {
-    if (value === undefined || value === null || value === '') continue;
+    // Фильтры — только примитивы; объекты/пустые значения пропускаем.
+    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')
+      continue;
+    if (value === '') continue;
     filtered = filtered.filter((row) => String(row[key]) === String(value));
   }
 
@@ -147,16 +148,19 @@ const buildQuery = (
     ? opts.filterKeys.map((key) => [key, filter[key]] as const)
     : Object.entries(filter);
   for (const [key, value] of entries) {
-    if (value !== undefined && value !== null && value !== '') {
+    if (
+      (typeof value === 'string' && value !== '') ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
       query.set(key, String(value));
     }
   }
   return query.toString();
 };
 
-const notImplemented = async (): Promise<never> => {
-  throw new Error('Метод не поддержан для этого ресурса');
-};
+const notImplemented = (): Promise<never> =>
+  Promise.reject(new Error('Метод не поддержан для этого ресурса'));
 
 // DateInput фильтров отдаёт календарный день (YYYY-MM-DD) — переводим в UTC-границы
 // дня (контракт date_filters). Невалидный диапазон режем до сети: бэкенд вернул бы
@@ -264,10 +268,20 @@ export const dataProvider: DataProvider = {
   create: async (resource, params) => {
     const d = params.data;
     if (resource === 'organizations') {
-      return { data: await request('/organizations', { method: 'POST', body: JSON.stringify({ name: d.name }) }) };
+      return {
+        data: await request('/organizations', {
+          method: 'POST',
+          body: JSON.stringify({ name: d.name }),
+        }),
+      };
     }
     if (resource === 'roles') {
-      return { data: await request(`${orgBase()}/roles`, { method: 'POST', body: JSON.stringify({ name: d.name }) }) };
+      return {
+        data: await request(`${orgBase()}/roles`, {
+          method: 'POST',
+          body: JSON.stringify({ name: d.name }),
+        }),
+      };
     }
     if (resource === 'work-locations') {
       const body = {
@@ -276,11 +290,21 @@ export const dataProvider: DataProvider = {
         longitude: Number(d.longitude),
         radius_meters: Number(d.radius_meters ?? 100),
       };
-      return { data: await request(`${orgBase()}/locations`, { method: 'POST', body: JSON.stringify(body) }) };
+      return {
+        data: await request(`${orgBase()}/locations`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        }),
+      };
     }
     if (resource === 'checklist-templates') {
       const body = { name: d.name, type: d.type, is_required: Boolean(d.is_required) };
-      return { data: await request(`${orgBase()}/checklist-templates`, { method: 'POST', body: JSON.stringify(body) }) };
+      return {
+        data: await request(`${orgBase()}/checklist-templates`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        }),
+      };
     }
     return notImplemented();
   },
@@ -296,10 +320,18 @@ export const dataProvider: DataProvider = {
     }
     if (resource === 'settings') {
       const body: Record<string, unknown> = {};
-      for (const k of ['geo_check_enabled', 'auto_finish_hours', 'max_pause_minutes', 'max_pauses_per_shift']) {
+      for (const k of [
+        'geo_check_enabled',
+        'auto_finish_hours',
+        'max_pause_minutes',
+        'max_pauses_per_shift',
+      ]) {
         if (k in data) body[k] = data[k] === '' ? null : data[k];
       }
-      const s = await request(`${orgBase()}/settings`, { method: 'PATCH', body: JSON.stringify(body) });
+      const s = await request(`${orgBase()}/settings`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
       return { data: { ...(s ?? {}), id: s?.organization_id ?? id } };
     }
     if (resource === 'roles') {
@@ -316,7 +348,10 @@ export const dataProvider: DataProvider = {
         longitude: Number(data.longitude),
         radius_meters: Number(data.radius_meters),
       };
-      const updated = await request(`${orgBase()}/locations/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+      const updated = await request(`${orgBase()}/locations/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
       return { data: updated ?? { ...data, id } };
     }
     if (resource === 'checklist-templates') {
@@ -324,7 +359,10 @@ export const dataProvider: DataProvider = {
       for (const k of ['name', 'type', 'is_required']) {
         if (k in data) body[k] = data[k];
       }
-      const updated = await request(`${orgBase()}/checklist-templates/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+      const updated = await request(`${orgBase()}/checklist-templates/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
       return { data: { ...updated, id } };
     }
     if (resource === 'members') {
@@ -372,7 +410,9 @@ export const dataProvider: DataProvider = {
 
   deleteMany: async (resource, params) => {
     // members не поддерживают bulk-delete (нужен user_id, а не id записи) — отключено в UI.
-    await Promise.all(params.ids.map((id) => request(deleteOnePath(resource, String(id)), { method: 'DELETE' })));
+    await Promise.all(
+      params.ids.map((id) => request(deleteOnePath(resource, String(id)), { method: 'DELETE' })),
+    );
     return { data: params.ids };
   },
 
@@ -388,19 +428,36 @@ export const dataProvider: DataProvider = {
   getTemplateAssignments: (templateId: string) =>
     request(`${orgBase()}/checklist-templates/${templateId}/assignments`),
   addTemplateItem: (templateId: string, body: { text: string; is_required: boolean }) =>
-    request(`${orgBase()}/checklist-templates/${templateId}/items`, { method: 'POST', body: JSON.stringify(body) }),
+    request(`${orgBase()}/checklist-templates/${templateId}/items`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   updateTemplateItem: (templateId: string, itemId: string, body: Record<string, unknown>) =>
-    request(`${orgBase()}/checklist-templates/${templateId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    request(`${orgBase()}/checklist-templates/${templateId}/items/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
   deleteTemplateItem: (templateId: string, itemId: string) =>
     request(`${orgBase()}/checklist-templates/${templateId}/items/${itemId}`, { method: 'DELETE' }),
   reorderTemplateItems: (templateId: string, itemIds: string[]) =>
-    request(`${orgBase()}/checklist-templates/${templateId}/items/reorder`, { method: 'PUT', body: JSON.stringify({ item_ids: itemIds }) }),
+    request(`${orgBase()}/checklist-templates/${templateId}/items/reorder`, {
+      method: 'PUT',
+      body: JSON.stringify({ item_ids: itemIds }),
+    }),
   setTemplateRoles: (templateId: string, roleIds: string[]) =>
-    request(`${orgBase()}/checklist-templates/${templateId}/roles`, { method: 'PUT', body: JSON.stringify({ role_ids: roleIds }) }),
+    request(`${orgBase()}/checklist-templates/${templateId}/roles`, {
+      method: 'PUT',
+      body: JSON.stringify({ role_ids: roleIds }),
+    }),
   setTemplatePersonal: (templateId: string, userId: string, type: 'add' | 'remove') =>
-    request(`${orgBase()}/checklist-templates/${templateId}/personal/${userId}`, { method: 'PUT', body: JSON.stringify({ type }) }),
+    request(`${orgBase()}/checklist-templates/${templateId}/personal/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ type }),
+    }),
   deleteTemplatePersonal: (templateId: string, userId: string) =>
-    request(`${orgBase()}/checklist-templates/${templateId}/personal/${userId}`, { method: 'DELETE' }),
+    request(`${orgBase()}/checklist-templates/${templateId}/personal/${userId}`, {
+      method: 'DELETE',
+    }),
 
   // --- Ставки участника (payroll): вложенный CRUD по member_id (id записи участника) ---
   getMemberRates: async (memberId: string) => {
@@ -408,9 +465,15 @@ export const dataProvider: DataProvider = {
     return data?.items ?? [];
   },
   createMemberRate: (memberId: string, body: Record<string, unknown>) =>
-    request(`${orgBase()}/members/${memberId}/rates`, { method: 'POST', body: JSON.stringify(body) }),
+    request(`${orgBase()}/members/${memberId}/rates`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   updateMemberRate: (memberId: string, rateId: string, body: Record<string, unknown>) =>
-    request(`${orgBase()}/members/${memberId}/rates/${rateId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    request(`${orgBase()}/members/${memberId}/rates/${rateId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
   deleteMemberRate: (memberId: string, rateId: string) =>
     request(`${orgBase()}/members/${memberId}/rates/${rateId}`, { method: 'DELETE' }),
   // Отчёт «сколько кому заплатить»; границы — UTC ISO, date_to включительно (как в date_filters).

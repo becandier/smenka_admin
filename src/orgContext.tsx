@@ -21,4 +21,6 @@ export const OrgProvider = ({ children }: { children: ReactNode }) => {
   return <OrgContext.Provider value={{ org, selectOrg }}>{children}</OrgContext.Provider>;
 };
 
+// Хук рядом с провайдером — осознанно (единый модуль контекста); HMR-предупреждение глушим.
+// eslint-disable-next-line react-refresh/only-export-components
 export const useCurrentOrg = (): OrgContextValue => useContext(OrgContext);

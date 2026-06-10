@@ -29,7 +29,12 @@ const verifiedChoices = [
 const userFilters = [
   <SearchInput key="search" source="search" alwaysOn />,
   <SelectInput key="role" source="role" label="Роль" choices={roleChoices} />,
-  <SelectInput key="is_verified" source="is_verified" label="Подтверждён" choices={verifiedChoices} />,
+  <SelectInput
+    key="is_verified"
+    source="is_verified"
+    label="Подтверждён"
+    choices={verifiedChoices}
+  />,
 ];
 
 export const UserList = () => (
