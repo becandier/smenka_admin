@@ -133,16 +133,20 @@ const clientPaginate = (rows: any[], params: GetListParams) => {
 // (для org-shifts); без него прокидываются все непустые фильтры (платформенные списки).
 const buildQuery = (
   params: GetListParams,
-  opts: { defaultSort: string; filterKeys?: string[] },
+  opts: { defaultSort: string; filterKeys?: string[]; withSort?: boolean },
 ): string => {
   const { page, perPage } = params.pagination ?? { page: 1, perPage: 25 };
   const { field, order } = params.sort ?? { field: opts.defaultSort, order: 'DESC' };
   const query = new URLSearchParams({
     limit: String(perPage),
     offset: String((page - 1) * perPage),
-    sort: field,
-    order,
   });
+  // withSort=false — у эндпоинта фиксированная серверная сортировка (аудит: created_at DESC),
+  // не шлём недокументированные sort/order.
+  if (opts.withSort !== false) {
+    query.set('sort', field);
+    query.set('order', order);
+  }
   const filter = (params.filter ?? {}) as Record<string, unknown>;
   const entries = opts.filterKeys
     ? opts.filterKeys.map((key) => [key, filter[key]] as const)
@@ -182,6 +186,22 @@ const toUtcDayRangeFilter = (filter: Record<string, unknown>): Record<string, un
   return result;
 };
 
+// Серверный org-список с UTC-диапазоном дат (смены, аудит): проверка выбранной org →
+// конверт {items,total}. withSort:false — у эндпоинта фиксированная серверная сортировка.
+const orgServerList = async (
+  params: GetListParams,
+  opts: { path: string; defaultSort: string; filterKeys: string[]; withSort?: boolean },
+): Promise<{ data: any[]; total: number }> => {
+  if (!getCurrentOrgId()) return { data: [], total: 0 };
+  const filter = toUtcDayRangeFilter((params.filter ?? {}) as Record<string, unknown>);
+  const query = buildQuery(
+    { ...params, filter },
+    { defaultSort: opts.defaultSort, filterKeys: opts.filterKeys, withSort: opts.withSort },
+  );
+  const data = await request(`${orgBase()}/${opts.path}?${query}`);
+  return { data: data?.items ?? [], total: data?.total ?? 0 };
+};
+
 // Окно орг-статистики: ровно один источник — period ЛИБО date_from/date_to (UTC ISO).
 export interface OrgStatsQuery {
   period?: string;
@@ -206,17 +226,19 @@ export const dataProvider: DataProvider = {
       return { data: data?.items ?? [], total: data?.total ?? 0 };
     }
     if (resource === 'org-shifts') {
-      if (!getCurrentOrgId()) return { data: [], total: 0 };
-      const filter = toUtcDayRangeFilter((params.filter ?? {}) as Record<string, unknown>);
-      const shiftQuery = buildQuery(
-        { ...params, filter },
-        {
-          defaultSort: 'started_at',
-          filterKeys: ['user_id', 'status', 'date_from', 'date_to'],
-        },
-      );
-      const data = await request(`${orgBase()}/shifts?${shiftQuery}`);
-      return { data: data?.items ?? [], total: data?.total ?? 0 };
+      return orgServerList(params, {
+        path: 'shifts',
+        defaultSort: 'started_at',
+        filterKeys: ['user_id', 'status', 'date_from', 'date_to'],
+      });
+    }
+    if (resource === 'audit-logs') {
+      return orgServerList(params, {
+        path: 'audit-logs',
+        defaultSort: 'created_at',
+        filterKeys: ['action', 'actor_user_id', 'date_from', 'date_to'],
+        withSort: false,
+      });
     }
     if (ORG_CLIENT.has(resource)) {
       if (!getCurrentOrgId()) return { data: [], total: 0 };

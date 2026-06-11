@@ -1,6 +1,11 @@
 import { AuthProvider } from 'react-admin';
 import { API_BASE_URL, getAccessToken, getRefreshToken, setTokens, clearTokens } from '../config';
 
+// Ошибка авторизации с сохранённым кодом контракта (для маппинга по error.code).
+interface AuthError extends Error {
+  code?: string;
+}
+
 const post = async (path: string, body: unknown): Promise<any> => {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
@@ -14,9 +19,27 @@ const post = async (path: string, body: unknown): Promise<any> => {
     json = null;
   }
   if (!res.ok || json?.error) {
-    throw new Error(json?.error?.message ?? 'Ошибка авторизации');
+    const err: AuthError = new Error(json?.error?.message ?? 'Ошибка авторизации');
+    err.code = json?.error?.code;
+    throw err;
   }
   return json?.data;
+};
+
+// Сообщение для формы входа по error.code (контракт security_hardening).
+// react-admin показывает message отклонённого login как нотификацию.
+const loginErrorMessage = (error: unknown): string => {
+  // Явный type-guard вместо приведения: код берём только у объекта с полем code.
+  const code =
+    error && typeof error === 'object' && 'code' in error ? (error as AuthError).code : undefined;
+  switch (code) {
+    case 'ACCOUNT_LOCKED':
+      return 'Слишком много попыток входа, попробуйте позже';
+    case 'RATE_LIMIT_EXCEEDED':
+      return 'Слишком много запросов, подождите';
+    default:
+      return (error as Error)?.message ?? 'Ошибка авторизации';
+  }
 };
 
 const authGet = async (path: string): Promise<any> => {
@@ -50,7 +73,19 @@ export interface Permissions {
 export const authProvider: AuthProvider = {
   // react-admin шлёт username/password; маппим username → email.
   login: async ({ username, password }) => {
-    const data = await post('/auth/login', { email: username, password });
+    let data: any;
+    try {
+      data = await post('/auth/login', { email: username, password });
+    } catch (error) {
+      // 423 ACCOUNT_LOCKED / 429 RATE_LIMIT_EXCEEDED → понятная нотификация по коду.
+      // Переписываем message исходной ошибки и пробрасываем её же (сохраняем причину).
+      if (error instanceof Error) error.message = loginErrorMessage(error);
+      throw error;
+    }
+    // Контракт {data,error}: при успехе data с токенами обязателен; страхуемся от нарушения.
+    if (!data?.access_token || !data?.refresh_token) {
+      throw new Error('Ошибка авторизации: сервер не вернул токены');
+    }
     setTokens(data.access_token, data.refresh_token);
   },
 

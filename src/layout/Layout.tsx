@@ -8,6 +8,7 @@ import BadgeIcon from '@mui/icons-material/Badge';
 import PlaceIcon from '@mui/icons-material/Place';
 import ChecklistIcon from '@mui/icons-material/Checklist';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import HistoryIcon from '@mui/icons-material/History';
 import SettingsIcon from '@mui/icons-material/Settings';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import CurrencyRubleIcon from '@mui/icons-material/CurrencyRuble';
@@ -51,6 +52,10 @@ const MyMenu = () => {
         <Menu.Item to="/checklist-templates" primaryText="Чек-листы" leftIcon={<ChecklistIcon />} />
       )}
       {orgOpen && <Menu.Item to="/org-shifts" primaryText="Смены" leftIcon={<AccessTimeIcon />} />}
+      {/* Аудит — под orgOpen (включая super_admin со сквозным доступом): admin.md §RBAC
+          даёт super_admin ленту в org-контексте. Это read-only ресурс как «Смены»/
+          «Статистика», в отличие от «Зарплаты», которую super_admin намеренно не видит. */}
+      {orgOpen && <Menu.Item to="/audit-logs" primaryText="Аудит" leftIcon={<HistoryIcon />} />}
       {orgOpen && <Menu.Item to="/settings" primaryText="Настройки" leftIcon={<SettingsIcon />} />}
       {orgOpen && (
         <Menu.Item to="/org-stats" primaryText="Статистика" leftIcon={<BarChartIcon />} />
