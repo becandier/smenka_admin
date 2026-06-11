@@ -9,7 +9,6 @@ import {
   SelectInput,
   DateInput,
   Show,
-  useGetList,
   useListContext,
   useDataProvider,
   useRecordContext,
@@ -19,7 +18,6 @@ import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
-  Alert,
   Box,
   Card,
   CardContent,
@@ -37,7 +35,9 @@ import {
   shiftStatusLabel,
 } from '../utils/format';
 import { useAsync } from '../utils/useAsync';
-import { INVALID_RANGE_MESSAGE, isDayRangeInvalid } from '../utils/dates';
+import { isDayRangeInvalid } from '../utils/dates';
+import { MemberSelectFilter } from '../components/MemberSelectFilter';
+import { DateRangeAlert } from '../components/DateRangeAlert';
 
 const statusChoices = [
   { id: 'active', name: 'Активна' },
@@ -45,36 +45,13 @@ const statusChoices = [
   { id: 'finished', name: 'Завершена' },
 ];
 
-// Фильтр по сотруднику: значения — user_id, подписи — имена участников org.
-const EmployeeFilter = (props: { source: string; alwaysOn?: boolean }) => {
-  const { data } = useGetList('members', {
-    pagination: { page: 1, perPage: 200 },
-    sort: { field: 'user_name', order: 'ASC' },
-  });
-  const choices = (data ?? []).map((m) => ({ id: m.user_id, name: m.user_name }));
-  return <SelectInput {...props} label="Сотрудник" choices={choices} />;
-};
-
 const shiftFilters = [
-  <EmployeeFilter key="user_id" source="user_id" alwaysOn />,
+  <MemberSelectFilter key="user_id" source="user_id" label="Сотрудник" alwaysOn />,
   <SelectInput key="status" source="status" label="Статус" choices={statusChoices} alwaysOn />,
   // Окно по started_at, обе границы включительно; день → UTC-границы конвертирует dataProvider.
   <DateInput key="date_from" source="date_from" label="С даты" />,
   <DateInput key="date_to" source="date_to" label="По дату" />,
 ];
-
-// Фильтр-форма react-admin не поддерживает валидацию инпутов, поэтому ошибку
-// «date_from > date_to» показываем баннером над списком; сам запрос блокирует
-// dataProvider до сети (превентивно, вместо серверного INVALID_DATE_RANGE).
-const DateRangeAlert = () => {
-  const { filterValues } = useListContext();
-  if (!isDayRangeInvalid(filterValues?.date_from, filterValues?.date_to)) return null;
-  return (
-    <Alert severity="error" sx={{ mb: 1 }}>
-      {INVALID_RANGE_MESSAGE}
-    </Alert>
-  );
-};
 
 // Empty-state для пустого/отфильтрованного результата. Текст зависит от наличия
 // активных фильтров (для отфильтрованного — формулировка из ТЗ).
