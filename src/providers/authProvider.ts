@@ -1,9 +1,11 @@
 import { AuthProvider } from 'react-admin';
 import { API_BASE_URL, getAccessToken, getRefreshToken, setTokens, clearTokens } from '../config';
 
-// Ошибка авторизации с сохранённым кодом контракта (для маппинга по error.code).
+// Ошибка авторизации с сохранённым кодом контракта (для маппинга по error.code)
+// и HTTP-статусом (checkError отличает 401-сессию от 5xx/сети именно по status).
 interface AuthError extends Error {
   code?: string;
+  status?: number;
 }
 
 const post = async (path: string, body: unknown): Promise<any> => {
@@ -54,7 +56,12 @@ const authGet = async (path: string): Promise<any> => {
     json = null;
   }
   if (!res.ok || json?.error) {
-    throw new Error(json?.error?.message ?? 'Ошибка запроса');
+    // Сохраняем HTTP-статус и error.code: по ним checkError/getPermissions отличают
+    // 401 (мёртвая сессия) от 5xx/сети. Раньше status терялся и 401 «глотался».
+    const err: AuthError = new Error(json?.error?.message ?? 'Ошибка запроса');
+    err.code = json?.error?.code;
+    err.status = res.status;
+    throw err;
   }
   return json?.data;
 };
@@ -69,6 +76,38 @@ export interface Permissions {
   role: string;
   organizations: OrgPermission[];
 }
+
+// Обновление access по refresh-токену. true — токены обновлены, false — refresh
+// невозможен/отклонён (мёртвая сессия). Единый источник логики для checkError и getPermissions.
+const tryRefresh = async (): Promise<boolean> => {
+  const refresh = getRefreshToken();
+  if (!refresh) return false;
+  try {
+    const data = await post('/auth/refresh', { refresh_token: refresh });
+    if (!data?.access_token || !data?.refresh_token) return false;
+    setTokens(data.access_token, data.refresh_token);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// Загрузка роли + организаций пользователя. Ошибку /users/me НЕ глотает (её обработка —
+// в getPermissions). Сбой под-запроса /organizations деградирует до пустого списка:
+// роль уже получена, OrgSwitcher просто будет пуст.
+const loadPermissions = async (): Promise<Permissions> => {
+  const me = await authGet('/users/me');
+  const role: string = me?.role ?? 'user';
+  let organizations: OrgPermission[];
+  try {
+    const orgs = await authGet('/organizations');
+    const items: any[] = orgs?.items ?? [];
+    organizations = items.map((o) => ({ id: o.id, name: o.name, my_role: o.my_role ?? null }));
+  } catch {
+    organizations = [];
+  }
+  return { role, organizations };
+};
 
 export const authProvider: AuthProvider = {
   // react-admin шлёт username/password; маппим username → email.
@@ -107,16 +146,7 @@ export const authProvider: AuthProvider = {
   checkError: async (error) => {
     const status = (error as { status?: number })?.status;
     if (status === 401) {
-      const refresh = getRefreshToken();
-      if (refresh) {
-        try {
-          const data = await post('/auth/refresh', { refresh_token: refresh });
-          setTokens(data.access_token, data.refresh_token);
-          return;
-        } catch {
-          // refresh не удался — разлогиниваем
-        }
-      }
+      if (await tryRefresh()) return;
       clearTokens();
       throw new Error('Сессия истекла');
     }
@@ -131,19 +161,19 @@ export const authProvider: AuthProvider = {
   getPermissions: async (): Promise<Permissions | null> => {
     if (!getAccessToken()) return null;
     try {
-      const me = await authGet('/users/me');
-      const role: string = me?.role ?? 'user';
-      let organizations: OrgPermission[] = [];
-      try {
-        const orgs = await authGet('/organizations');
-        const items: any[] = orgs?.items ?? [];
-        organizations = items.map((o) => ({ id: o.id, name: o.name, my_role: o.my_role ?? null }));
-      } catch {
-        organizations = [];
-      }
-      return { role, organizations };
-    } catch {
-      return null;
+      return await loadPermissions();
+    } catch (error) {
+      const status = (error as { status?: number })?.status;
+      // Сеть/5xx (нет статуса или не 401): сессию не трогаем — пробрасываем ошибку.
+      // usePermissions → logoutIfAccessDenied → checkError; checkError на не-401 резолвится,
+      // ложного логаута нет, а Dashboard покажет ошибку вместо вечного спиннера.
+      if (status !== 401) throw error;
+      // Протухший access (401 INVALID_TOKEN): пробуем refresh и повторяем запрос.
+      if (await tryRefresh()) return await loadPermissions();
+      // Мёртвая сессия (refresh тоже отклонён): чистим токены и пробрасываем 401 →
+      // usePermissions → logoutIfAccessDenied → checkError → logout + redirect /login.
+      clearTokens();
+      throw error;
     }
   },
 };

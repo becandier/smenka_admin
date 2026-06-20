@@ -1,6 +1,13 @@
 // Единственное место с базовым URL и хранением токенов/текущей организации.
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
+// Яндекс.Карты (карта-пикер на форме рабочих точек). Ключ задаётся при сборке Vite;
+// если он пуст — карта не подключается, форма работает в ручном режиме (ввод координат).
+const yandexMapsApiKey = (import.meta.env.VITE_YANDEX_MAPS_API_KEY ?? '').trim();
+export const YANDEX_MAPS_SCRIPT_URL = yandexMapsApiKey
+  ? `https://api-maps.yandex.ru/2.1/?apikey=${encodeURIComponent(yandexMapsApiKey)}&lang=ru_RU`
+  : null;
+
 const ACCESS_KEY = 'smenka_admin_access_token';
 const REFRESH_KEY = 'smenka_admin_refresh_token';
 const ORG_KEY = 'smenka_admin_current_org';

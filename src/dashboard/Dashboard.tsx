@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Title, useDataProvider, usePermissions } from 'react-admin';
-import { Card, CardContent, Typography, Grid, Box, CircularProgress } from '@mui/material';
+import { Button, Card, CardContent, Typography, Grid, Box, CircularProgress } from '@mui/material';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { Permissions } from '../providers/authProvider';
 
@@ -26,7 +26,12 @@ const CARDS: { key: keyof PlatformStats; label: string }[] = [
 ];
 
 export const Dashboard = () => {
-  const { permissions, isLoading: permsLoading } = usePermissions<Permissions>();
+  const {
+    permissions,
+    isLoading: permsLoading,
+    error: permsError,
+    refetch,
+  } = usePermissions<Permissions>();
   const dataProvider = useDataProvider();
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,8 +50,44 @@ export const Dashboard = () => {
     };
   }, [isSuper, dataProvider]);
 
+  // Пока реально грузятся права — единственный легитимный спиннер прав.
+  if (permsLoading) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  // Права не загрузились. Различаем сессию (401) и сеть/5xx по статусу ошибки.
+  if (permsError) {
+    const status = (permsError as { status?: number }).status;
+    // 401 INVALID_TOKEN — мёртвая сессия: authProvider уже очистил токены и инициировал
+    // logout+redirect. Дублируем редирект здесь — терминально, без вечного спиннера.
+    if (status === 401) {
+      return <Navigate to="/login" replace />;
+    }
+    // Сеть/5xx — видимая ошибка с возможностью повтора, без ложного логаута.
+    return (
+      <Box sx={{ p: 3 }}>
+        <Title title="Smenka" />
+        <Typography color="error" sx={{ mb: 2 }}>
+          {permsError.message || 'Не удалось загрузить права доступа'}
+        </Typography>
+        <Button variant="outlined" onClick={() => refetch()}>
+          Повторить
+        </Button>
+      </Box>
+    );
+  }
+
+  // Прав нет и ошибки нет (нет токена / getPermissions вернул null) — терминально, на логин.
+  if (!permissions) {
+    return <Navigate to="/login" replace />;
+  }
+
   // Не-super_admin: если есть управляемая орг — в кабинет; иначе явный экран «нет доступа».
-  if (!permsLoading && permissions && !isSuper) {
+  if (!isSuper) {
     const manageable = (permissions.organizations ?? []).filter(
       (o) => o.my_role === 'owner' || o.my_role === 'admin',
     );
