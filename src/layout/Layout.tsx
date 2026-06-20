@@ -9,6 +9,7 @@ import PlaceIcon from '@mui/icons-material/Place';
 import ChecklistIcon from '@mui/icons-material/Checklist';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import HistoryIcon from '@mui/icons-material/History';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import SettingsIcon from '@mui/icons-material/Settings';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import CurrencyRubleIcon from '@mui/icons-material/CurrencyRuble';
@@ -46,6 +47,9 @@ const MyMenu = () => {
 
       {orgOpen && <Divider sx={{ my: 1 }} />}
       {orgOpen && <Menu.Item to="/members" primaryText="Сотрудники" leftIcon={<GroupIcon />} />}
+      {orgOpen && (
+        <Menu.Item to="/invite-code" primaryText="Инвайт-код" leftIcon={<VpnKeyIcon />} />
+      )}
       {orgOpen && <Menu.Item to="/roles" primaryText="Роли" leftIcon={<BadgeIcon />} />}
       {orgOpen && <Menu.Item to="/work-locations" primaryText="Точки" leftIcon={<PlaceIcon />} />}
       {orgOpen && (

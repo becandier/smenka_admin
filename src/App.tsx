@@ -30,6 +30,7 @@ import { AuditLogList } from './resources/auditLogs';
 import { SettingsPage } from './resources/settings';
 import { OrgStatsPage } from './resources/orgStats';
 import { PayrollPage } from './resources/payroll';
+import { InviteCodePage } from './resources/inviteCode';
 
 // Доступ к ресурсам: платформенные (users/organizations) — только super_admin;
 // org-ресурсы доступны при выбранной организации (owner/admin — свои; super_admin — любую).
@@ -96,6 +97,7 @@ export const App = () => (
           <Resource name="audit-logs" list={AuditLogList} icon={HistoryIcon} />
 
           <CustomRoutes>
+            <Route path="/invite-code" element={<InviteCodePage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/org-stats" element={<OrgStatsPage />} />
             <Route path="/payroll" element={<PayrollPage />} />
