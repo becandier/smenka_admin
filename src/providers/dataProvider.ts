@@ -311,6 +311,8 @@ export const dataProvider: DataProvider = {
         latitude: Number(d.latitude),
         longitude: Number(d.longitude),
         radius_meters: Number(d.radius_meters ?? 100),
+        // address — опционально; пустую строку нормализуем в null (бэк хранит как есть).
+        address: d.address ? String(d.address) : null,
       };
       return {
         data: await request(`${orgBase()}/locations`, {
@@ -364,12 +366,15 @@ export const dataProvider: DataProvider = {
       return { data: updated ?? { ...data, id } };
     }
     if (resource === 'work-locations') {
-      const body = {
+      const body: Record<string, unknown> = {
         name: data.name,
         latitude: Number(data.latitude),
         longitude: Number(data.longitude),
         radius_meters: Number(data.radius_meters),
       };
+      // address меняется только если задан непустым: бэк не очищает поле через null/пустую
+      // строку (PATCH игнорирует null), поэтому пустой адрес не шлём вовсе.
+      if (data.address) body.address = String(data.address);
       const updated = await request(`${orgBase()}/locations/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(body),
