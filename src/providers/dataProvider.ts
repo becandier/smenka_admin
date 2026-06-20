@@ -19,7 +19,8 @@ const request = async (path: string, options: RequestInit = {}): Promise<any> =>
   const token = getAccessToken();
   const headers = new Headers(options.headers ?? {});
   headers.set('Accept', 'application/json');
-  if (options.body && !headers.has('Content-Type')) {
+  // FormData (загрузка файла) — Content-Type с boundary браузер выставляет сам; не трогаем.
+  if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
   if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -512,4 +513,19 @@ export const dataProvider: DataProvider = {
     const qs = toSearch({ ...query });
     return request(`${orgBase()}/payroll${qs ? `?${qs}` : ''}`);
   },
+
+  // --- Файловое хранилище (file_storage): общий слой для фич-потребителей ---
+  // POST /files (multipart) → { id, url, ... }. organization_id обязателен для org-категорий,
+  // для персональных (avatar/other) — не шлём. Возвращает свежий presigned URL (хранить id).
+  uploadFile: (file: File, category: string, organizationId?: string | null) => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('category', category);
+    if (organizationId) form.append('organization_id', organizationId);
+    return request('/files', { method: 'POST', body: form });
+  },
+  // GET /files/{id} — метаданные + свежий presigned URL (обновить протухший).
+  getFile: (fileId: string) => request(`/files/${fileId}`),
+  // DELETE /files/{id} — uploader/org admin/owner/super_admin; привязанный → FILE_IN_USE (409).
+  deleteFile: (fileId: string) => request(`/files/${fileId}`, { method: 'DELETE' }),
 };
