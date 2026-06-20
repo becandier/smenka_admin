@@ -441,6 +441,10 @@ export const dataProvider: DataProvider = {
   // --- Кастомные методы (вызываются через useDataProvider) ---
   getPlatformStats: () => request('/admin/stats'),
   getOrgStats: (query: OrgStatsQuery) => request(`${orgBase()}/stats?${toSearch({ ...query })}`),
+  // Ротация инвайт-кода организации: POST /organizations/{org}/rotate-invite → { invite_code }.
+  // org_id передаётся явно (страница работает с выбранной org, без orgBase-зависимости).
+  rotateInviteCode: (orgId: string): Promise<{ invite_code: string } | null> =>
+    request(`/organizations/${orgId}/rotate-invite`, { method: 'POST' }),
   getShiftChecklists: async (shiftId: string) => {
     const data = await request(`/shifts/${shiftId}/checklists`);
     return data?.items ?? [];

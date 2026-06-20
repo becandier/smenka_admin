@@ -1,0 +1,224 @@
+import { useEffect, useState } from 'react';
+import { Title, useDataProvider, useNotify, usePermissions } from 'react-admin';
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  Stack,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import AutorenewIcon from '@mui/icons-material/Autorenew';
+import { useCurrentOrg } from '../orgContext';
+import { useMyOrgRole } from '../utils/useMyOrgRole';
+import type { Permissions } from '../providers/authProvider';
+
+// Диплинк для приглашения сотрудника (мобильное приложение ловит схему smenka://).
+const DEEPLINK_PREFIX = 'smenka://invite/';
+
+// Блок «Инвайт-код» org-кабинета: показ текущего кода (8-hex) + ротация.
+// Просмотр и ротация — owner и admin; super_admin со сквозным доступом — по необходимости
+// (admin.md §RBAC). Эндпоинты: GET /organizations/{org} (invite_code) + POST .../rotate-invite.
+export const InviteCodePage = () => {
+  const { org } = useCurrentOrg();
+  const { permissions } = usePermissions<Permissions>();
+  const role = useMyOrgRole();
+  const dataProvider = useDataProvider();
+  const notify = useNotify();
+
+  const isSuper = permissions?.role === 'super_admin';
+  const canManage = isSuper || role === 'owner' || role === 'admin';
+
+  const [code, setCode] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [rotating, setRotating] = useState(false);
+
+  const orgId = org?.id ?? null;
+
+  // Текущий код берём из GET /organizations/{org} (уже доступен owner/admin), data.invite_code.
+  useEffect(() => {
+    if (!orgId || !canManage) return;
+    let active = true;
+    setCode(null);
+    setLoadError(null);
+    dataProvider
+      .getOne('organizations', { id: orgId })
+      .then((res: { data?: { invite_code?: string } }) => {
+        if (!active) return;
+        const value = res?.data?.invite_code;
+        if (typeof value === 'string' && value) setCode(value);
+        else setLoadError('Не удалось загрузить код');
+      })
+      .catch((e: any) => {
+        if (!active) return;
+        // По error.code (ERROR_FORMAT). 403 — если доступ к коду ужесточат (security_hardening),
+        // покажем понятное сообщение вместо общего, симметрично обработке ротации.
+        if (e?.body?.code === 'FORBIDDEN' || e?.status === 403) {
+          setLoadError('Нет доступа к инвайт-коду организации');
+        } else {
+          setLoadError('Не удалось загрузить код');
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [orgId, canManage, dataProvider]);
+
+  if (!org) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Title title="Инвайт-код" />
+        <Typography color="text.secondary">Выберите организацию.</Typography>
+      </Box>
+    );
+  }
+
+  if (!canManage) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Title title="Инвайт-код" />
+        <Typography color="text.secondary">
+          Управление инвайт-кодом доступно владельцу и администратору организации.
+        </Typography>
+      </Box>
+    );
+  }
+
+  const copy = async (text: string, label: string): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(text);
+      notify(`${label} скопирован`, { type: 'info' });
+    } catch {
+      notify('Не удалось скопировать — выделите и скопируйте вручную', { type: 'warning' });
+    }
+  };
+
+  const handleRotate = async (): Promise<void> => {
+    setRotating(true);
+    try {
+      const data = await dataProvider.rotateInviteCode(org.id);
+      const next = data?.invite_code;
+      if (typeof next === 'string' && next) setCode(next);
+      notify('Новый код сгенерирован. Старый код больше не действует.', { type: 'success' });
+      setConfirmOpen(false);
+    } catch (e: any) {
+      // Ошибки — по error.code (ERROR_FORMAT); 403 — нет прав на ротацию.
+      if (e?.body?.code === 'FORBIDDEN' || e?.status === 403) {
+        notify('Недостаточно прав для смены кода', { type: 'error' });
+      } else {
+        notify(e?.message ?? 'Не удалось сгенерировать новый код', { type: 'error' });
+      }
+    } finally {
+      setRotating(false);
+    }
+  };
+
+  const deeplink = code ? `${DEEPLINK_PREFIX}${code}` : '';
+
+  return (
+    <Box sx={{ p: 2, maxWidth: 560 }}>
+      <Title title={`Инвайт-код — ${org.name}`} />
+      <Card>
+        <CardContent>
+          <Typography variant="h6" sx={{ mb: 0.5 }}>
+            Инвайт-код организации
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Передайте код сотруднику — он введёт его в приложении, чтобы вступить в организацию.
+          </Typography>
+
+          {loadError && <Alert severity="error">{loadError}</Alert>}
+          {!code && !loadError && <CircularProgress size={24} />}
+
+          {code && (
+            <>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+                <Typography
+                  variant="h4"
+                  sx={{ fontFamily: 'monospace', letterSpacing: 2, userSelect: 'all' }}
+                >
+                  {code}
+                </Typography>
+                <Tooltip title="Скопировать код">
+                  <IconButton aria-label="Скопировать код" onClick={() => void copy(code, 'Код')}>
+                    <ContentCopyIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+
+              <TextField
+                label="Ссылка-приглашение"
+                value={deeplink}
+                fullWidth
+                size="small"
+                InputProps={{
+                  readOnly: true,
+                  endAdornment: (
+                    <Tooltip title="Скопировать ссылку">
+                      <IconButton
+                        aria-label="Скопировать ссылку"
+                        edge="end"
+                        onClick={() => void copy(deeplink, 'Ссылка')}
+                      >
+                        <ContentCopyIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  ),
+                }}
+                sx={{ mb: 2 }}
+              />
+
+              <Button
+                variant="outlined"
+                color="warning"
+                startIcon={<AutorenewIcon />}
+                onClick={() => setConfirmOpen(true)}
+              >
+                Сгенерировать новый
+              </Button>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog
+        open={confirmOpen}
+        onClose={() => !rotating && setConfirmOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Сгенерировать новый код?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Текущий код перестанет работать. Сотрудники, которым вы уже отправили старый код, не
+            смогут вступить по нему — отправьте им новый.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmOpen(false)} disabled={rotating}>
+            Отмена
+          </Button>
+          <Button
+            color="warning"
+            variant="contained"
+            onClick={() => void handleRotate()}
+            disabled={rotating}
+          >
+            {rotating ? 'Генерация…' : 'Сгенерировать'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+};
