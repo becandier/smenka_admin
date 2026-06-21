@@ -47,6 +47,12 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import AddIcon from '@mui/icons-material/Add';
+import PhotoCameraOutlinedIcon from '@mui/icons-material/PhotoCameraOutlined';
+import {
+  PHOTO_REQUIREMENT_CHOICES,
+  PHOTO_REQUIREMENT_SHORT,
+  PHOTO_SOURCE_CHOICES,
+} from '../utils/format';
 
 const typeChoices = [
   { id: 'shift_start', name: 'Начало смены' },
@@ -140,6 +146,74 @@ const TemplateMetaForm = ({ template, onSaved }: { template: any; onSaved: () =>
   );
 };
 
+// Поля настройки фото в форме пункта (add/edit). photo_source показывается и редактируется
+// только при photo_requirement !== 'none' (при none бэк нормализует source к camera).
+const PhotoFields = ({
+  requirement,
+  source,
+  onRequirement,
+  onSource,
+  disabled,
+}: {
+  requirement: string;
+  source: string;
+  onRequirement: (value: string) => void;
+  onSource: (value: string) => void;
+  disabled?: boolean;
+}) => (
+  <Stack spacing={0.5}>
+    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+      <Select
+        size="small"
+        value={requirement}
+        disabled={disabled}
+        onChange={(e) => onRequirement(e.target.value)}
+        sx={{ minWidth: 150 }}
+      >
+        {PHOTO_REQUIREMENT_CHOICES.map((c) => (
+          <MenuItem key={c.id} value={c.id}>
+            Фото: {c.name}
+          </MenuItem>
+        ))}
+      </Select>
+      {requirement !== 'none' && (
+        <Select
+          size="small"
+          value={source}
+          disabled={disabled}
+          onChange={(e) => onSource(e.target.value)}
+          sx={{ minWidth: 180 }}
+        >
+          {PHOTO_SOURCE_CHOICES.map((c) => (
+            <MenuItem key={c.id} value={c.id}>
+              {c.name}
+            </MenuItem>
+          ))}
+        </Select>
+      )}
+    </Stack>
+    {requirement === 'required' && (
+      <Typography variant="caption" color="text.secondary">
+        Нужно ≥1 фото, иначе пункт не завершён (мягко, смену не блокирует)
+      </Typography>
+    )}
+  </Stack>
+);
+
+// Компактный индикатор требования к фото в превью пункта (для requirement !== 'none').
+const PhotoRequirementChip = ({ requirement }: { requirement: string }) => {
+  if (requirement === 'none') return null;
+  return (
+    <Chip
+      size="small"
+      variant="outlined"
+      color={requirement === 'required' ? 'warning' : 'default'}
+      icon={<PhotoCameraOutlinedIcon />}
+      label={`Фото: ${PHOTO_REQUIREMENT_SHORT[requirement] ?? requirement}`}
+    />
+  );
+};
+
 const ItemsEditor = ({
   templateId,
   items,
@@ -153,9 +227,13 @@ const ItemsEditor = ({
   const notify = useNotify();
   const [newText, setNewText] = useState('');
   const [newRequired, setNewRequired] = useState(false);
+  const [newPhotoReq, setNewPhotoReq] = useState('none');
+  const [newPhotoSource, setNewPhotoSource] = useState('camera');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [editRequired, setEditRequired] = useState(false);
+  const [editPhotoReq, setEditPhotoReq] = useState('none');
+  const [editPhotoSource, setEditPhotoSource] = useState('camera');
   const [busy, setBusy] = useState(false);
 
   const sorted = [...items].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
@@ -175,20 +253,30 @@ const ItemsEditor = ({
 
   const add = () =>
     run(async () => {
-      await dataProvider.addTemplateItem(templateId, {
-        text: newText.trim(),
-        is_required: newRequired,
-      });
+      const body: {
+        text: string;
+        is_required: boolean;
+        photo_requirement: string;
+        photo_source?: string;
+      } = { text: newText.trim(), is_required: newRequired, photo_requirement: newPhotoReq };
+      // source отправляем только при requirement !== none (иначе бэк его игнорирует).
+      if (newPhotoReq !== 'none') body.photo_source = newPhotoSource;
+      await dataProvider.addTemplateItem(templateId, body);
       setNewText('');
       setNewRequired(false);
+      setNewPhotoReq('none');
+      setNewPhotoSource('camera');
     }, 'Пункт добавлен');
 
   const saveEdit = (itemId: string) =>
     run(async () => {
-      await dataProvider.updateTemplateItem(templateId, itemId, {
+      const body: Record<string, unknown> = {
         text: editText.trim(),
         is_required: editRequired,
-      });
+        photo_requirement: editPhotoReq,
+      };
+      if (editPhotoReq !== 'none') body.photo_source = editPhotoSource;
+      await dataProvider.updateTemplateItem(templateId, itemId, body);
       setEditingId(null);
     }, 'Пункт обновлён');
 
@@ -231,7 +319,13 @@ const ItemsEditor = ({
                 </TableCell>
                 <TableCell>
                   {editingId === it.id ? (
-                    <Stack direction="row" spacing={1} alignItems="center">
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      alignItems="center"
+                      flexWrap="wrap"
+                      useFlexGap
+                    >
                       <MuiTextField
                         size="small"
                         value={editText}
@@ -247,11 +341,25 @@ const ItemsEditor = ({
                         }
                         label="Обяз."
                       />
+                      <PhotoFields
+                        requirement={editPhotoReq}
+                        source={editPhotoSource}
+                        onRequirement={setEditPhotoReq}
+                        onSource={setEditPhotoSource}
+                        disabled={busy}
+                      />
                     </Stack>
                   ) : (
-                    <Stack direction="row" spacing={1} alignItems="center">
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      alignItems="center"
+                      flexWrap="wrap"
+                      useFlexGap
+                    >
                       <Typography>{it.text}</Typography>
                       {it.is_required && <Chip size="small" color="warning" label="Обязательный" />}
+                      <PhotoRequirementChip requirement={it.photo_requirement ?? 'none'} />
                     </Stack>
                   )}
                 </TableCell>
@@ -273,6 +381,8 @@ const ItemsEditor = ({
                           setEditingId(it.id);
                           setEditText(it.text ?? '');
                           setEditRequired(Boolean(it.is_required));
+                          setEditPhotoReq(it.photo_requirement ?? 'none');
+                          setEditPhotoSource(it.photo_source ?? 'camera');
                         }}
                       >
                         <EditIcon fontSize="small" />
@@ -288,7 +398,14 @@ const ItemsEditor = ({
           </TableBody>
         </Table>
 
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 2 }}>
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          flexWrap="wrap"
+          useFlexGap
+          sx={{ mt: 2 }}
+        >
           <MuiTextField
             size="small"
             label="Новый пункт"
@@ -301,6 +418,13 @@ const ItemsEditor = ({
               <Checkbox checked={newRequired} onChange={(e) => setNewRequired(e.target.checked)} />
             }
             label="Обяз."
+          />
+          <PhotoFields
+            requirement={newPhotoReq}
+            source={newPhotoSource}
+            onRequirement={setNewPhotoReq}
+            onSource={setNewPhotoSource}
+            disabled={busy}
           />
           <Button startIcon={<AddIcon />} disabled={busy || !newText.trim()} onClick={add}>
             Добавить

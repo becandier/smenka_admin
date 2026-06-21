@@ -459,7 +459,16 @@ export const dataProvider: DataProvider = {
     request(`/shifts/${shiftId}/checklists/${instanceId}`),
   getTemplateAssignments: (templateId: string) =>
     request(`${orgBase()}/checklist-templates/${templateId}/assignments`),
-  addTemplateItem: (templateId: string, body: { text: string; is_required: boolean }) =>
+  addTemplateItem: (
+    templateId: string,
+    // photo_requirement/photo_source — опц. (checklist_photos); при none source не шлём.
+    body: {
+      text: string;
+      is_required: boolean;
+      photo_requirement?: string;
+      photo_source?: string;
+    },
+  ) =>
     request(`${orgBase()}/checklist-templates/${templateId}/items`, {
       method: 'POST',
       body: JSON.stringify(body),

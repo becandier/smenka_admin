@@ -27,6 +27,7 @@ import {
   Typography,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import PhotoCameraOutlinedIcon from '@mui/icons-material/PhotoCameraOutlined';
 import {
   checklistStatusLabel,
   formatDateTime,
@@ -38,6 +39,7 @@ import { useAsync } from '../utils/useAsync';
 import { isDayRangeInvalid } from '../utils/dates';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { DateRangeAlert } from '../components/DateRangeAlert';
+import { ChecklistItemPhotos } from '../components/ChecklistItemPhotos';
 
 const statusChoices = [
   { id: 'active', name: 'Активна' },
@@ -195,21 +197,53 @@ const ChecklistInstanceItems = ({
   if (items.length === 0) return <Typography color="text.secondary">Пунктов нет</Typography>;
 
   return (
-    <Stack spacing={0.5}>
-      {items.map((it) => (
-        <Box key={it.id} sx={{ display: 'flex', gap: 1, alignItems: 'baseline' }}>
-          <Typography sx={{ width: 16 }}>{it.is_completed ? '✓' : '○'}</Typography>
-          <Typography sx={{ flex: 1 }}>
-            {it.text}
-            {it.is_required ? ' *' : ''}
-          </Typography>
-          {it.comment && (
-            <Typography variant="body2" color="text.secondary">
-              {it.comment}
-            </Typography>
-          )}
-        </Box>
-      ))}
+    <Stack spacing={1}>
+      {items.map((it) => {
+        const photos: any[] = it.photos ?? [];
+        // photos_count/photo_requirement — optional (старый бэк): дефолты-фолбэки.
+        const photosCount: number = it.photos_count ?? photos.length;
+        const requirement: string = it.photo_requirement ?? 'none';
+        // Бейдж «фото отсутствует» только для required без фото. Градация по is_required:
+        // обязательный пункт без фото → incomplete (критичный); необязательный → информативный.
+        const missingRequired = requirement === 'required' && photosCount === 0;
+        return (
+          <Box key={it.id}>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'baseline', flexWrap: 'wrap' }}>
+              <Typography sx={{ width: 16 }}>{it.is_completed ? '✓' : '○'}</Typography>
+              <Typography sx={{ flex: 1, minWidth: 200 }}>
+                {it.text}
+                {it.is_required ? ' *' : ''}
+              </Typography>
+              {photosCount > 0 && (
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  icon={<PhotoCameraOutlinedIcon />}
+                  label={`Фото: ${photosCount}`}
+                />
+              )}
+              {missingRequired && (
+                <Chip
+                  size="small"
+                  color={it.is_required ? 'error' : 'default'}
+                  variant={it.is_required ? 'filled' : 'outlined'}
+                  label={it.is_required ? 'Нет обязательного фото' : 'Нет фото'}
+                />
+              )}
+              {it.comment && (
+                <Typography variant="body2" color="text.secondary">
+                  {it.comment}
+                </Typography>
+              )}
+            </Box>
+            {photos.length > 0 && (
+              <Box sx={{ pl: 3 }}>
+                <ChecklistItemPhotos photos={photos} photoSource={it.photo_source} />
+              </Box>
+            )}
+          </Box>
+        );
+      })}
     </Stack>
   );
 };
@@ -230,24 +264,41 @@ const ShiftChecklists = () => {
 
   return (
     <Box>
-      {items.map((it) => (
-        <Accordion key={it.id} disableGutters TransitionProps={{ unmountOnExit: true }}>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-              <Typography sx={{ minWidth: 200 }}>{it.name}</Typography>
-              <Chip size="small" label={it.type === 'shift_start' ? 'Начало' : 'Конец'} />
-              <Chip size="small" label={checklistStatusLabel(it.status)} />
-              <Typography variant="body2" color="text.secondary">
-                {it.items_summary?.completed ?? 0}/{it.items_summary?.total ?? 0}
-              </Typography>
-              {it.is_required && <Chip size="small" color="warning" label="Обязательный" />}
-            </Box>
-          </AccordionSummary>
-          <AccordionDetails>
-            {shiftId && <ChecklistInstanceItems shiftId={shiftId} instanceId={String(it.id)} />}
-          </AccordionDetails>
-        </Accordion>
-      ))}
+      {items.map((it) => {
+        const summary = it.items_summary ?? {};
+        const total: number = summary.total ?? 0;
+        // Честный прогресс по satisfied_count (учитывает обязательное фото); фолбэк на
+        // completed для старого бэка без поля.
+        const progress: number = summary.satisfied_count ?? summary.completed ?? 0;
+        const photosMissing: number = summary.photos_required_missing ?? 0;
+        return (
+          <Accordion key={it.id} disableGutters TransitionProps={{ unmountOnExit: true }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                <Typography sx={{ minWidth: 200 }}>{it.name}</Typography>
+                <Chip size="small" label={it.type === 'shift_start' ? 'Начало' : 'Конец'} />
+                <Chip size="small" label={checklistStatusLabel(it.status)} />
+                <Typography variant="body2" color="text.secondary">
+                  {progress}/{total}
+                </Typography>
+                {it.is_required && <Chip size="small" color="warning" label="Обязательный" />}
+                {photosMissing > 0 && (
+                  <Chip
+                    size="small"
+                    color="warning"
+                    variant="outlined"
+                    icon={<PhotoCameraOutlinedIcon />}
+                    label={`Без обязательного фото: ${photosMissing}`}
+                  />
+                )}
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails>
+              {shiftId && <ChecklistInstanceItems shiftId={shiftId} instanceId={String(it.id)} />}
+            </AccordionDetails>
+          </Accordion>
+        );
+      })}
     </Box>
   );
 };

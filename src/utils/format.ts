@@ -117,3 +117,39 @@ export const formatRateBadge = (rate: CurrentRate | null | undefined): string =>
 
 export const checklistStatusLabel = (status: string | null | undefined): string =>
   (status && CHECKLIST_STATUS_LABELS[status]) || status || '—';
+
+// --- Фото к пунктам чек-листов (checklist_photos) ---
+
+// Требование к фото на пункте шаблона (enum PhotoRequirement). Дефолт none.
+export const PHOTO_REQUIREMENT_LABELS: Record<string, string> = {
+  none: 'Нет',
+  optional: 'Опционально',
+  required: 'Обязательно',
+};
+
+// Короткий текст для чипа-индикатора в превью пунктов («Фото: опц./обяз.»).
+export const PHOTO_REQUIREMENT_SHORT: Record<string, string> = {
+  none: 'нет',
+  optional: 'опц.',
+  required: 'обяз.',
+};
+
+export const PHOTO_REQUIREMENT_CHOICES = Object.entries(PHOTO_REQUIREMENT_LABELS).map(
+  ([id, name]) => ({ id, name }),
+);
+
+// Источник фото (enum PhotoSource). Дефолт camera. Только подсказка мобильному UI.
+export const PHOTO_SOURCE_LABELS: Record<string, string> = {
+  camera: 'Только камера',
+  camera_or_gallery: 'Камера или галерея',
+};
+
+export const PHOTO_SOURCE_CHOICES = Object.entries(PHOTO_SOURCE_LABELS).map(([id, name]) => ({
+  id,
+  name,
+}));
+
+// Метка момента/места на фото: camera — реальная съёмка («Снято»); camera_or_gallery —
+// фото могло быть выбрано из галереи, тогда метка = момент добавления («Добавлено»).
+export const photoCaptureLabel = (source: string | null | undefined): string =>
+  source === 'camera_or_gallery' ? 'Добавлено' : 'Снято';
