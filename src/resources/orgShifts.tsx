@@ -73,6 +73,13 @@ const ShiftsEmpty = () => {
 const roleField = (r: RaRecord) => memberRoleLabel(r.role);
 const statusField = (r: RaRecord) => shiftStatusLabel(r.status);
 const durationField = (r: RaRecord) => formatDuration(r.worked_seconds);
+// Точка смены: денормализованный work_location { name, address } | null (см. backend.md).
+const workLocationName = (r: RaRecord) => r.work_location?.name ?? '—';
+const workLocationLabel = (wl: { name?: string | null; address?: string | null } | null): string => {
+  if (!wl) return '—';
+  const name = wl.name ?? '—';
+  return wl.address ? `${name} · ${wl.address}` : name;
+};
 const requiredBadge = (r: RaRecord) =>
   r.has_incomplete_required_checklists ? (
     <Chip size="small" color="warning" label="Есть незаполненные" />
@@ -99,6 +106,7 @@ const OrgShiftDatagrid = () => {
       <DateField source="started_at" label="Начало" showTime />
       <DateField source="finished_at" label="Конец" showTime emptyText="—" />
       <FunctionField label="Отработано" render={durationField} />
+      <FunctionField label="Точка" render={workLocationName} sortable={false} />
       <FunctionField label="Чек-листы" render={requiredBadge} />
     </Datagrid>
   );
@@ -140,6 +148,7 @@ const ShiftHeader = () => {
       <InfoRow label="Роль">{memberRoleLabel(record.role)}</InfoRow>
       <InfoRow label="Кастомная роль">{record.custom_role_name ?? '—'}</InfoRow>
       <InfoRow label="Статус">{shiftStatusLabel(record.status)}</InfoRow>
+      <InfoRow label="Точка">{workLocationLabel(record.work_location ?? null)}</InfoRow>
       <InfoRow label="Начало">{formatDateTime(record.started_at)}</InfoRow>
       <InfoRow label="Конец">
         {record.finished_at ? formatDateTime(record.finished_at) : '—'}

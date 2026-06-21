@@ -347,6 +347,7 @@ export const dataProvider: DataProvider = {
       const body: Record<string, unknown> = {};
       for (const k of [
         'geo_check_enabled',
+        'require_work_location',
         'auto_finish_hours',
         'max_pause_minutes',
         'max_pauses_per_shift',
