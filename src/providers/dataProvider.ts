@@ -210,6 +210,48 @@ export interface OrgStatsQuery {
   date_to?: string;
 }
 
+// Фильтры детального отчёта payroll (расширение базового payroll) и экспорта.
+// user_ids/location_ids шлются повторяемыми query-параметрами; location_ids может
+// содержать спец-значение 'none' (смены без точки). granularity=none → плоский агрегат.
+export interface PayrollQuery {
+  date_from?: string; // UTC ISO
+  date_to?: string;
+  granularity?: 'none' | 'day' | 'week' | 'month';
+  user_ids?: string[];
+  location_ids?: string[];
+  tz?: string; // IANA, нарезка корзин в этой таймзоне
+  only_missing_rate?: boolean;
+}
+
+// Query payroll/export: повторяемые user_ids/location_ids, булев only_missing_rate.
+const buildPayrollQuery = (q: PayrollQuery): URLSearchParams => {
+  const search = new URLSearchParams();
+  if (q.date_from) search.set('date_from', q.date_from);
+  if (q.date_to) search.set('date_to', q.date_to);
+  if (q.granularity) search.set('granularity', q.granularity);
+  if (q.tz) search.set('tz', q.tz);
+  if (q.only_missing_rate) search.set('only_missing_rate', 'true');
+  for (const id of q.user_ids ?? []) search.append('user_ids', id);
+  for (const id of q.location_ids ?? []) search.append('location_ids', id);
+  return search;
+};
+
+// Имя файла из Content-Disposition (filename* в приоритете). При CORS заголовок может быть
+// недоступен (нужен Access-Control-Expose-Headers) — вызывающий передаёт запасное имя.
+const filenameFromDisposition = (header: string | null): string | null => {
+  if (!header) return null;
+  const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(header);
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1].trim().replace(/^"|"$/g, ''));
+    } catch {
+      /* битый percent-encoding — падать обратно на plain filename */
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(header);
+  return plain?.[1] ? plain[1].trim() : null;
+};
+
 // Query-строка из непустых значений (для кастомных методов вне GetListParams).
 const toSearch = (query: Record<string, string | undefined>): string => {
   const search = new URLSearchParams();
@@ -519,9 +561,44 @@ export const dataProvider: DataProvider = {
   deleteMemberRate: (memberId: string, rateId: string) =>
     request(`${orgBase()}/members/${memberId}/rates/${rateId}`, { method: 'DELETE' }),
   // Отчёт «сколько кому заплатить»; границы — UTC ISO, date_to включительно (как в date_filters).
-  getPayroll: (query: { date_from?: string; date_to?: string }) => {
-    const qs = toSearch({ ...query });
+  // granularity != none → у каждого items[] приходит breakdown[] (детализация по корзинам).
+  getPayroll: (query: PayrollQuery) => {
+    const qs = buildPayrollQuery(query).toString();
     return request(`${orgBase()}/payroll${qs ? `?${qs}` : ''}`);
+  },
+  // Экспорт payroll в .xlsx: бинарный ответ (НЕ конверт {data,error}). Ошибки до отдачи файла
+  // приходят JSON-конвертом — распознаём по Content-Type и бросаем HttpError, как request().
+  exportPayroll: async (
+    query: PayrollQuery,
+  ): Promise<{ blob: Blob; filename: string | null }> => {
+    const token = getAccessToken();
+    const headers = new Headers({
+      Accept:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/json',
+    });
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    const search = buildPayrollQuery(query);
+    search.set('format', 'xlsx');
+    const res = await fetch(`${API_BASE_URL}${orgBase()}/payroll/export?${search.toString()}`, {
+      headers,
+    });
+    const contentType = res.headers.get('Content-Type') ?? '';
+    if (!res.ok || contentType.includes('application/json')) {
+      let json: any;
+      try {
+        json = await res.json();
+      } catch {
+        json = null;
+      }
+      const err = json?.error;
+      throw new HttpError(
+        err?.message ?? res.statusText ?? 'Ошибка экспорта',
+        res.status,
+        err ? { ...err } : { message: res.statusText },
+      );
+    }
+    const blob = await res.blob();
+    return { blob, filename: filenameFromDisposition(res.headers.get('Content-Disposition')) };
   },
 
   // --- Файловое хранилище (file_storage): общий слой для фич-потребителей ---

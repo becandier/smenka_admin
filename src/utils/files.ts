@@ -130,3 +130,19 @@ export const canDeleteFile = (
   isSuperAdmin: boolean,
   isUploader: boolean,
 ): boolean => isSuperAdmin || isUploader || orgRole === 'owner' || orgRole === 'admin';
+
+// --- Скачивание бинарного ответа (экспорт отчётов в .xlsx и т.п.) ---
+// Сохраняет Blob как файл через временную object-URL ссылку. Сам fetch живёт в dataProvider;
+// триггер скачивания (DOM-side-effect) — здесь, чтобы провайдер не трогал DOM.
+export const saveBlob = (blob: Blob, filename: string): void => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Отзываем object-URL отложенно: синхронный revoke сразу после click() в части браузеров
+  // (Firefox/WebKit) делает URL недействительным до старта чтения и тихо отменяет скачивание.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+};
