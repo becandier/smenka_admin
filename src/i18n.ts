@@ -12,6 +12,7 @@ const messages = {
     'work-locations': { name: 'Точка |||| Точки' },
     'checklist-templates': { name: 'Чек-лист |||| Чек-листы' },
     'org-shifts': { name: 'Смена |||| Смены' },
+    'penalty-templates': { name: 'Шаблон штрафа |||| Шаблоны штрафов' },
     'audit-logs': { name: 'Аудит |||| Аудит' },
   },
 };

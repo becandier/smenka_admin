@@ -63,6 +63,8 @@ export const PayrollPage = () => {
   const [locationIds, setLocationIds] = useState<string[]>([]);
   const [granularity, setGranularity] = useState<Granularity>('day');
   const [onlyMissingRate, setOnlyMissingRate] = useState(false);
+  // Штрафы учитываются по умолчанию (контракт бэка include_penalties default true).
+  const [includePenalties, setIncludePenalties] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
 
   const [report, setReport] = useState<PayrollReport | null>(null);
@@ -84,8 +86,9 @@ export const PayrollPage = () => {
       user_ids: userIds.length ? userIds : undefined,
       location_ids: locationIds.length ? locationIds : undefined,
       only_missing_rate: onlyMissingRate || undefined,
+      include_penalties: includePenalties,
     }),
-    [dateFrom, dateTo, granularity, tz, userIds, locationIds, onlyMissingRate],
+    [dateFrom, dateTo, granularity, tz, userIds, locationIds, onlyMissingRate, includePenalties],
   );
 
   useEffect(() => {
@@ -109,7 +112,11 @@ export const PayrollPage = () => {
         if (!active) return;
         setReport(null);
         setError(
-          errorMessage(e, { FORBIDDEN: 'Нет доступа к отчёту по зарплате' }, 'Ошибка загрузки отчёта'),
+          errorMessage(
+            e,
+            { FORBIDDEN: 'Нет доступа к отчёту по зарплате' },
+            'Ошибка загрузки отчёта',
+          ),
         );
       })
       .finally(() => {
@@ -130,7 +137,10 @@ export const PayrollPage = () => {
       notify(
         errorMessage(
           e as ApiError,
-          { FORBIDDEN: 'Нет доступа к экспорту отчёта', VALIDATION_ERROR: 'Неверные параметры экспорта' },
+          {
+            FORBIDDEN: 'Нет доступа к экспорту отчёта',
+            VALIDATION_ERROR: 'Неверные параметры экспорта',
+          },
           'Не удалось выгрузить отчёт',
         ),
         { type: 'error' },
@@ -214,6 +224,8 @@ export const PayrollPage = () => {
           onGranularity={setGranularity}
           onlyMissingRate={onlyMissingRate}
           onOnlyMissingRate={setOnlyMissingRate}
+          includePenalties={includePenalties}
+          onIncludePenalties={setIncludePenalties}
         />
       </Box>
 

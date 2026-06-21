@@ -25,32 +25,44 @@ const HoursCell = ({
   missing: boolean;
 }) => (
   <Tooltip title={`Начислено: ${formatMoneyMinor(gross_amount_minor)}`}>
-    <TableCell
-      align="right"
-      sx={missing ? { bgcolor: 'warning.light' } : undefined}
-    >
+    <TableCell align="right" sx={missing ? { bgcolor: 'warning.light' } : undefined}>
       {formatClockDuration(worked_seconds)}
     </TableCell>
   </Tooltip>
 );
 
-// Ячейка итога с двумя строками: часы (основное) + деньги (мелким) — для колонки/строки итогов.
+// Ячейка итога: часы (основное) + начислено (мелким). Если есть штрафы — добавочная
+// строка «−штраф → к выплате» (net может быть < 0, акцентом). Штрафы — агрегат на
+// сотрудника (не по корзинам), поэтому показываются только в итоговой колонке/строке.
 const TotalCell = ({
   worked_seconds,
   gross_amount_minor,
+  penalty_amount_minor,
+  net_amount_minor,
   bold,
 }: {
   worked_seconds: number;
   gross_amount_minor: number;
+  penalty_amount_minor: number;
+  net_amount_minor: number;
   bold?: boolean;
 }) => (
   <TableCell align="right">
     <Typography variant="body2" sx={{ fontWeight: bold ? 'bold' : 600 }}>
       {formatClockDuration(worked_seconds)}
     </Typography>
-    <Typography variant="caption" color="text.secondary">
+    <Typography variant="caption" color="text.secondary" display="block">
       {formatMoneyMinor(gross_amount_minor)}
     </Typography>
+    {penalty_amount_minor > 0 && (
+      <Typography
+        variant="caption"
+        color={net_amount_minor < 0 ? 'error.main' : 'text.secondary'}
+        display="block"
+      >
+        −{formatMoneyMinor(penalty_amount_minor)} → {formatMoneyMinor(net_amount_minor)}
+      </Typography>
+    )}
   </TableCell>
 );
 
@@ -76,8 +88,8 @@ export const PayrollMatrixView = ({
   if (matrix.columns.length > MAX_MATRIX_COLUMNS) {
     return (
       <Alert severity="warning">
-        Слишком много столбцов ({matrix.columns.length}). Сузьте период или укрупните
-        гранулярность (Неделя/Месяц) — иначе матрица нечитаема.
+        Слишком много столбцов ({matrix.columns.length}). Сузьте период или укрупните гранулярность
+        (Неделя/Месяц) — иначе матрица нечитаема.
       </Alert>
     );
   }
@@ -121,6 +133,8 @@ export const PayrollMatrixView = ({
               <TotalCell
                 worked_seconds={item.worked_seconds}
                 gross_amount_minor={item.gross_amount_minor}
+                penalty_amount_minor={item.penalty_amount_minor}
+                net_amount_minor={item.net_amount_minor}
               />
             </TableRow>
           ))}
@@ -142,6 +156,8 @@ export const PayrollMatrixView = ({
             <TotalCell
               worked_seconds={report.totals.worked_seconds}
               gross_amount_minor={report.totals.gross_amount_minor}
+              penalty_amount_minor={report.totals.penalty_amount_minor}
+              net_amount_minor={report.totals.net_amount_minor}
               bold
             />
           </TableRow>

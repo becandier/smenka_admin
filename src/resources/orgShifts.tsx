@@ -40,6 +40,7 @@ import { isDayRangeInvalid } from '../utils/dates';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { DateRangeAlert } from '../components/DateRangeAlert';
 import { ChecklistItemPhotos } from '../components/ChecklistItemPhotos';
+import { ShiftPenaltySection } from './penalties';
 
 const statusChoices = [
   { id: 'active', name: 'Активна' },
@@ -75,7 +76,9 @@ const statusField = (r: RaRecord) => shiftStatusLabel(r.status);
 const durationField = (r: RaRecord) => formatDuration(r.worked_seconds);
 // Точка смены: денормализованный work_location { name, address } | null (см. backend.md).
 const workLocationName = (r: RaRecord) => r.work_location?.name ?? '—';
-const workLocationLabel = (wl: { name?: string | null; address?: string | null } | null): string => {
+const workLocationLabel = (
+  wl: { name?: string | null; address?: string | null } | null,
+): string => {
   if (!wl) return '—';
   const name = wl.name ?? '—';
   return wl.address ? `${name} · ${wl.address}` : name;
@@ -330,6 +333,8 @@ export const OrgShiftShow = () => (
       <SectionCard title="Смена">
         <ShiftHeader />
       </SectionCard>
+      {/* Штраф за смену — пишущее действие owner/admin (super_admin не ведёт штрафы). */}
+      <ShiftPenaltySection />
       <SectionCard title="Паузы">
         <PausesBlock />
       </SectionCard>

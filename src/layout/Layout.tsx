@@ -13,6 +13,7 @@ import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import SettingsIcon from '@mui/icons-material/Settings';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import CurrencyRubleIcon from '@mui/icons-material/CurrencyRuble';
+import MoneyOffIcon from '@mui/icons-material/MoneyOff';
 import { OrgSwitcher } from '../components/OrgSwitcher';
 import { useCurrentOrg } from '../orgContext';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
@@ -84,9 +85,17 @@ const MyMenu = () => {
             leftIcon={<ChecklistIcon />}
           />
           <Menu.Item to="/org-stats" primaryText="Статистика" leftIcon={<BarChartIcon />} />
-          {/* Зарплата — последняя в группе, только для owner/admin (super_admin не видит). */}
+          {/* Зарплата и Шаблоны штрафов — только для owner/admin (super_admin не ведёт
+              штрафы/зарплату конкретной организации). */}
           {isOrgManager && (
             <Menu.Item to="/payroll" primaryText="Зарплата" leftIcon={<CurrencyRubleIcon />} />
+          )}
+          {isOrgManager && (
+            <Menu.Item
+              to="/penalty-templates"
+              primaryText="Шаблоны штрафов"
+              leftIcon={<MoneyOffIcon />}
+            />
           )}
         </>
       )}

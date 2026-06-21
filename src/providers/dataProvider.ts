@@ -6,13 +6,20 @@ import {
   localDayEndToUtcIso,
   localDayStartToUtcIso,
 } from '../utils/dates';
+import { parseRublesToMinor } from '../utils/format';
 
 // Категории ресурсов:
 //  - PLATFORM_SERVER — серверная пагинация через /admin/* ({items,total,limit,offset}).
-//  - org-shifts      — серверная пагинация через /organizations/{org}/shifts.
+//  - org-shifts/penalties — серверная пагинация через /organizations/{org}/...
 //  - ORG_CLIENT      — ограниченные org-списки: грузим целиком, режем/сортируем на клиенте.
 const PLATFORM_SERVER = new Set(['users', 'organizations']);
-const ORG_CLIENT = new Set(['members', 'roles', 'work-locations', 'checklist-templates']);
+const ORG_CLIENT = new Set([
+  'members',
+  'roles',
+  'work-locations',
+  'checklist-templates',
+  'penalty-templates',
+]);
 
 // Единая точка запроса: Bearer + разворачивание конверта {data, error}.
 const request = async (path: string, options: RequestInit = {}): Promise<any> => {
@@ -69,6 +76,8 @@ const clientListPath = (resource: string): string => {
       return `${orgBase()}/locations`;
     case 'checklist-templates':
       return `${orgBase()}/checklist-templates`;
+    case 'penalty-templates':
+      return `${orgBase()}/penalty-templates`;
     default:
       throw new Error(`Нет client-пути для ресурса: ${resource}`);
   }
@@ -82,6 +91,10 @@ const deleteOnePath = (resource: string, id: string): string => {
       return `${orgBase()}/locations/${id}`;
     case 'checklist-templates':
       return `${orgBase()}/checklist-templates/${id}`;
+    case 'penalty-templates':
+      return `${orgBase()}/penalty-templates/${id}`;
+    case 'penalties':
+      return `${orgBase()}/penalties/${id}`;
     default:
       throw new Error(`Удаление не поддержано для ресурса: ${resource}`);
   }
@@ -90,10 +103,19 @@ const deleteOnePath = (resource: string, id: string): string => {
 // member → добавляем плоский custom_role_id для SelectInput'а в форме.
 const mapMember = (m: any): any => ({ ...m, custom_role_id: m?.custom_role?.id ?? null });
 
+// penalty-template → плоское amount_rub (рубли) для NumberInput'а формы; обратную
+// конвертацию в amount_minor делает create/update (деньги хранятся в копейках).
+const mapTemplate = (t: any): any => ({
+  ...t,
+  amount_rub: typeof t?.amount_minor === 'number' ? t.amount_minor / 100 : null,
+});
+
 const loadClient = async (resource: string): Promise<any[]> => {
   const data = await request(clientListPath(resource));
   const items: any[] = data?.items ?? [];
-  return resource === 'members' ? items.map(mapMember) : items;
+  if (resource === 'members') return items.map(mapMember);
+  if (resource === 'penalty-templates') return items.map(mapTemplate);
+  return items;
 };
 
 // Клиентская пагинация/сортировка/фильтрация для ограниченных org-списков.
@@ -221,6 +243,8 @@ export interface PayrollQuery {
   location_ids?: string[];
   tz?: string; // IANA, нарезка корзин в этой таймзоне
   only_missing_rate?: boolean;
+  // Учитывать штрафы (penalty/net-поля). Бэк по умолчанию true; false шлём явно (fines).
+  include_penalties?: boolean;
 }
 
 // Query payroll/export: повторяемые user_ids/location_ids, булев only_missing_rate.
@@ -231,6 +255,8 @@ const buildPayrollQuery = (q: PayrollQuery): URLSearchParams => {
   if (q.granularity) search.set('granularity', q.granularity);
   if (q.tz) search.set('tz', q.tz);
   if (q.only_missing_rate) search.set('only_missing_rate', 'true');
+  // Дефолт бэка — true; явно шлём только выключение, чтобы не плодить лишний query при include.
+  if (q.include_penalties === false) search.set('include_penalties', 'false');
   for (const id of q.user_ids ?? []) search.append('user_ids', id);
   for (const id of q.location_ids ?? []) search.append('location_ids', id);
   return search;
@@ -283,6 +309,15 @@ export const dataProvider: DataProvider = {
         withSort: false,
       });
     }
+    if (resource === 'penalties') {
+      // фикс-сортировка бэка occurred_at DESC → sort/order не шлём (withSort:false).
+      return orgServerList(params, {
+        path: 'penalties',
+        defaultSort: 'occurred_at',
+        filterKeys: ['member_id', 'shift_id', 'date_from', 'date_to'],
+        withSort: false,
+      });
+    }
     if (ORG_CLIENT.has(resource)) {
       if (!getCurrentOrgId()) return { data: [], total: 0 };
       return clientPaginate(await loadClient(resource), params);
@@ -305,6 +340,9 @@ export const dataProvider: DataProvider = {
     if (resource === 'checklist-templates') {
       // детальная схема с пунктами
       return { data: await request(`${orgBase()}/checklist-templates/${id}`) };
+    }
+    if (resource === 'penalties') {
+      return { data: await request(`${orgBase()}/penalties/${id}`) };
     }
     if (ORG_CLIENT.has(resource)) {
       const found = (await loadClient(resource)).find((r) => String(r.id) === id);
@@ -368,6 +406,40 @@ export const dataProvider: DataProvider = {
       const body = { name: d.name, type: d.type, is_required: Boolean(d.is_required) };
       return {
         data: await request(`${orgBase()}/checklist-templates`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        }),
+      };
+    }
+    if (resource === 'penalty-templates') {
+      const minor = parseRublesToMinor(String(d.amount_rub ?? ''));
+      if (minor === null) {
+        throw new HttpError('Некорректная сумма', 400, {
+          code: 'VALIDATION_ERROR',
+          message: 'Некорректная сумма',
+          errors: { amount_rub: 'Сумма в рублях больше нуля, не более 2 знаков' },
+        });
+      }
+      const created = await request(`${orgBase()}/penalty-templates`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: d.reason, amount_minor: minor }),
+      });
+      return { data: mapTemplate(created) };
+    }
+    if (resource === 'penalties') {
+      // amount_minor/occurred_at собирает форма-диалог (см. resources/penalties).
+      const body = {
+        member_id: d.member_id,
+        template_id: d.template_id ?? null,
+        reason: d.reason,
+        amount_minor: d.amount_minor,
+        currency: d.currency ?? 'RUB',
+        shift_id: d.shift_id ?? null,
+        occurred_at: d.occurred_at ?? null,
+        comment: d.comment ?? null,
+      };
+      return {
+        data: await request(`${orgBase()}/penalties`, {
           method: 'POST',
           body: JSON.stringify(body),
         }),
@@ -458,6 +530,45 @@ export const dataProvider: DataProvider = {
         });
       }
       return { data: mapMember({ ...previousData, ...data, ...(result ?? {}) }) };
+    }
+    if (resource === 'penalty-templates') {
+      const body: Record<string, unknown> = {};
+      if ('reason' in data) body.reason = data.reason;
+      if ('amount_rub' in data) {
+        const minor = parseRublesToMinor(String(data.amount_rub ?? ''));
+        if (minor === null) {
+          throw new HttpError('Некорректная сумма', 400, {
+            code: 'VALIDATION_ERROR',
+            message: 'Некорректная сумма',
+            errors: { amount_rub: 'Сумма в рублях больше нуля, не более 2 знаков' },
+          });
+        }
+        body.amount_minor = minor;
+      }
+      const updated = await request(`${orgBase()}/penalty-templates/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      return { data: mapTemplate(updated ?? { ...data, id }) };
+    }
+    if (resource === 'penalties') {
+      // Диалог-форма (resources/penalties) кладёт в data только изменяемые ключи.
+      const body: Record<string, unknown> = {};
+      for (const k of [
+        'reason',
+        'amount_minor',
+        'currency',
+        'shift_id',
+        'occurred_at',
+        'comment',
+      ]) {
+        if (k in data) body[k] = data[k];
+      }
+      const updated = await request(`${orgBase()}/penalties/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      return { data: updated ?? { ...data, id } };
     }
     return notImplemented();
   },
@@ -568,13 +679,10 @@ export const dataProvider: DataProvider = {
   },
   // Экспорт payroll в .xlsx: бинарный ответ (НЕ конверт {data,error}). Ошибки до отдачи файла
   // приходят JSON-конвертом — распознаём по Content-Type и бросаем HttpError, как request().
-  exportPayroll: async (
-    query: PayrollQuery,
-  ): Promise<{ blob: Blob; filename: string | null }> => {
+  exportPayroll: async (query: PayrollQuery): Promise<{ blob: Blob; filename: string | null }> => {
     const token = getAccessToken();
     const headers = new Headers({
-      Accept:
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/json',
+      Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/json',
     });
     if (token) headers.set('Authorization', `Bearer ${token}`);
     const search = buildPayrollQuery(query);

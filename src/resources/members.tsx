@@ -18,6 +18,7 @@ import {
 import { Chip } from '@mui/material';
 import { MEMBER_ROLE_CHOICES, formatRateBadge } from '../utils/format';
 import { MemberRatesSection } from './memberRates';
+import { MemberPenaltiesSection } from './penalties';
 
 const memberFilters = [
   <SearchInput key="q" source="q" alwaysOn />,
@@ -58,5 +59,6 @@ export const MemberEdit = () => (
       <DeleteButton label="Удалить из организации" mutationMode="pessimistic" />
     </SimpleForm>
     <MemberRatesSection />
+    <MemberPenaltiesSection />
   </Edit>
 );
