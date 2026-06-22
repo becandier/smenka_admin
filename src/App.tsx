@@ -8,6 +8,7 @@ import PlaceIcon from '@mui/icons-material/Place';
 import ChecklistIcon from '@mui/icons-material/Checklist';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import HistoryIcon from '@mui/icons-material/History';
+import MoneyOffIcon from '@mui/icons-material/MoneyOff';
 import { dataProvider } from './providers/dataProvider';
 import { authProvider, type Permissions } from './providers/authProvider';
 import { i18nProvider } from './i18n';
@@ -26,6 +27,11 @@ import {
   ChecklistTemplateEdit,
 } from './resources/checklistTemplates';
 import { OrgShiftList, OrgShiftShow } from './resources/orgShifts';
+import {
+  PenaltyTemplateList,
+  PenaltyTemplateCreate,
+  PenaltyTemplateEdit,
+} from './resources/penaltyTemplates';
 import { AuditLogList } from './resources/auditLogs';
 import { SettingsPage } from './resources/settings';
 import { OrgStatsPage } from './resources/orgStats';
@@ -92,6 +98,15 @@ export const App = () => (
             list={OrgShiftList}
             show={OrgShiftShow}
             icon={AccessTimeIcon}
+          />
+          {/* Шаблоны штрафов — CRUD только для org owner/admin (компоненты режут super_admin
+              и не-менеджеров; в меню пункт виден только owner/admin). */}
+          <Resource
+            name="penalty-templates"
+            list={PenaltyTemplateList}
+            create={PenaltyTemplateCreate}
+            edit={PenaltyTemplateEdit}
+            icon={MoneyOffIcon}
           />
           {/* Аудит — read-only лента действий owner/admin; без create/edit/show-мутаций. */}
           <Resource name="audit-logs" list={AuditLogList} icon={HistoryIcon} />

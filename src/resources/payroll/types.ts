@@ -15,6 +15,8 @@ export interface PayrollBucket {
 }
 
 // Строка по сотруднику. breakdown присутствует только при granularity != none.
+// penalty_*/net_* — additive (fines): при include_penalties=false бэк отдаёт 0 и net=gross.
+// Штрафы не разбиваются по корзинам (breakdown их не содержит) — только агрегат на сотрудника.
 export interface PayrollItem {
   user_id: string;
   user_name: string;
@@ -24,7 +26,20 @@ export interface PayrollItem {
   unpaid_seconds: number;
   unpaid_shifts_count: number;
   has_missing_rate: boolean;
+  penalty_amount_minor: number;
+  penalties_count: number;
+  net_amount_minor: number; // gross − penalty; может быть < 0 (не обрезаем)
   breakdown?: PayrollBucket[];
+}
+
+// Итоги отчёта (additive penalty_*/net_* — fines).
+export interface PayrollTotals {
+  worked_seconds: number;
+  shifts_count: number;
+  gross_amount_minor: number;
+  penalty_amount_minor: number;
+  penalties_count: number;
+  net_amount_minor: number;
 }
 
 // Ответ GET /organizations/{org}/payroll. granularity/tz эхо-возвращаются (что применилось).
@@ -34,7 +49,7 @@ export interface PayrollReport {
   tz?: string;
   currency: string;
   items: PayrollItem[];
-  totals: { worked_seconds: number; shifts_count: number; gross_amount_minor: number };
+  totals: PayrollTotals;
 }
 
 export type { PayrollQuery };

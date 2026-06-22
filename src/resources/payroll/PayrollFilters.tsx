@@ -41,6 +41,8 @@ interface PayrollFiltersProps {
   onGranularity: (value: Granularity) => void;
   onlyMissingRate: boolean;
   onOnlyMissingRate: (value: boolean) => void;
+  includePenalties: boolean;
+  onIncludePenalties: (value: boolean) => void;
 }
 
 // Панель фильтров экрана «Зарплата»: период, сотрудники, точки, гранулярность, «только без ставки».
@@ -59,6 +61,8 @@ export const PayrollFilters = ({
   onGranularity,
   onlyMissingRate,
   onOnlyMissingRate,
+  includePenalties,
+  onIncludePenalties,
 }: PayrollFiltersProps) => {
   const { data: members } = useGetList('members', {
     pagination: { page: 1, perPage: 200 },
@@ -146,6 +150,17 @@ export const PayrollFilters = ({
           />
         }
         label="Только без ставки"
+      />
+
+      <FormControlLabel
+        control={
+          <Checkbox
+            size="small"
+            checked={includePenalties}
+            onChange={(e) => onIncludePenalties(e.target.checked)}
+          />
+        }
+        label="Учитывать штрафы"
       />
     </Stack>
   );

@@ -30,14 +30,26 @@ const MissingRateBadge = ({ title }: { title: string }) => (
   </Tooltip>
 );
 
+// Ячейка «Штраф»: сумма штрафов + подсказка с количеством (если штрафы есть).
+const PenaltyCell = ({ amount_minor, count }: { amount_minor: number; count: number }) =>
+  count > 0 ? (
+    <Tooltip title={`${count} шт.`}>
+      <TableCell align="right">{formatMoneyMinor(amount_minor)}</TableCell>
+    </Tooltip>
+  ) : (
+    <TableCell align="right">{formatMoneyMinor(amount_minor)}</TableCell>
+  );
+
+// Ячейка «К выплате» (net = начислено − штрафы). Отрицательное (штрафы > начислений)
+// показываем как есть, акцентом, не обрезая до нуля (ТЗ fines).
+const NetCell = ({ amount_minor }: { amount_minor: number }) => (
+  <TableCell align="right" sx={amount_minor < 0 ? { color: 'error.main' } : undefined}>
+    {formatMoneyMinor(amount_minor)}
+  </TableCell>
+);
+
 // Вложенная таблица дневной детализации (breakdown[]) одного сотрудника.
-const BreakdownTable = ({
-  item,
-  granularity,
-}: {
-  item: PayrollItem;
-  granularity: Granularity;
-}) => (
+const BreakdownTable = ({ item, granularity }: { item: PayrollItem; granularity: Granularity }) => (
   <Box sx={{ pl: 4, py: 1 }}>
     <Table size="small">
       <TableHead>
@@ -101,6 +113,8 @@ export const PayrollListView = ({
           <TableCell align="right">Отработано</TableCell>
           <TableCell align="right">Смен</TableCell>
           <TableCell align="right">Начислено</TableCell>
+          <TableCell align="right">Штраф</TableCell>
+          <TableCell align="right">К выплате</TableCell>
           <TableCell />
         </TableRow>
       </TableHead>
@@ -124,13 +138,18 @@ export const PayrollListView = ({
                 <TableCell align="right">{formatClockDuration(item.worked_seconds)}</TableCell>
                 <TableCell align="right">{item.shifts_count}</TableCell>
                 <TableCell align="right">{formatMoneyMinor(item.gross_amount_minor)}</TableCell>
+                <PenaltyCell
+                  amount_minor={item.penalty_amount_minor}
+                  count={item.penalties_count}
+                />
+                <NetCell amount_minor={item.net_amount_minor} />
                 <TableCell>
                   {item.has_missing_rate && <MissingRateBadge title={missingRateHint(item)} />}
                 </TableCell>
               </TableRow>
               {hasBreakdown && isOpen && (
                 <TableRow>
-                  <TableCell colSpan={6} sx={{ py: 0, borderBottom: 0 }}>
+                  <TableCell colSpan={8} sx={{ py: 0, borderBottom: 0 }}>
                     <BreakdownTable item={item} granularity={granularity} />
                   </TableCell>
                 </TableRow>
@@ -144,6 +163,11 @@ export const PayrollListView = ({
           <TableCell align="right">{formatClockDuration(report.totals.worked_seconds)}</TableCell>
           <TableCell align="right">{report.totals.shifts_count}</TableCell>
           <TableCell align="right">{formatMoneyMinor(report.totals.gross_amount_minor)}</TableCell>
+          <PenaltyCell
+            amount_minor={report.totals.penalty_amount_minor}
+            count={report.totals.penalties_count}
+          />
+          <NetCell amount_minor={report.totals.net_amount_minor} />
           <TableCell />
         </TableRow>
       </TableBody>
