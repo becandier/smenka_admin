@@ -7,6 +7,11 @@ import {
   localDayStartToUtcIso,
 } from '../utils/dates';
 import { parseRublesToMinor } from '../utils/format';
+import type {
+  AccessState,
+  FileUploadResult,
+  ReorderInput,
+} from '../resources/knowledge/types';
 
 // Категории ресурсов:
 //  - PLATFORM_SERVER — серверная пагинация через /admin/* ({items,total,limit,offset}).
@@ -318,6 +323,13 @@ export const dataProvider: DataProvider = {
         withSort: false,
       });
     }
+    if (resource === 'knowledge/nodes') {
+      // Дерево целиком (tree=true), без пагинации; каждый верхнеуровневый узел с children.
+      if (!getCurrentOrgId()) return { data: [], total: 0 };
+      const data = await request(`${orgBase()}/knowledge/nodes?tree=true`);
+      const items: any[] = data?.items ?? [];
+      return { data: items, total: items.length };
+    }
     if (ORG_CLIENT.has(resource)) {
       if (!getCurrentOrgId()) return { data: [], total: 0 };
       return clientPaginate(await loadClient(resource), params);
@@ -343,6 +355,10 @@ export const dataProvider: DataProvider = {
     }
     if (resource === 'penalties') {
       return { data: await request(`${orgBase()}/penalties/${id}`) };
+    }
+    if (resource === 'knowledge/nodes') {
+      // Деталь узла (M3): content обогащён для page, breadcrumbs, null для section.
+      return { data: await request(`${orgBase()}/knowledge/nodes/${id}`) };
     }
     if (ORG_CLIENT.has(resource)) {
       const found = (await loadClient(resource)).find((r) => String(r.id) === id);
@@ -442,6 +458,15 @@ export const dataProvider: DataProvider = {
         data: await request(`${orgBase()}/penalties`, {
           method: 'POST',
           body: JSON.stringify(body),
+        }),
+      };
+    }
+    if (resource === 'knowledge/nodes') {
+      // Создание узла (M1): тело {parent_id?, kind, title, icon?, position?}.
+      return {
+        data: await request(`${orgBase()}/knowledge/nodes`, {
+          method: 'POST',
+          body: JSON.stringify(d),
         }),
       };
     }
@@ -570,6 +595,15 @@ export const dataProvider: DataProvider = {
       });
       return { data: updated ?? { ...data, id } };
     }
+    if (resource === 'knowledge/nodes') {
+      // Partial PATCH (M4): тело = переданные ключи (title?/icon?/all_members?/content?/
+      // parent_id?/position?). Ответ — NodeDetailResponse с обогащённым content.
+      const updated = await request(`${orgBase()}/knowledge/nodes/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      });
+      return { data: updated ?? { ...data, id } };
+    }
     return notImplemented();
   },
 
@@ -585,6 +619,11 @@ export const dataProvider: DataProvider = {
       }
       await request(`${orgBase()}/members/${userId}`, { method: 'DELETE' });
       return { data: fallback };
+    }
+    if (resource === 'knowledge/nodes') {
+      // Удаление узла и поддерева (M5): каскад на бэке. Ответ {data:null}.
+      await request(`${orgBase()}/knowledge/nodes/${id}`, { method: 'DELETE' });
+      return { data: { id: params.id } as any };
     }
     await request(deleteOnePath(resource, id), { method: 'DELETE' });
     return { data: fallback };
@@ -723,4 +762,36 @@ export const dataProvider: DataProvider = {
   getFile: (fileId: string) => request(`/files/${fileId}`),
   // DELETE /files/{id} — uploader/org admin/owner/super_admin; привязанный → FILE_IN_USE (409).
   deleteFile: (fileId: string) => request(`/files/${fileId}`, { method: 'DELETE' }),
+
+  // --- База знаний (knowledge_base): кастомные методы вне стандартного CRUD ---
+  // Переупорядочивание сиблингов (M6): PUT .../reorder, body {parent_id?, ordered_ids}.
+  reorderKnowledge: async (input: ReorderInput): Promise<{ data: null }> => {
+    await request(`${orgBase()}/knowledge/nodes/reorder`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+    return { data: null };
+  },
+  // ACL узла (A1): GET .../{id}/access → {all_members, rules[]}.
+  getKnowledgeAccess: (nodeId: string): Promise<AccessState> =>
+    request(`${orgBase()}/knowledge/nodes/${nodeId}/access`),
+  // Замена ACL узла bulk'ом (A2): PUT .../{id}/access → как GET access.
+  putKnowledgeAccess: (nodeId: string, input: AccessState): Promise<AccessState> =>
+    request(`${orgBase()}/knowledge/nodes/${nodeId}/access`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+  // Загрузка файла/изображения базы знаний: POST /files, category=knowledge_base,
+  // organization_id = текущая org → FileResponse (id + presigned url). url не персистим в content.
+  uploadKnowledgeFile: (file: File): Promise<FileUploadResult> => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('category', 'knowledge_base');
+    const orgId = getCurrentOrgId();
+    if (orgId) form.append('organization_id', orgId);
+    return request('/files', { method: 'POST', body: form });
+  },
+  // Свежий presigned url по file_id (дотягивание протухшей/null ссылки на чтении).
+  getKnowledgeFile: (fileId: string): Promise<FileUploadResult> =>
+    request(`/files/${fileId}`),
 };

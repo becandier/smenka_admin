@@ -14,6 +14,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import CurrencyRubleIcon from '@mui/icons-material/CurrencyRuble';
 import MoneyOffIcon from '@mui/icons-material/MoneyOff';
+import MenuBookIcon from '@mui/icons-material/MenuBook';
 import { OrgSwitcher } from '../components/OrgSwitcher';
 import { useCurrentOrg } from '../orgContext';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
@@ -85,6 +86,9 @@ const MyMenu = () => {
             leftIcon={<ChecklistIcon />}
           />
           <Menu.Item to="/org-stats" primaryText="Статистика" leftIcon={<BarChartIcon />} />
+          {/* База знаний — owner/admin своей org + super_admin (сквозной доступ);
+              видимость совпадает с гейтингом showOps (org выбрана и роль управляющая). */}
+          <Menu.Item to="/knowledge" primaryText="База знаний" leftIcon={<MenuBookIcon />} />
           {/* Зарплата и Шаблоны штрафов — только для owner/admin (super_admin не ведёт
               штрафы/зарплату конкретной организации). */}
           {isOrgManager && (
