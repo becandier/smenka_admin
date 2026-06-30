@@ -1,5 +1,5 @@
 import { AppBar, Layout as RaLayout, Menu, TitlePortal, usePermissions } from 'react-admin';
-import { Divider, ListSubheader } from '@mui/material';
+import { Box, Divider, ListSubheader } from '@mui/material';
 import type { ReactNode } from 'react';
 import PeopleIcon from '@mui/icons-material/People';
 import BusinessIcon from '@mui/icons-material/Business';
@@ -20,8 +20,16 @@ import { useCurrentOrg } from '../orgContext';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
 import type { Permissions } from '../providers/authProvider';
 
+// AppBar — фирменный синий (primary). Лок-ап слева у TitlePortal; на синем фоне —
+// версия -inverse (белая). Бренд-цвета берём из темы, не хардкодом.
 const MyAppBar = () => (
-  <AppBar>
+  <AppBar color="primary">
+    <Box
+      component="img"
+      src="/smenka-lockup-inverse.svg"
+      alt="Smenka"
+      sx={{ height: 26, mr: 2, display: 'block' }}
+    />
     <TitlePortal />
     <OrgSwitcher />
   </AppBar>

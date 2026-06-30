@@ -14,7 +14,17 @@ import {
   ToggleButtonGroup,
   Typography,
 } from '@mui/material';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { chartPalette } from '../brand';
 import { useCurrentOrg } from '../orgContext';
 import { DateRangeFields } from '../components/DateRangeFields';
 import { formatDateTime, formatDuration } from '../utils/format';
@@ -241,7 +251,11 @@ export const OrgStatsPage = () => {
                     <XAxis dataKey="name" />
                     <YAxis />
                     <Tooltip formatter={(value) => [`${String(value ?? '')} ч`, 'Отработано']} />
-                    <Bar dataKey="hours" fill="#4A90D9" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="hours" radius={[6, 6, 0, 0]}>
+                      {chartData.map((d, i) => (
+                        <Cell key={d.name} fill={chartPalette[i % chartPalette.length]} />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               )}

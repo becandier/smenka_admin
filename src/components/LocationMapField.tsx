@@ -14,6 +14,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useYandexMaps } from './useYandexMaps';
+import { brand } from '../brand';
 
 // Карта-пикер рабочей точки (Яндекс.Карты 2.1) внутри <SimpleForm>.
 // Двусторонне связан с RHF-полями latitude / longitude / radius_meters / address:
@@ -141,8 +142,8 @@ export const LocationMapField = () => {
 
       if (!circleRef.current) {
         circleRef.current = new api.Circle([coords, radius], {}, {
-          fillColor: '#1976d233',
-          strokeColor: '#1976d2',
+          fillColor: `${brand.blue}33`, // Smenka Blue, 20% alpha
+          strokeColor: brand.blue,
           strokeWidth: 2,
           strokeOpacity: 0.9,
         });

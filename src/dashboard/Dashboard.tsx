@@ -2,8 +2,18 @@ import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Title, useDataProvider, usePermissions } from 'react-admin';
 import { Button, Card, CardContent, Typography, Grid, Box, CircularProgress } from '@mui/material';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import type { Permissions } from '../providers/authProvider';
+import { chartPalette } from '../brand';
 
 interface PlatformStats {
   users_total: number;
@@ -154,7 +164,11 @@ export const Dashboard = () => {
                   <XAxis dataKey="name" />
                   <YAxis allowDecimals={false} />
                   <Tooltip />
-                  <Bar dataKey="value" fill="#4A90D9" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                    {chartData.map((d, i) => (
+                      <Cell key={d.name} fill={chartPalette[i % chartPalette.length]} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>

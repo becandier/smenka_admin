@@ -5,7 +5,8 @@ import { useCurrentOrg } from '../orgContext';
 import { getCurrentOrg, type CurrentOrg } from '../config';
 import type { Permissions } from '../providers/authProvider';
 
-const WHITE = '#fff';
+// Текст/иконки на синем AppBar = primary.contrastText (см. theme.ts). Без хардкода белого.
+const ON_BAR = 'primary.contrastText';
 
 // Переключатель организации в app-баре.
 //  - owner/admin: выпадающий список своих орг (owner|admin), авто-выбор единственной.
@@ -69,9 +70,9 @@ export const OrgSwitcher = () => {
         <Chip
           variant="outlined"
           label={`Кабинет: ${org.name}`}
-          sx={{ color: WHITE, borderColor: 'rgba(255,255,255,0.7)' }}
+          sx={{ color: ON_BAR, borderColor: 'rgba(255,255,255,0.7)' }}
         />
-        <Button size="small" sx={{ color: WHITE }} onClick={() => open(null)}>
+        <Button size="small" sx={{ color: ON_BAR }} onClick={() => open(null)}>
           Закрыть
         </Button>
       </Box>
@@ -88,8 +89,8 @@ export const OrgSwitcher = () => {
         displayEmpty
         fullWidth
         sx={{
-          color: WHITE,
-          '.MuiSvgIcon-root': { color: WHITE },
+          color: ON_BAR,
+          '.MuiSvgIcon-root': { color: ON_BAR },
           '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.5)' },
         }}
         onChange={(e) => {

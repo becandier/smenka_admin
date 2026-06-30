@@ -14,6 +14,7 @@ import { authProvider, type Permissions } from './providers/authProvider';
 import { i18nProvider } from './i18n';
 import { theme } from './theme';
 import { Layout } from './layout/Layout';
+import { LoginPage } from './layout/LoginPage';
 import { OrgProvider } from './orgContext';
 import { Dashboard } from './dashboard/Dashboard';
 import { UserList, UserEdit, UserShow } from './resources/users';
@@ -49,6 +50,7 @@ export const App = () => (
       i18nProvider={i18nProvider}
       dashboard={Dashboard}
       layout={Layout}
+      loginPage={LoginPage}
       theme={theme}
       requireAuth
     >
