@@ -44,6 +44,26 @@ const loginErrorMessage = (error: unknown): string => {
   }
 };
 
+// GET без авторизации (нужен до входа — конфиг OAuth-кнопок на LoginPage).
+const publicGet = async (path: string): Promise<any> => {
+  const res = await fetch(`${API_BASE_URL}${path}`, { headers: { Accept: 'application/json' } });
+  let json: any;
+  try {
+    json = await res.json();
+  } catch {
+    json = null;
+  }
+  if (!res.ok || json?.error) {
+    // code/status сохраняем по тому же контракту, что post/authGet — на случай, если
+    // ошибку этого хелпера когда-нибудь начнут разбирать по error.code, а не глотать.
+    const err: AuthError = new Error(json?.error?.message ?? 'Ошибка запроса');
+    err.code = json?.error?.code;
+    err.status = res.status;
+    throw err;
+  }
+  return json?.data;
+};
+
 const authGet = async (path: string): Promise<any> => {
   const token = getAccessToken();
   const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -65,6 +85,31 @@ const authGet = async (path: string): Promise<any> => {
   }
   return json?.data;
 };
+
+// Конфигурация OAuth-провайдера для web (oauth_login): показывать кнопку и с каким
+// Client ID/Services ID инициализировать SDK. null — провайдер не настроен супер-админом.
+export interface OauthProviderConfig {
+  client_id: string;
+  enabled: boolean;
+}
+export interface OauthConfig {
+  google: OauthProviderConfig | null;
+  apple: OauthProviderConfig | null;
+}
+
+// GET /auth/oauth/config?client_type=web — public, дергается на LoginPage до рендера кнопок.
+export const getOauthConfig = async (): Promise<OauthConfig> => {
+  const data = await publicGet('/auth/oauth/config?client_type=web');
+  return { google: data?.google ?? null, apple: data?.apple ?? null };
+};
+
+// Параметры входа: пароль ИЛИ OAuth (id-токен, полученный на LoginPage от Google/Apple SDK).
+// useLogin() передаёт params как есть в authProvider.login — переиспользуем его для обеих веток
+// (редирект/инвалидация кэша после входа отрабатывают одинаково).
+export type LoginParams =
+  | { username: string; password: string }
+  | { oauthProvider: 'google'; idToken: string }
+  | { oauthProvider: 'apple'; identityToken: string; email?: string; name?: string };
 
 // Роль + список организаций пользователя для RBAC-гейтинга и OrgSwitcher.
 export interface OrgPermission {
@@ -110,13 +155,25 @@ const loadPermissions = async (): Promise<Permissions> => {
 };
 
 export const authProvider: AuthProvider = {
-  // react-admin шлёт username/password; маппим username → email.
-  login: async ({ username, password }) => {
+  login: async (params: LoginParams) => {
     let data: any;
     try {
-      data = await post('/auth/login', { email: username, password });
+      if (!('oauthProvider' in params)) {
+        // react-admin шлёт username/password; маппим username → email.
+        data = await post('/auth/login', { email: params.username, password: params.password });
+      } else if (params.oauthProvider === 'google') {
+        data = await post('/auth/oauth/google', { id_token: params.idToken, client_type: 'web' });
+      } else {
+        data = await post('/auth/oauth/apple', {
+          identity_token: params.identityToken,
+          client_type: 'web',
+          email: params.email,
+          name: params.name,
+        });
+      }
     } catch (error) {
-      // 423 ACCOUNT_LOCKED / 429 RATE_LIMIT_EXCEEDED → понятная нотификация по коду.
+      // 423 ACCOUNT_LOCKED / 429 RATE_LIMIT_EXCEEDED (пароль) и коды oauth_login
+      // (INVALID_OAUTH_TOKEN и т.д., для них достаточно message) → понятная нотификация.
       // Переписываем message исходной ошибки и пробрасываем её же (сохраняем причину).
       if (error instanceof Error) error.message = loginErrorMessage(error);
       throw error;

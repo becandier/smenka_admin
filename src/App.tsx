@@ -39,6 +39,7 @@ import { OrgStatsPage } from './resources/orgStats';
 import { PayrollPage } from './resources/payroll';
 import { InviteCodePage } from './resources/inviteCode';
 import { KnowledgePage } from './resources/knowledge/KnowledgePage';
+import { PlatformSettingsPage } from './resources/platformSettings';
 
 // Доступ к ресурсам: платформенные (users/organizations) — только super_admin;
 // org-ресурсы доступны при выбранной организации (owner/admin — свои; super_admin — любую).
@@ -120,6 +121,7 @@ export const App = () => (
             <Route path="/org-stats" element={<OrgStatsPage />} />
             <Route path="/payroll" element={<PayrollPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />
+            <Route path="/platform-settings" element={<PlatformSettingsPage />} />
           </CustomRoutes>
         </>
       )}

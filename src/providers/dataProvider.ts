@@ -230,6 +230,17 @@ const orgServerList = async (
   return { data: data?.items ?? [], total: data?.total ?? 0 };
 };
 
+// Настройка Client ID OAuth-провайдеров (oauth_login), платформенная (не per-org).
+// 5 валидных комбинаций: (google,web)/(google,android)/(google,ios)/(apple,ios)/(apple,web).
+export interface OauthProviderRow {
+  provider: 'google' | 'apple';
+  client_type: 'web' | 'ios' | 'android';
+  client_id: string | null;
+  enabled: boolean;
+  updated_by: string | null;
+  updated_at: string | null;
+}
+
 // Окно орг-статистики: ровно один источник — period ЛИБО date_from/date_to (UTC ISO).
 export interface OrgStatsQuery {
   period?: string;
@@ -639,6 +650,22 @@ export const dataProvider: DataProvider = {
 
   // --- Кастомные методы (вызываются через useDataProvider) ---
   getPlatformStats: () => request('/admin/stats'),
+  // Настройки платформы → Провайдеры входа (oauth_login, super_admin-only). Контракт
+  // (backend.md) не фиксирует конверт списка — принимаем и {items:[...]}, и голый массив.
+  getOauthProviders: async (): Promise<OauthProviderRow[]> => {
+    const data = await request('/admin/oauth-providers');
+    if (Array.isArray(data)) return data;
+    return data?.items ?? [];
+  },
+  updateOauthProvider: (
+    provider: string,
+    clientType: string,
+    body: { client_id: string; enabled: boolean },
+  ): Promise<OauthProviderRow> =>
+    request(`/admin/oauth-providers/${provider}/${clientType}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
   getOrgStats: (query: OrgStatsQuery) => request(`${orgBase()}/stats?${toSearch({ ...query })}`),
   // Ротация инвайт-кода организации: POST /organizations/{org}/rotate-invite → { invite_code }.
   // org_id передаётся явно (страница работает с выбранной org, без orgBase-зависимости).

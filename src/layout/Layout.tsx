@@ -11,6 +11,7 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import HistoryIcon from '@mui/icons-material/History';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import SettingsIcon from '@mui/icons-material/Settings';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import CurrencyRubleIcon from '@mui/icons-material/CurrencyRuble';
 import MoneyOffIcon from '@mui/icons-material/MoneyOff';
@@ -76,6 +77,13 @@ const MyMenu = () => {
           <Menu.DashboardItem />
           <Menu.Item to="/users" primaryText="Пользователи" leftIcon={<PeopleIcon />} />
           <Menu.Item to="/organizations" primaryText="Организации" leftIcon={<BusinessIcon />} />
+          {/* Настройки платформы — первый экран будущего раздела платформенных интеграций
+              (сейчас только «Провайдеры входа», oauth_login). */}
+          <Menu.Item
+            to="/platform-settings"
+            primaryText="Настройки платформы"
+            leftIcon={<AdminPanelSettingsIcon />}
+          />
         </>
       )}
 
