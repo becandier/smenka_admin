@@ -17,6 +17,7 @@ import CurrencyRubleIcon from '@mui/icons-material/CurrencyRuble';
 import MoneyOffIcon from '@mui/icons-material/MoneyOff';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import { OrgSwitcher } from '../components/OrgSwitcher';
+import { OAUTH_LOGIN_ENABLED } from '../config';
 import { useCurrentOrg } from '../orgContext';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
 import type { Permissions } from '../providers/authProvider';
@@ -78,12 +79,15 @@ const MyMenu = () => {
           <Menu.Item to="/users" primaryText="Пользователи" leftIcon={<PeopleIcon />} />
           <Menu.Item to="/organizations" primaryText="Организации" leftIcon={<BusinessIcon />} />
           {/* Настройки платформы — первый экран будущего раздела платформенных интеграций
-              (сейчас только «Провайдеры входа», oauth_login). */}
-          <Menu.Item
-            to="/platform-settings"
-            primaryText="Настройки платформы"
-            leftIcon={<AdminPanelSettingsIcon />}
-          />
+              (сейчас только «Провайдеры входа», oauth_login). Скрыт за OAUTH_LOGIN_ENABLED:
+              пока OAuth-вход выключен, раздел провайдеров входа в меню не показываем. */}
+          {OAUTH_LOGIN_ENABLED && (
+            <Menu.Item
+              to="/platform-settings"
+              primaryText="Настройки платформы"
+              leftIcon={<AdminPanelSettingsIcon />}
+            />
+          )}
         </>
       )}
 
