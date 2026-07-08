@@ -3,6 +3,7 @@ import { LoginForm, useLogin, useNotify } from 'react-admin';
 import { Box, Card, CardContent, Divider, Stack } from '@mui/material';
 import AppleIcon from '@mui/icons-material/Apple';
 import { brand } from '../brand';
+import { OAUTH_LOGIN_ENABLED } from '../config';
 import { getOauthConfig, type OauthConfig } from '../providers/authProvider';
 import { useAsync } from '../utils/useAsync';
 
@@ -139,7 +140,7 @@ export const LoginPage = () => {
     }
   };
 
-  const showOauth = Boolean(google || apple);
+  const showOauth = OAUTH_LOGIN_ENABLED && Boolean(google || apple);
 
   return (
     <Box

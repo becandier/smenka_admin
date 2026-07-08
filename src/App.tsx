@@ -40,6 +40,7 @@ import { PayrollPage } from './resources/payroll';
 import { InviteCodePage } from './resources/inviteCode';
 import { KnowledgePage } from './resources/knowledge/KnowledgePage';
 import { PlatformSettingsPage } from './resources/platformSettings';
+import { OAUTH_LOGIN_ENABLED } from './config';
 
 // Доступ к ресурсам: платформенные (users/organizations) — только super_admin;
 // org-ресурсы доступны при выбранной организации (owner/admin — свои; super_admin — любую).
@@ -121,7 +122,11 @@ export const App = () => (
             <Route path="/org-stats" element={<OrgStatsPage />} />
             <Route path="/payroll" element={<PayrollPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />
-            <Route path="/platform-settings" element={<PlatformSettingsPage />} />
+            {/* Раздел «Настройки платформы» (провайдеры входа) скрыт за OAUTH_LOGIN_ENABLED
+                вместе с пунктом меню; компонент PlatformSettingsPage сохранён. */}
+            {OAUTH_LOGIN_ENABLED && (
+              <Route path="/platform-settings" element={<PlatformSettingsPage />} />
+            )}
           </CustomRoutes>
         </>
       )}
