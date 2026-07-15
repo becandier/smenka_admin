@@ -35,8 +35,10 @@ export const FILE_CATEGORY_POLICY: Record<FileCategory, CategoryPolicy> = {
   },
   knowledge_base: {
     maxSizeBytes: 50 * MB,
-    accept: 'image/*,application/pdf',
-    acceptLabel: 'изображения, PDF',
+    // Расширения OOXML (.docx/.xlsx/.pptx) надёжнее длинных MIME в атрибуте accept
+    // кросс-браузерно; image/* и application/pdf оставляем как есть (backend office_files).
+    accept: 'image/*,application/pdf,.docx,.xlsx,.pptx',
+    acceptLabel: 'изображения, PDF, DOCX, XLSX, PPTX',
   },
   avatar: {
     maxSizeBytes: 5 * MB,

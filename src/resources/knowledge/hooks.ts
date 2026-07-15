@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HttpError, useDataProvider, useNotify } from 'react-admin';
+import { FILE_CATEGORY_POLICY } from '../../utils/files';
 import type {
   AccessRule,
   AccessState,
@@ -29,7 +30,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   VALIDATION_ERROR: 'Проверьте корректность данных',
   FORBIDDEN: 'Нет доступа',
   FILE_TOO_LARGE: 'Файл слишком большой (лимит 50 MB)',
-  UNSUPPORTED_FILE_TYPE: 'Недопустимый тип файла',
+  // Перечень допустимых типов берём из справочника категории (единый источник с accept-input).
+  UNSUPPORTED_FILE_TYPE: `Недопустимый тип файла. Допустимы: ${FILE_CATEGORY_POLICY.knowledge_base.acceptLabel}`,
   STORAGE_UNAVAILABLE: 'Хранилище недоступно, повторите позже',
   ORG_NOT_FOUND: 'Организация не найдена',
 };
