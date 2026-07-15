@@ -7,11 +7,7 @@ import {
   localDayStartToUtcIso,
 } from '../utils/dates';
 import { parseRublesToMinor } from '../utils/format';
-import type {
-  AccessState,
-  FileUploadResult,
-  ReorderInput,
-} from '../resources/knowledge/types';
+import type { AccessState, FileUploadResult, ReorderInput } from '../resources/knowledge/types';
 
 // Категории ресурсов:
 //  - PLATFORM_SERVER — серверная пагинация через /admin/* ({items,total,limit,offset}).
@@ -671,6 +667,15 @@ export const dataProvider: DataProvider = {
   // org_id передаётся явно (страница работает с выбранной org, без orgBase-зависимости).
   rotateInviteCode: (orgId: string): Promise<{ invite_code: string } | null> =>
     request(`/organizations/${orgId}/rotate-invite`, { method: 'POST' }),
+  // Переименование организации (org_rename): PATCH /organizations/{org} c {name}, право
+  // owner/admin/super_admin (бэк — ensure_admin_or_owner). org_id передаётся явно, как в
+  // rotateInviteCode. Возвращает обновлённую организацию (в т.ч. фактическую роль вызывающего).
+  // Валидация имени (trim/непустое/≤255) — на клиенте до вызова; серверная 422 дублирует.
+  renameOrganization: (orgId: string, name: string): Promise<{ id: string; name: string } | null> =>
+    request(`/organizations/${orgId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
   getShiftChecklists: async (shiftId: string) => {
     const data = await request(`/shifts/${shiftId}/checklists`);
     return data?.items ?? [];
@@ -819,6 +824,5 @@ export const dataProvider: DataProvider = {
     return request('/files', { method: 'POST', body: form });
   },
   // Свежий presigned url по file_id (дотягивание протухшей/null ссылки на чтении).
-  getKnowledgeFile: (fileId: string): Promise<FileUploadResult> =>
-    request(`/files/${fileId}`),
+  getKnowledgeFile: (fileId: string): Promise<FileUploadResult> => request(`/files/${fileId}`),
 };
