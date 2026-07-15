@@ -28,6 +28,7 @@ import BrokenImageIcon from '@mui/icons-material/BrokenImage';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 
 import type { KnowledgeBlock, KnowledgeContent } from './types';
+import { FILE_CATEGORY_POLICY } from '../../utils/files';
 import { useUploadFile } from './hooks';
 import {
   CUSTOM_BLOCK_TYPES,
@@ -517,7 +518,9 @@ export const BlockEditor = ({ value, onChange, readOnly = false }: BlockEditorPr
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*,application/pdf"
+            // Загрузка идёт в категорию knowledge_base — accept берём из справочника
+            // (изображения, PDF, DOCX, XLSX, PPTX), а не дублируем литералом.
+            accept={FILE_CATEGORY_POLICY.knowledge_base.accept}
             hidden
             onChange={(e) => {
               void handleFilePick(e.target.files?.[0]);
