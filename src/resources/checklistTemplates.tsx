@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link as RouterLink } from 'react-router-dom';
 import {
   List,
   Datagrid,
@@ -31,6 +31,7 @@ import {
   CircularProgress,
   FormControlLabel,
   IconButton,
+  Link,
   MenuItem,
   Select,
   Stack,
@@ -49,6 +50,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import AddIcon from '@mui/icons-material/Add';
 import PhotoCameraOutlinedIcon from '@mui/icons-material/PhotoCameraOutlined';
 import {
+  checklistLocationErrorMessage,
   PHOTO_REQUIREMENT_CHOICES,
   PHOTO_REQUIREMENT_SHORT,
   PHOTO_SOURCE_CHOICES,
@@ -502,6 +504,86 @@ const RolesAssignment = ({
   );
 };
 
+// Секция «Точки» — по образцу RolesAssignment. Точки сужают ролевое назначение (см. STATUS.md,
+// «Ключевые решения аналитика», п.1), поэтому в карточке идут сразу за секцией ролей.
+const LocationsAssignment = ({
+  templateId,
+  locationIds,
+  onChanged,
+}: {
+  templateId: string;
+  locationIds: string[];
+  onChanged: () => void;
+}) => {
+  const dataProvider = useDataProvider();
+  const notify = useNotify();
+  const { data: locations } = useGetList('work-locations', {
+    pagination: { page: 1, perPage: 200 },
+    sort: { field: 'name', order: 'ASC' },
+  });
+  const [selected, setSelected] = useState<string[]>(locationIds);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => setSelected(locationIds), [locationIds]);
+
+  const toggle = (id: string) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await dataProvider.setTemplateLocations(templateId, selected);
+      notify('Точки сохранены', { type: 'success' });
+      onChanged();
+    } catch (e: any) {
+      notify(checklistLocationErrorMessage(e, 'Ошибка'), { type: 'error' });
+      // Шаблон исчез (удалён параллельно) — обновить карточку, а не оставлять устаревшие данные.
+      if (e?.body?.code === 'TEMPLATE_NOT_FOUND') onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card sx={{ mb: 2 }}>
+      <CardContent>
+        <Typography variant="subtitle1" sx={{ mb: 0.5 }}>
+          Точки
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Ничего не выбрано — чек-лист действует на всех точках. Выберите точки, чтобы ограничить
+          его только ими.
+        </Typography>
+        {(locations ?? []).length === 0 ? (
+          <Typography color="text.secondary">
+            В организации нет ни одной рабочей точки.{' '}
+            <Link component={RouterLink} to="/work-locations">
+              Перейти к разделу точек
+            </Link>
+          </Typography>
+        ) : (
+          <Stack>
+            {(locations ?? []).map((l) => (
+              <FormControlLabel
+                key={l.id}
+                control={
+                  <Checkbox checked={selected.includes(l.id)} onChange={() => toggle(l.id)} />
+                }
+                label={l.name}
+              />
+            ))}
+            <Box sx={{ mt: 1 }}>
+              <Button variant="contained" disabled={busy} onClick={save}>
+                Сохранить точки
+              </Button>
+            </Box>
+          </Stack>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
 const PersonalOverrides = ({
   templateId,
   personalAdd,
@@ -585,7 +667,9 @@ export const ChecklistTemplateEdit = () => {
     dataProvider
       .getTemplateAssignments(id)
       .then((res: any) => setAssignments(res))
-      .catch(() => setAssignments({ role_ids: [], personal_add: [], personal_remove: [] }));
+      .catch(() =>
+        setAssignments({ role_ids: [], personal_add: [], personal_remove: [], location_ids: [] }),
+      );
   }, [id, dataProvider]);
 
   useEffect(() => {
@@ -614,6 +698,11 @@ export const ChecklistTemplateEdit = () => {
       <RolesAssignment
         templateId={template.id}
         roleIds={assignments?.role_ids ?? []}
+        onChanged={onChanged}
+      />
+      <LocationsAssignment
+        templateId={template.id}
+        locationIds={assignments?.location_ids ?? []}
         onChanged={onChanged}
       />
       <PersonalOverrides

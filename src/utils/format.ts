@@ -1,3 +1,5 @@
+import { HttpError } from 'react-admin';
+
 // Форматирование рабочего времени из секунд в «Чч Ммин».
 export const formatDuration = (seconds: number | null | undefined): string => {
   const total = Math.max(0, Math.floor(seconds ?? 0));
@@ -153,3 +155,36 @@ export const PHOTO_SOURCE_CHOICES = Object.entries(PHOTO_SOURCE_LABELS).map(([id
 // фото могло быть выбрано из галереи, тогда метка = момент добавления («Добавлено»).
 export const photoCaptureLabel = (source: string | null | undefined): string =>
   source === 'camera_or_gallery' ? 'Добавлено' : 'Снято';
+
+// --- Привязка чек-листов к точкам (checklist_work_location) ---
+
+// Код ошибки бэка → понятный текст для админа (docs/tasks/checklist_work_location/admin.md,
+// раздел «Обработка ошибок»). Не экспортируется — наружу отдаём только helper ниже; тот же
+// приём, что knowledgeErrorMessage в src/resources/knowledge/hooks.ts и errorMessage в
+// src/resources/payroll/index.tsx.
+const CHECKLIST_LOCATION_ERROR_MESSAGES: Record<string, string> = {
+  INVALID_LOCATION: 'Точка не найдена в этой организации',
+  INVALID_TEMPLATE: 'Чек-лист не найден в этой организации',
+  WORK_LOCATION_NOT_FOUND: 'Точка не найдена',
+  TEMPLATE_NOT_FOUND: 'Чек-лист не найден',
+};
+
+// Человекочитаемый текст по error.code; фолбэк — message ошибки либо переданный текст
+// (message из конверта {data,error} уже человекочитаем по ERROR_FORMAT.md).
+export const checklistLocationErrorMessage = (error: unknown, fallback = 'Ошибка'): string => {
+  const code = error instanceof HttpError ? error.body?.code : undefined;
+  if (code && CHECKLIST_LOCATION_ERROR_MESSAGES[code])
+    return CHECKLIST_LOCATION_ERROR_MESSAGES[code];
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
+
+// Русское склонение «N чек-лист/чек-листа/чек-листов» — для текста предупреждения при удалении
+// точки, к которой привязаны чек-листы.
+export const pluralizeChecklists = (n: number): string => {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'чек-лист';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'чек-листа';
+  return 'чек-листов';
+};
