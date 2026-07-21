@@ -715,6 +715,25 @@ export const dataProvider: DataProvider = {
       method: 'PUT',
       body: JSON.stringify({ role_ids: roleIds }),
     }),
+  // checklist_work_location: привязка шаблона к точкам (PUT-семантика, полная замена).
+  // Пустой массив снимает все привязки — шаблон снова действует на всех точках.
+  setTemplateLocations: (templateId: string, locationIds: string[]) =>
+    request(`${orgBase()}/checklist-templates/${templateId}/locations`, {
+      method: 'PUT',
+      body: JSON.stringify({ location_ids: locationIds }),
+    }),
+  // checklist_work_location: обратный срез — какие шаблоны привязаны к точке (карточка точки).
+  // Архивные шаблоны включены в выдачу (is_archived: true) — админ должен видеть привязку.
+  getLocationTemplates: async (locationId: string) => {
+    const data = await request(`${orgBase()}/locations/${locationId}/checklist-templates`);
+    return data?.items ?? [];
+  },
+  // checklist_work_location: запись обратного среза (PUT-семантика, полная замена набора).
+  setLocationTemplates: (locationId: string, templateIds: string[]) =>
+    request(`${orgBase()}/locations/${locationId}/checklist-templates`, {
+      method: 'PUT',
+      body: JSON.stringify({ template_ids: templateIds }),
+    }),
   setTemplatePersonal: (templateId: string, userId: string, type: 'add' | 'remove') =>
     request(`${orgBase()}/checklist-templates/${templateId}/personal/${userId}`, {
       method: 'PUT',
