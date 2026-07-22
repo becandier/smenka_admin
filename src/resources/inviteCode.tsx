@@ -22,13 +22,19 @@ import AutorenewIcon from '@mui/icons-material/Autorenew';
 import { useCurrentOrg } from '../orgContext';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
 import type { Permissions } from '../providers/authProvider';
+import { WEB_APP_URL } from '../config';
 
-// Диплинк для приглашения сотрудника (мобильное приложение ловит схему smenka://).
-const DEEPLINK_PREFIX = 'smenka://invite/';
+// HTTPS-ссылка приглашения (invite_links): открывает нативное приложение, если оно
+// установлено (universal/app links), иначе — веб-версию по тому же пути `/invite/{code}`.
+// Домен берётся из конфига (VITE_WEB_APP_URL), чтобы dev-сборка не выдавала прод-ссылку.
+// Старый `smenka://invite/{code}` с экрана убран (для человека бесполезен, не кликается
+// в мессенджерах) — приложение продолжает принимать такие ссылки для обратной совместимости.
+const buildInviteLink = (code: string): string => `${WEB_APP_URL}/invite/${code}`;
 
-// Блок «Инвайт-код» org-кабинета: показ текущего кода (8-hex) + ротация.
-// Просмотр и ротация — owner и admin; super_admin со сквозным доступом — по необходимости
-// (admin.md §RBAC). Эндпоинты: GET /organizations/{org} (invite_code) + POST .../rotate-invite.
+// Блок «Инвайт-код» org-кабинета: HTTPS-ссылка-приглашение (главный элемент) + код (8-hex)
+// + ротация. Просмотр и ротация — owner и admin; super_admin со сквозным доступом — по
+// необходимости (admin.md §RBAC). Эндпоинты: GET /organizations/{org} (invite_code) + POST
+// .../rotate-invite.
 export const InviteCodePage = () => {
   const { org } = useCurrentOrg();
   const { permissions } = usePermissions<Permissions>();
@@ -110,7 +116,9 @@ export const InviteCodePage = () => {
       const data = await dataProvider.rotateInviteCode(org.id);
       const next = data?.invite_code;
       if (typeof next === 'string' && next) setCode(next);
-      notify('Новый код сгенерирован. Старый код больше не действует.', { type: 'success' });
+      notify('Новый код сгенерирован. Старые код и ссылка больше не действуют.', {
+        type: 'success',
+      });
       setConfirmOpen(false);
     } catch (e: any) {
       // Ошибки — по error.code (ERROR_FORMAT); 403 — нет прав на ротацию.
@@ -124,7 +132,7 @@ export const InviteCodePage = () => {
     }
   };
 
-  const deeplink = code ? `${DEEPLINK_PREFIX}${code}` : '';
+  const inviteLink = code ? buildInviteLink(code) : '';
 
   return (
     <Box sx={{ p: 2, maxWidth: 560 }}>
@@ -132,10 +140,10 @@ export const InviteCodePage = () => {
       <Card>
         <CardContent>
           <Typography variant="h6" sx={{ mb: 0.5 }}>
-            Инвайт-код организации
+            Приглашение в организацию
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Передайте код сотруднику — он введёт его в приложении, чтобы вступить в организацию.
+            Отправьте сотруднику ссылку — она доведёт его до вступления в организацию.
           </Typography>
 
           {loadError && <Alert severity="error">{loadError}</Alert>}
@@ -143,41 +151,64 @@ export const InviteCodePage = () => {
 
           {code && (
             <>
-              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-                <Typography
-                  variant="h4"
-                  sx={{ fontFamily: 'monospace', letterSpacing: 2, userSelect: 'all' }}
-                >
-                  {code}
+              {/* Главный элемент экрана: HTTPS-ссылка-приглашение — то, что админ отправляет
+                  сотруднику. Выделена фоном и идёт первой, код — второстепенное поле ниже. */}
+              <Box
+                sx={{
+                  p: 2,
+                  mb: 2,
+                  borderRadius: 1,
+                  bgcolor: 'action.hover',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  Ссылка-приглашение
                 </Typography>
+                <TextField
+                  value={inviteLink}
+                  fullWidth
+                  size="medium"
+                  InputProps={{
+                    readOnly: true,
+                    sx: { fontFamily: 'monospace', fontSize: '0.95rem', bgcolor: 'background.paper' },
+                    endAdornment: (
+                      <Tooltip title="Скопировать ссылку">
+                        <IconButton
+                          aria-label="Скопировать ссылку"
+                          edge="end"
+                          onClick={() => void copy(inviteLink, 'Ссылка')}
+                        >
+                          <ContentCopyIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    ),
+                  }}
+                />
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                  Откроется в приложении, если оно установлено, иначе — в браузере.
+                </Typography>
+              </Box>
+
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    Код (ввести вручную в приложении)
+                  </Typography>
+                  <Typography
+                    variant="h6"
+                    sx={{ fontFamily: 'monospace', letterSpacing: 2, userSelect: 'all' }}
+                  >
+                    {code}
+                  </Typography>
+                </Box>
                 <Tooltip title="Скопировать код">
                   <IconButton aria-label="Скопировать код" onClick={() => void copy(code, 'Код')}>
                     <ContentCopyIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
               </Stack>
-
-              <TextField
-                label="Ссылка-приглашение"
-                value={deeplink}
-                fullWidth
-                size="small"
-                InputProps={{
-                  readOnly: true,
-                  endAdornment: (
-                    <Tooltip title="Скопировать ссылку">
-                      <IconButton
-                        aria-label="Скопировать ссылку"
-                        edge="end"
-                        onClick={() => void copy(deeplink, 'Ссылка')}
-                      >
-                        <ContentCopyIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  ),
-                }}
-                sx={{ mb: 2 }}
-              />
 
               <Button
                 variant="outlined"
@@ -201,8 +232,8 @@ export const InviteCodePage = () => {
         <DialogTitle>Сгенерировать новый код?</DialogTitle>
         <DialogContent>
           <Typography>
-            Текущий код перестанет работать. Сотрудники, которым вы уже отправили старый код, не
-            смогут вступить по нему — отправьте им новый.
+            Текущие код и ссылка-приглашение перестанут работать. Сотрудники, которым вы уже
+            отправили старую ссылку или код, не смогут вступить по ним — отправьте им новые.
           </Typography>
         </DialogContent>
         <DialogActions>
