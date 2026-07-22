@@ -310,8 +310,36 @@ export const dataProvider: DataProvider = {
       return orgServerList(params, {
         path: 'shifts',
         defaultSort: 'started_at',
-        filterKeys: ['user_id', 'status', 'date_from', 'date_to'],
+        // checklists — состояние чек-листов смены (none/all_completed/has_incomplete/
+        // required_incomplete), см. checklist_reports/backend.md.
+        filterKeys: ['user_id', 'status', 'date_from', 'date_to', 'checklists'],
       });
+    }
+    if (resource === 'checklist-instances') {
+      // Реестр экземпляров чек-листов организации (checklist_reports/backend.md).
+      // id строки — составной ("{shift_id}:{instance_id}"): у бэка нет одиночного GET
+      // по реестру, а деталь открывается через GET /shifts/{shift_id}/checklists/{instance_id},
+      // которому нужен shift_id. Составной id несём через весь Show-роут (getOne ниже его
+      // разбирает обратно).
+      const result = await orgServerList(params, {
+        path: 'checklist-instances',
+        defaultSort: 'shift_started_at',
+        filterKeys: [
+          'user_id',
+          'template_id',
+          'type',
+          'status',
+          'state',
+          'is_required',
+          'work_location_id',
+          'date_from',
+          'date_to',
+        ],
+      });
+      return {
+        ...result,
+        data: result.data.map((item: any) => ({ ...item, id: `${item.shift_id}:${item.id}` })),
+      };
     }
     if (resource === 'audit-logs') {
       return orgServerList(params, {
@@ -362,6 +390,33 @@ export const dataProvider: DataProvider = {
     }
     if (resource === 'penalties') {
       return { data: await request(`${orgBase()}/penalties/${id}`) };
+    }
+    if (resource === 'checklist-instances') {
+      // id составной ("{shift_id}:{instance_id}", см. getList выше). Пункты с комментариями
+      // и фото — из уже существующего GET /shifts/{shift_id}/checklists/{instance_id} (детальный
+      // эндпоинт не отдаёт сотрудника/точку/тайминги смены — их дотягиваем через уже
+      // существующий GET /organizations/{org}/shifts/{shift_id}, как в org-shifts getOne).
+      const [shiftId, instanceId] = id.split(':');
+      if (!shiftId || !instanceId) {
+        throw new HttpError('Экземпляр чек-листа не найден', 404, { code: 'NOT_FOUND' });
+      }
+      const [detail, shift] = await Promise.all([
+        request(`/shifts/${shiftId}/checklists/${instanceId}`),
+        request(`${orgBase()}/shifts/${shiftId}`),
+      ]);
+      return {
+        data: {
+          ...detail,
+          id,
+          shift_id: shiftId,
+          user_name: shift?.user_name ?? null,
+          user_email: shift?.user_email ?? null,
+          work_location: shift?.work_location ?? null,
+          shift_started_at: shift?.started_at ?? null,
+          shift_finished_at: shift?.finished_at ?? null,
+          shift_status: shift?.status ?? null,
+        },
+      };
     }
     if (resource === 'knowledge/nodes') {
       // Деталь узла (M3): content обогащён для page, breadcrumbs, null для section.

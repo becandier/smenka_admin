@@ -24,6 +24,7 @@ import {
   Chip,
   CircularProgress,
   Stack,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -48,12 +49,28 @@ const statusChoices = [
   { id: 'finished', name: 'Завершена' },
 ];
 
+// Состояние чек-листов смены (checklist_reports/backend.md): считается на лету по
+// checklist_instances смены, в отличие от has_incomplete_required_checklists (ставится только
+// при завершении и врёт для активных/паузных смен).
+const checklistsFilterChoices = [
+  { id: 'none', name: 'Без чек-листов' },
+  { id: 'all_completed', name: 'Все заполнены' },
+  { id: 'has_incomplete', name: 'Есть незаполненные' },
+  { id: 'required_incomplete', name: 'Есть незаполненные обязательные' },
+];
+
 const shiftFilters = [
   <MemberSelectFilter key="user_id" source="user_id" label="Сотрудник" alwaysOn />,
   <SelectInput key="status" source="status" label="Статус" choices={statusChoices} alwaysOn />,
   // Окно по started_at, обе границы включительно; день → UTC-границы конвертирует dataProvider.
   <DateInput key="date_from" source="date_from" label="С даты" />,
   <DateInput key="date_to" source="date_to" label="По дату" />,
+  <SelectInput
+    key="checklists"
+    source="checklists"
+    label="Чек-листы"
+    choices={checklistsFilterChoices}
+  />,
 ];
 
 // Empty-state для пустого/отфильтрованного результата. Текст зависит от наличия
@@ -83,12 +100,30 @@ const workLocationLabel = (
   const name = wl.name ?? '—';
   return wl.address ? `${name} · ${wl.address}` : name;
 };
-const requiredBadge = (r: RaRecord) =>
-  r.has_incomplete_required_checklists ? (
-    <Chip size="small" color="warning" label="Есть незаполненные" />
-  ) : (
-    '—'
+// Сводка чек-листов смены (checklists_summary, checklist_reports/backend.md): считается на
+// лету, в отличие от has_incomplete_required_checklists (только на завершении, врёт для
+// активных/паузных смен — колонка на него больше не опирается).
+interface ChecklistsSummary {
+  total: number;
+  completed: number;
+  required_total: number;
+  required_incomplete: number;
+}
+
+const checklistsSummaryCell = (r: RaRecord) => {
+  const summary = (r.checklists_summary ?? null) as ChecklistsSummary | null;
+  if (!summary || summary.total === 0) return '—';
+  const { total, completed, required_incomplete } = summary;
+  const label =
+    required_incomplete > 0 ? `${completed}/${total} · есть обязательные` : `${completed}/${total}`;
+  const color: 'success' | 'warning' | 'default' =
+    required_incomplete > 0 ? 'warning' : completed < total ? 'default' : 'success';
+  return (
+    <Tooltip title={`Заполнено чек-листов: ${completed} из ${total}`}>
+      <Chip size="small" color={color} label={label} />
+    </Tooltip>
   );
+};
 
 // Тело списка. Пустоту обрабатываем сами через useListContext: проп <List empty>
 // в react-admin v5 НЕ рендерится при активных фильтрах, а ТЗ требует кастомный
@@ -110,7 +145,7 @@ const OrgShiftDatagrid = () => {
       <DateField source="finished_at" label="Конец" showTime emptyText="—" />
       <FunctionField label="Отработано" render={durationField} />
       <FunctionField label="Точка" render={workLocationName} sortable={false} />
-      <FunctionField label="Чек-листы" render={requiredBadge} />
+      <FunctionField label="Чек-листы" render={checklistsSummaryCell} />
     </Datagrid>
   );
 };
