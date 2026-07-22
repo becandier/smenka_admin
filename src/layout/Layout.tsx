@@ -1,5 +1,12 @@
-import { AppBar, Layout as RaLayout, Menu, TitlePortal, usePermissions } from 'react-admin';
-import { Box, Divider, ListSubheader } from '@mui/material';
+import {
+  AppBar,
+  Layout as RaLayout,
+  Menu,
+  TitlePortal,
+  usePermissions,
+  useGetList,
+} from 'react-admin';
+import { Badge, Box, Divider, ListSubheader } from '@mui/material';
 import type { ReactNode } from 'react';
 import PeopleIcon from '@mui/icons-material/People';
 import BusinessIcon from '@mui/icons-material/Business';
@@ -17,6 +24,8 @@ import BarChartIcon from '@mui/icons-material/BarChart';
 import CurrencyRubleIcon from '@mui/icons-material/CurrencyRuble';
 import MoneyOffIcon from '@mui/icons-material/MoneyOff';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
+import ScheduleIcon from '@mui/icons-material/Schedule';
+import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import { OrgSwitcher } from '../components/OrgSwitcher';
 import { OAUTH_LOGIN_ENABLED } from '../config';
 import { useCurrentOrg } from '../orgContext';
@@ -49,6 +58,24 @@ const groupSx = {
   textTransform: 'uppercase',
   letterSpacing: '0.06em',
 } as const;
+
+// Пункт меню «Переработки» с бейджем непросмотренных заявок (status=pending, admin.md).
+// perPage:1 — нужен только total; сам список грузит отдельный экран OvertimeRequestList.
+const OvertimeMenuItem = () => {
+  const { total } = useGetList('overtime-requests', {
+    pagination: { page: 1, perPage: 1 },
+    filter: { status: 'pending' },
+  });
+  const icon =
+    total && total > 0 ? (
+      <Badge badgeContent={total} color="warning" max={99}>
+        <MoreTimeIcon />
+      </Badge>
+    ) : (
+      <MoreTimeIcon />
+    );
+  return <Menu.Item to="/overtime-requests" primaryText="Переработки" leftIcon={icon} />;
+};
 
 const MyMenu = () => {
   const { permissions } = usePermissions<Permissions>();
@@ -100,6 +127,9 @@ const MyMenu = () => {
             Операционка
           </ListSubheader>
           <Menu.Item to="/org-shifts" primaryText="Смены" leftIcon={<AccessTimeIcon />} />
+          {/* Переработки (work_schedules) — рядом со сменами; доступ уже owner/admin,
+              super_admin сквозным доступом раздел не видит (admin.md). */}
+          {isOrgManager && <OvertimeMenuItem />}
           <Menu.Item to="/members" primaryText="Сотрудники" leftIcon={<GroupIcon />} />
           {/* Реестр экземпляров чек-листов (checklist_reports) — новый раздел, занял бывший
               путь пункта меню «Чек-листы»; сам раздел шаблонов переехал строкой ниже. */}
@@ -112,6 +142,13 @@ const MyMenu = () => {
             to="/checklist-templates"
             primaryText="Шаблоны чек-листов"
             leftIcon={<ChecklistIcon />}
+          />
+          {/* Графики работы (work_schedules) — рядом с шаблонами чек-листов, та же видимость
+              (owner/admin/super_admin). */}
+          <Menu.Item
+            to="/work-schedules"
+            primaryText="Графики работы"
+            leftIcon={<ScheduleIcon />}
           />
           <Menu.Item to="/org-stats" primaryText="Статистика" leftIcon={<BarChartIcon />} />
           {/* База знаний — owner/admin своей org + super_admin (сквозной доступ);

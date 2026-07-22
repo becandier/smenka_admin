@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Edit,
   SimpleForm,
@@ -8,14 +8,27 @@ import {
   minValue,
   maxValue,
   useGetList,
+  useGetOne,
   useDataProvider,
   useNotify,
   useRefresh,
   usePermissions,
 } from 'react-admin';
-import { Box, Button, Card, CardContent, Stack, TextField, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  Card,
+  CardContent,
+  MenuItem,
+  Select,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
 import { useCurrentOrg } from '../orgContext';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { scheduleErrorMessage } from '../utils/format';
+import { DEFAULT_ORG_TIMEZONE, TIMEZONE_CHOICES } from '../utils/timezones';
 import type { CurrentOrg } from '../config';
 import type { Permissions } from '../providers/authProvider';
 
@@ -44,6 +57,33 @@ const RequireWorkLocationInput = () => {
           ? 'Сначала добавьте рабочую точку'
           : error
             ? 'Не удалось загрузить список точек'
+            : false
+      }
+    />
+  );
+};
+
+// Тумблер «Требовать выбор графика» (work_schedules). Задизейблен, пока у организации нет
+// ни одного неархивного графика (бэк отверг бы включение 409 SCHEDULE_REQUIRED_NO_SCHEDULES) —
+// та же логика, что RequireWorkLocationInput.
+const RequireScheduleInput = () => {
+  const { total, isPending, error } = useGetList('work-schedules', {
+    pagination: { page: 1, perPage: 1 },
+    sort: { field: 'name', order: 'ASC' },
+    filter: { include_archived: false },
+  });
+  const hasSchedules = (total ?? 0) > 0;
+  const showAddHint = !isPending && !error && !hasSchedules;
+  return (
+    <BooleanInput
+      source="require_schedule"
+      label="Требовать выбор графика"
+      disabled={isPending || !!error || !hasSchedules}
+      helperText={
+        showAddHint
+          ? 'Сначала добавьте график работы'
+          : error
+            ? 'Не удалось загрузить список графиков'
             : false
       }
     />
@@ -140,6 +180,81 @@ const OrgNameCard = ({ org }: { org: CurrentOrg }) => {
   );
 };
 
+// Часовой пояс организации (work_schedules): PATCH /organizations/{org} c {timezone} — свой
+// эндпоинт, не /settings (то же разделение, что у OrgNameCard). Текущее значение читаем через
+// GET /organizations/{org} (dataProvider.getOne('organizations', ...)), т.к. useCurrentOrg()
+// хранит только id/name (для OrgSwitcher), без timezone.
+const OrgTimezoneCard = ({ org }: { org: CurrentOrg }) => {
+  const dataProvider = useDataProvider();
+  const notify = useNotify();
+  const { data: orgDetail, isLoading } = useGetOne('organizations', { id: org.id });
+  const [timezone, setTimezone] = useState<string>(DEFAULT_ORG_TIMEZONE);
+  // Значение с сервера, зафиксированное один раз при загрузке — точка сравнения для «изменено ли».
+  const [originalTimezone, setOriginalTimezone] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (
+      originalTimezone === null &&
+      typeof orgDetail?.timezone === 'string' &&
+      orgDetail.timezone
+    ) {
+      setTimezone(orgDetail.timezone);
+      setOriginalTimezone(orgDetail.timezone);
+    }
+  }, [orgDetail, originalTimezone]);
+
+  const unchanged = originalTimezone === null || timezone === originalTimezone;
+
+  const handleSave = async (): Promise<void> => {
+    setSaving(true);
+    try {
+      await dataProvider.updateOrganizationTimezone(org.id, timezone);
+      setOriginalTimezone(timezone);
+      notify('Часовой пояс сохранён', { type: 'success' });
+    } catch (e) {
+      notify(scheduleErrorMessage(e, 'Не удалось сохранить часовой пояс'), { type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card sx={{ mb: 2 }}>
+      <CardContent>
+        <Typography variant="h6" sx={{ mb: 0.5 }}>
+          Часовой пояс организации
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          По этому времени считаются графики работы и отчёты.
+        </Typography>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
+          <Select
+            size="small"
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+            disabled={isLoading || saving}
+            sx={{ minWidth: 320 }}
+          >
+            {TIMEZONE_CHOICES.map((tz) => (
+              <MenuItem key={tz.id} value={tz.id}>
+                {tz.name}
+              </MenuItem>
+            ))}
+          </Select>
+          <Button
+            variant="contained"
+            onClick={() => void handleSave()}
+            disabled={saving || unchanged}
+          >
+            {saving ? 'Сохранение…' : 'Сохранить'}
+          </Button>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+};
+
 // Singleton-форма настроек организации: GET/PATCH /organizations/{org}/settings.
 // id записи = org_id (dataProvider маппит organization_id → id).
 export const SettingsPage = () => {
@@ -163,6 +278,7 @@ export const SettingsPage = () => {
   return (
     <>
       {canRename && <OrgNameCard key={org.id} org={org} />}
+      {canRename && <OrgTimezoneCard key={`${org.id}-tz`} org={org} />}
       <Edit
         resource="settings"
         id={org.id}
@@ -173,11 +289,26 @@ export const SettingsPage = () => {
         <SimpleForm>
           <BooleanInput source="geo_check_enabled" label="Геопроверка при старте смены" />
           <RequireWorkLocationInput />
+          <BooleanInput
+            source="auto_finish_by_schedule"
+            label="Завершать смену по окончании графика"
+            helperText="Смена закроется автоматически в плановое время окончания. Переработку сотрудник оформляет отдельной заявкой."
+            defaultValue
+          />
+          <RequireScheduleInput />
           <NumberInput
-            source="auto_finish_hours"
-            label="Автозавершение через, ч"
-            helperText="1–48; пусто — отключено"
-            validate={[minValue(1), maxValue(48)]}
+            source="late_tolerance_minutes"
+            label="Допуск по опозданию, мин"
+            helperText="0–120; опоздание в пределах допуска не показывается"
+            defaultValue={0}
+            validate={[minValue(0), maxValue(120)]}
+          />
+          <NumberInput
+            source="overtime_request_days"
+            label="Срок подачи заявки на переработку, дней"
+            helperText="1–90"
+            defaultValue={7}
+            validate={[minValue(1), maxValue(90)]}
           />
           <NumberInput
             source="max_pause_minutes"

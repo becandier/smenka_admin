@@ -49,6 +49,41 @@ const NetCell = ({ amount_minor }: { amount_minor: number }) => (
   </TableCell>
 );
 
+// «По графику» (work_schedules R8): плановые часы + плановые деньги мелким шрифтом снизу.
+const PlannedCell = ({
+  planned_seconds,
+  planned_amount_minor,
+}: {
+  planned_seconds: number;
+  planned_amount_minor: number;
+}) => (
+  <TableCell align="right">
+    <Typography variant="body2">{formatClockDuration(planned_seconds)}</Typography>
+    <Typography variant="caption" color="text.secondary" display="block">
+      {formatMoneyMinor(planned_amount_minor)}
+    </Typography>
+  </TableCell>
+);
+
+// «Разница» (delta = начислено − план): минус — недозаработал (красным), плюс — зелёным.
+const DeltaCell = ({ amount_minor }: { amount_minor: number }) => (
+  <TableCell
+    align="right"
+    sx={{ color: amount_minor < 0 ? 'error.main' : amount_minor > 0 ? 'success.main' : undefined }}
+  >
+    {amount_minor > 0 ? '+' : ''}
+    {formatMoneyMinor(amount_minor)}
+  </TableCell>
+);
+
+// «Опоздания»: количество и суммарная длительность; «—», если опозданий не было.
+const LateCell = ({ count, seconds }: { count: number; seconds: number }) =>
+  count > 0 ? (
+    <TableCell align="right">{`${count} · ${formatClockDuration(seconds)}`}</TableCell>
+  ) : (
+    <TableCell align="right">—</TableCell>
+  );
+
 // Вложенная таблица дневной детализации (breakdown[]) одного сотрудника.
 const BreakdownTable = ({ item, granularity }: { item: PayrollItem; granularity: Granularity }) => (
   <Box sx={{ pl: 4, py: 1 }}>
@@ -112,6 +147,10 @@ export const PayrollListView = ({
           {detailed && <TableCell sx={{ width: 48 }} />}
           <TableCell>Сотрудник</TableCell>
           <TableCell align="right">Отработано</TableCell>
+          <TableCell align="right">Переработка</TableCell>
+          <TableCell align="right">По графику</TableCell>
+          <TableCell align="right">Разница</TableCell>
+          <TableCell align="right">Опоздания</TableCell>
           <TableCell align="right">Смен</TableCell>
           <TableCell align="right">Начислено</TableCell>
           <TableCell align="right">Штраф</TableCell>
@@ -145,6 +184,13 @@ export const PayrollListView = ({
                   />
                 </TableCell>
                 <TableCell align="right">{formatClockDuration(item.worked_seconds)}</TableCell>
+                <TableCell align="right">{formatClockDuration(item.overtime_seconds)}</TableCell>
+                <PlannedCell
+                  planned_seconds={item.planned_seconds}
+                  planned_amount_minor={item.planned_amount_minor}
+                />
+                <DeltaCell amount_minor={item.delta_amount_minor} />
+                <LateCell count={item.late_count} seconds={item.late_seconds_total} />
                 <TableCell align="right">{item.shifts_count}</TableCell>
                 <TableCell align="right">{formatMoneyMinor(item.gross_amount_minor)}</TableCell>
                 <PenaltyCell
@@ -158,7 +204,7 @@ export const PayrollListView = ({
               </TableRow>
               {hasBreakdown && isOpen && (
                 <TableRow>
-                  <TableCell colSpan={8} sx={{ py: 0, borderBottom: 0 }}>
+                  <TableCell colSpan={12} sx={{ py: 0, borderBottom: 0 }}>
                     <BreakdownTable item={item} granularity={granularity} />
                   </TableCell>
                 </TableRow>
@@ -170,6 +216,18 @@ export const PayrollListView = ({
           {detailed && <TableCell />}
           <TableCell>Итого</TableCell>
           <TableCell align="right">{formatClockDuration(report.totals.worked_seconds)}</TableCell>
+          <TableCell align="right">
+            {formatClockDuration(report.totals.overtime_seconds ?? 0)}
+          </TableCell>
+          <PlannedCell
+            planned_seconds={report.totals.planned_seconds ?? 0}
+            planned_amount_minor={report.totals.planned_amount_minor ?? 0}
+          />
+          <DeltaCell amount_minor={report.totals.delta_amount_minor ?? 0} />
+          <LateCell
+            count={report.totals.late_count ?? 0}
+            seconds={report.totals.late_seconds_total ?? 0}
+          />
           <TableCell align="right">{report.totals.shifts_count}</TableCell>
           <TableCell align="right">{formatMoneyMinor(report.totals.gross_amount_minor)}</TableCell>
           <PenaltyCell

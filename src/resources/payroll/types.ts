@@ -17,6 +17,8 @@ export interface PayrollBucket {
 // Строка по сотруднику. breakdown присутствует только при granularity != none.
 // penalty_*/net_* — additive (fines): при include_penalties=false бэк отдаёт 0 и net=gross.
 // Штрафы не разбиваются по корзинам (breakdown их не содержит) — только агрегат на сотрудника.
+// overtime_seconds/planned_*/delta_amount_minor/late_* — additive (work_schedules, backend.md R8):
+// план/факт и опоздания, тоже только агрегат на сотрудника (в breakdown не разбиваются).
 export interface PayrollItem {
   user_id: string;
   user_name: string;
@@ -31,10 +33,20 @@ export interface PayrollItem {
   penalty_amount_minor: number;
   penalties_count: number;
   net_amount_minor: number; // gross − penalty; может быть < 0 (не обрезаем)
+  // work_schedules R8 — план против факта:
+  overtime_seconds: number; // сумма approved-заявок на переработку по сменам периода
+  planned_seconds: number; // план по графику; для смен без графика — факт (backend.md)
+  planned_amount_minor: number;
+  delta_amount_minor: number; // gross − planned; отрицательное = недозаработал
+  late_count: number;
+  late_seconds_total: number;
   breakdown?: PayrollBucket[];
 }
 
-// Итоги отчёта (additive penalty_*/net_* — fines).
+// Итоги отчёта (additive penalty_*/net_* — fines). overtime_*/planned_*/delta_*/late_* —
+// work_schedules R8 описывает их только «к строке сотрудника» (PayrollItem), про totals явно
+// не говорит — держим опциональными и подстраховываемся `?? 0` в рендере (PayrollListView/Matrix),
+// чтобы не упасть, если бэк первое время не будет агрегировать их в totals.
 export interface PayrollTotals {
   worked_seconds: number;
   shifts_count: number;
@@ -42,6 +54,12 @@ export interface PayrollTotals {
   penalty_amount_minor: number;
   penalties_count: number;
   net_amount_minor: number;
+  overtime_seconds?: number;
+  planned_seconds?: number;
+  planned_amount_minor?: number;
+  delta_amount_minor?: number;
+  late_count?: number;
+  late_seconds_total?: number;
 }
 
 // Ответ GET /organizations/{org}/payroll. granularity/tz эхо-возвращаются (что применилось).
