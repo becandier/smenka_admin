@@ -241,6 +241,14 @@ export const PayrollPage = () => {
         </Stack>
       )}
 
+      {/* work_schedules R8: пояснение плановых колонок — admin.md, «Зарплата — план против факта». */}
+      {report && (
+        <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+          «По графику» — сколько сотрудник заработал бы, отработав плановое время полностью. Смены
+          без графика в план входят по факту.
+        </Alert>
+      )}
+
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}

@@ -35,17 +35,29 @@ const HoursCell = ({
 // Ячейка итога: часы (основное) + начислено (мелким). Если есть штрафы — добавочная
 // строка «−штраф → к выплате» (net может быть < 0, акцентом). Штрафы — агрегат на
 // сотрудника (не по корзинам), поэтому показываются только в итоговой колонке/строке.
+// План/переработка/опоздания (work_schedules R8) — тоже агрегат на сотрудника, добавочными
+// строками ниже; показываются, только если есть о чём сообщить (не захламляют пустые случаи).
 const TotalCell = ({
   worked_seconds,
   gross_amount_minor,
   penalty_amount_minor,
   net_amount_minor,
+  overtime_seconds,
+  planned_seconds,
+  delta_amount_minor,
+  late_count,
+  late_seconds_total,
   bold,
 }: {
   worked_seconds: number;
   gross_amount_minor: number;
   penalty_amount_minor: number;
   net_amount_minor: number;
+  overtime_seconds: number;
+  planned_seconds: number;
+  delta_amount_minor: number;
+  late_count: number;
+  late_seconds_total: number;
   bold?: boolean;
 }) => (
   <TableCell align="right">
@@ -62,6 +74,30 @@ const TotalCell = ({
         display="block"
       >
         −{formatMoneyMinor(penalty_amount_minor)} → {formatMoneyMinor(net_amount_minor)}
+      </Typography>
+    )}
+    <Typography variant="caption" color="text.secondary" display="block">
+      План: {formatClockDuration(planned_seconds)}
+      {delta_amount_minor !== 0 && (
+        <Typography
+          component="span"
+          variant="caption"
+          color={delta_amount_minor < 0 ? 'error.main' : 'success.main'}
+        >
+          {' '}
+          ({delta_amount_minor > 0 ? '+' : ''}
+          {formatMoneyMinor(delta_amount_minor)})
+        </Typography>
+      )}
+    </Typography>
+    {overtime_seconds > 0 && (
+      <Typography variant="caption" color="text.secondary" display="block">
+        Переработка: {formatClockDuration(overtime_seconds)}
+      </Typography>
+    )}
+    {late_count > 0 && (
+      <Typography variant="caption" color="warning.main" display="block">
+        Опоздания: {late_count} · {formatClockDuration(late_seconds_total)}
       </Typography>
     )}
   </TableCell>
@@ -143,6 +179,11 @@ export const PayrollMatrixView = ({
                 gross_amount_minor={item.gross_amount_minor}
                 penalty_amount_minor={item.penalty_amount_minor}
                 net_amount_minor={item.net_amount_minor}
+                overtime_seconds={item.overtime_seconds}
+                planned_seconds={item.planned_seconds}
+                delta_amount_minor={item.delta_amount_minor}
+                late_count={item.late_count}
+                late_seconds_total={item.late_seconds_total}
               />
             </TableRow>
           ))}
@@ -166,6 +207,11 @@ export const PayrollMatrixView = ({
               gross_amount_minor={report.totals.gross_amount_minor}
               penalty_amount_minor={report.totals.penalty_amount_minor}
               net_amount_minor={report.totals.net_amount_minor}
+              overtime_seconds={report.totals.overtime_seconds ?? 0}
+              planned_seconds={report.totals.planned_seconds ?? 0}
+              delta_amount_minor={report.totals.delta_amount_minor ?? 0}
+              late_count={report.totals.late_count ?? 0}
+              late_seconds_total={report.totals.late_seconds_total ?? 0}
               bold
             />
           </TableRow>
