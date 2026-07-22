@@ -17,6 +17,9 @@ const messages = {
     'checklist-instances': { name: 'Чек-лист |||| Чек-листы' },
     'org-shifts': { name: 'Смена |||| Смены' },
     'penalty-templates': { name: 'Шаблон штрафа |||| Шаблоны штрафов' },
+    // Графики работы и заявки на переработку (work_schedules).
+    'work-schedules': { name: 'График работы |||| Графики работы' },
+    'overtime-requests': { name: 'Переработка |||| Переработки' },
     'audit-logs': { name: 'Аудит |||| Аудит' },
   },
 };
