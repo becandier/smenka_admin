@@ -10,6 +10,7 @@ import {
   Typography,
 } from '@mui/material';
 import { formatClockDuration, formatMoneyMinor } from '../../utils/format';
+import { MemberNameCell } from '../../components/MemberNameCell';
 import { buildMatrix, formatBucketShort, MAX_MATRIX_COLUMNS } from './buckets';
 import type { Granularity, PayrollReport } from './types';
 
@@ -111,7 +112,14 @@ export const PayrollMatrixView = ({
         <TableBody>
           {matrix.rows.map(({ item, byBucket }) => (
             <TableRow key={item.user_id}>
-              <TableCell>{item.user_name}</TableCell>
+              <TableCell>
+                {/* «Зарплата» — приоритет обратный (см. PayrollListView). */}
+                <MemberNameCell
+                  reversed
+                  user_name={item.user_name}
+                  display_name={item.display_name}
+                />
+              </TableCell>
               {matrix.columns.map((bucketStart) => {
                 const bucket = byBucket.get(bucketStart);
                 if (!bucket) {
