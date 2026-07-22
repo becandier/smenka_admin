@@ -6,6 +6,7 @@ import GroupIcon from '@mui/icons-material/Group';
 import BadgeIcon from '@mui/icons-material/Badge';
 import PlaceIcon from '@mui/icons-material/Place';
 import ChecklistIcon from '@mui/icons-material/Checklist';
+import FactCheckIcon from '@mui/icons-material/FactCheck';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import HistoryIcon from '@mui/icons-material/History';
 import MoneyOffIcon from '@mui/icons-material/MoneyOff';
@@ -27,6 +28,7 @@ import {
   ChecklistTemplateCreate,
   ChecklistTemplateEdit,
 } from './resources/checklistTemplates';
+import { ChecklistInstanceList, ChecklistInstanceShow } from './resources/checklistInstances';
 import { OrgShiftList, OrgShiftShow } from './resources/orgShifts';
 import {
   PenaltyTemplateList,
@@ -97,6 +99,14 @@ export const App = () => (
             create={ChecklistTemplateCreate}
             edit={ChecklistTemplateEdit}
             icon={ChecklistIcon}
+          />
+          {/* Реестр экземпляров чек-листов (checklist_reports) — read-only, деталь через
+              GET /shifts/{shift_id}/checklists/{instance_id} (см. dataProvider getOne). */}
+          <Resource
+            name="checklist-instances"
+            list={ChecklistInstanceList}
+            show={ChecklistInstanceShow}
+            icon={FactCheckIcon}
           />
           <Resource
             name="org-shifts"

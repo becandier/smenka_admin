@@ -120,6 +120,18 @@ export const formatRateBadge = (rate: CurrentRate | null | undefined): string =>
 export const checklistStatusLabel = (status: string | null | undefined): string =>
   (status && CHECKLIST_STATUS_LABELS[status]) || status || '—';
 
+// Расширенные метки статуса для реестра экземпляров (checklist_reports, `/checklist-instances`):
+// incomplete поясняет причину («смена закрыта»). Отдельная карта, а не правка
+// CHECKLIST_STATUS_LABELS — секция чек-листов внутри детали смены (orgShifts.tsx) не меняется
+// (admin.md, «Прочее на странице»), а она использует общий checklistStatusLabel.
+export const CHECKLIST_REPORT_STATUS_LABELS: Record<string, string> = {
+  ...CHECKLIST_STATUS_LABELS,
+  incomplete: 'Не заполнен (смена закрыта)',
+};
+
+export const checklistReportStatusLabel = (status: string | null | undefined): string =>
+  (status && CHECKLIST_REPORT_STATUS_LABELS[status]) || status || '—';
+
 // --- Фото к пунктам чек-листов (checklist_photos) ---
 
 // Требование к фото на пункте шаблона (enum PhotoRequirement). Дефолт none.

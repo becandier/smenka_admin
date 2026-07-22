@@ -10,7 +10,11 @@ const messages = {
     members: { name: 'Сотрудник |||| Сотрудники' },
     roles: { name: 'Роль |||| Роли' },
     'work-locations': { name: 'Точка |||| Точки' },
-    'checklist-templates': { name: 'Чек-лист |||| Чек-листы' },
+    // Переименовано в «Шаблоны чек-листов» (checklist_reports/admin.md) — маршрут
+    // /checklist-templates не меняем, меняются только заголовки/крошки.
+    'checklist-templates': { name: 'Шаблон чек-листа |||| Шаблоны чек-листов' },
+    // Новый реестр заполненных/незаполненных экземпляров чек-листов (checklist_reports).
+    'checklist-instances': { name: 'Чек-лист |||| Чек-листы' },
     'org-shifts': { name: 'Смена |||| Смены' },
     'penalty-templates': { name: 'Шаблон штрафа |||| Шаблоны штрафов' },
     'audit-logs': { name: 'Аудит |||| Аудит' },
