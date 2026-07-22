@@ -7,6 +7,7 @@ import GroupIcon from '@mui/icons-material/Group';
 import BadgeIcon from '@mui/icons-material/Badge';
 import PlaceIcon from '@mui/icons-material/Place';
 import ChecklistIcon from '@mui/icons-material/Checklist';
+import FactCheckIcon from '@mui/icons-material/FactCheck';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import HistoryIcon from '@mui/icons-material/History';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
@@ -100,9 +101,16 @@ const MyMenu = () => {
           </ListSubheader>
           <Menu.Item to="/org-shifts" primaryText="Смены" leftIcon={<AccessTimeIcon />} />
           <Menu.Item to="/members" primaryText="Сотрудники" leftIcon={<GroupIcon />} />
+          {/* Реестр экземпляров чек-листов (checklist_reports) — новый раздел, занял бывший
+              путь пункта меню «Чек-листы»; сам раздел шаблонов переехал строкой ниже. */}
+          <Menu.Item
+            to="/checklist-instances"
+            primaryText="Чек-листы"
+            leftIcon={<FactCheckIcon />}
+          />
           <Menu.Item
             to="/checklist-templates"
-            primaryText="Чек-листы"
+            primaryText="Шаблоны чек-листов"
             leftIcon={<ChecklistIcon />}
           />
           <Menu.Item to="/org-stats" primaryText="Статистика" leftIcon={<BarChartIcon />} />
