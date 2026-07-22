@@ -10,6 +10,8 @@ import FactCheckIcon from '@mui/icons-material/FactCheck';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import HistoryIcon from '@mui/icons-material/History';
 import MoneyOffIcon from '@mui/icons-material/MoneyOff';
+import ScheduleIcon from '@mui/icons-material/Schedule';
+import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import { dataProvider } from './providers/dataProvider';
 import { authProvider, type Permissions } from './providers/authProvider';
 import { i18nProvider } from './i18n';
@@ -29,6 +31,8 @@ import {
   ChecklistTemplateEdit,
 } from './resources/checklistTemplates';
 import { ChecklistInstanceList, ChecklistInstanceShow } from './resources/checklistInstances';
+import { WorkScheduleList, WorkScheduleCreate, WorkScheduleEdit } from './resources/workSchedules';
+import { OvertimeRequestList } from './resources/overtimeRequests';
 import { OrgShiftList, OrgShiftShow } from './resources/orgShifts';
 import {
   PenaltyTemplateList,
@@ -108,12 +112,23 @@ export const App = () => (
             show={ChecklistInstanceShow}
             icon={FactCheckIcon}
           />
+          {/* Графики работы (work_schedules) — CRUD + назначения, по образцу checklist-templates. */}
+          <Resource
+            name="work-schedules"
+            list={WorkScheduleList}
+            create={WorkScheduleCreate}
+            edit={WorkScheduleEdit}
+            icon={ScheduleIcon}
+          />
           <Resource
             name="org-shifts"
             list={OrgShiftList}
             show={OrgShiftShow}
             icon={AccessTimeIcon}
           />
+          {/* Заявки на переработку (work_schedules) — компонент сам режет доступ до owner/admin
+              (admin.md: «Доступ: owner / admin», в меню пункт виден только им). */}
+          <Resource name="overtime-requests" list={OvertimeRequestList} icon={MoreTimeIcon} />
           {/* Шаблоны штрафов — CRUD только для org owner/admin (компоненты режут super_admin
               и не-менеджеров; в меню пункт виден только owner/admin). */}
           <Resource
