@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   List,
   Datagrid,
@@ -7,11 +7,15 @@ import {
   EmailField,
   FunctionField,
   SelectInput,
+  BooleanInput,
   DateInput,
   Show,
   useListContext,
   useDataProvider,
+  useGetList,
+  useNotify,
   useRecordContext,
+  useRefresh,
   type RaRecord,
 } from 'react-admin';
 import {
@@ -19,25 +23,39 @@ import {
   AccordionDetails,
   AccordionSummary,
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  MenuItem,
+  Select,
   Stack,
   Tooltip,
   Typography,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PhotoCameraOutlinedIcon from '@mui/icons-material/PhotoCameraOutlined';
+import EditCalendarIcon from '@mui/icons-material/EditCalendar';
 import {
   checklistStatusLabel,
+  finishReasonLabel,
   formatDateTime,
+  formatDateTimeInTz,
   formatDuration,
   memberRoleLabel,
+  overtimeStatusLabel,
+  scheduleErrorMessage,
   shiftStatusLabel,
 } from '../utils/format';
 import { formatMemberNameFlat } from '../utils/memberName';
 import { useAsync } from '../utils/useAsync';
+import { useOrgTimezone } from '../utils/useOrgTimezone';
 import { isDayRangeInvalid } from '../utils/dates';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { MemberNameCell } from '../components/MemberNameCell';
@@ -61,6 +79,25 @@ const checklistsFilterChoices = [
   { id: 'required_incomplete', name: 'Есть незаполненные обязательные' },
 ];
 
+// work_schedules: состояние заявки на переработку у смены (has_overtime, backend.md).
+const overtimeFilterChoices = [
+  { id: 'pending', name: 'На согласовании' },
+  { id: 'approved', name: 'Согласована' },
+  { id: 'any', name: 'Есть заявка (любой статус)' },
+];
+
+// Фильтр по графику: выбор — по названиям графиков организации (архивные тоже видны,
+// на них могли идти смены до архивации). useGetList — тот же приём, что MemberSelectFilter.
+const WorkScheduleSelectFilter = (props: { source: string; label: string }) => {
+  const { data } = useGetList('work-schedules', {
+    pagination: { page: 1, perPage: 200 },
+    sort: { field: 'name', order: 'ASC' },
+    filter: { include_archived: true },
+  });
+  const choices = (data ?? []).map((s) => ({ id: s.id, name: s.name }));
+  return <SelectInput {...props} choices={choices} emptyText="Любой" />;
+};
+
 const shiftFilters = [
   <MemberSelectFilter key="user_id" source="user_id" label="Сотрудник" alwaysOn />,
   <SelectInput key="status" source="status" label="Статус" choices={statusChoices} alwaysOn />,
@@ -72,6 +109,15 @@ const shiftFilters = [
     source="checklists"
     label="Чек-листы"
     choices={checklistsFilterChoices}
+  />,
+  // work_schedules: только опоздавшие / по графику / по состоянию переработки.
+  <BooleanInput key="only_late" source="only_late" label="Только опоздавшие" />,
+  <WorkScheduleSelectFilter key="work_schedule_id" source="work_schedule_id" label="График" />,
+  <SelectInput
+    key="has_overtime"
+    source="has_overtime"
+    label="Переработка"
+    choices={overtimeFilterChoices}
   />,
 ];
 
@@ -131,6 +177,39 @@ const checklistsSummaryCell = (r: RaRecord) => {
   );
 };
 
+// work_schedules: колонка «График» — название или «—» (смена без графика).
+const scheduleField = (r: RaRecord) => r.schedule_name ?? '—';
+
+// «Опоздание» — только если поздно; поздно и графика нет → «—» (не путать с «опоздания нет»).
+const lateField = (r: RaRecord) => {
+  const seconds = typeof r.late_seconds === 'number' ? r.late_seconds : null;
+  if (!seconds || seconds <= 0) return '—';
+  return <Chip size="small" color="warning" label={formatDuration(seconds)} />;
+};
+
+// Заявка на переработку смены (ShiftResponse.overtime, backend.md): «30 мин · на согласовании».
+interface OvertimeSummary {
+  minutes: number;
+  status: string;
+}
+const overtimeField = (r: RaRecord) => {
+  const overtime = (r.overtime ?? null) as OvertimeSummary | null;
+  if (!overtime) return '—';
+  const color: 'warning' | 'success' | 'default' =
+    overtime.status === 'pending'
+      ? 'warning'
+      : overtime.status === 'approved'
+        ? 'success'
+        : 'default';
+  return (
+    <Chip
+      size="small"
+      color={color}
+      label={`${overtime.minutes} мин · ${overtimeStatusLabel(overtime.status)}`}
+    />
+  );
+};
+
 // Тело списка. Пустоту обрабатываем сами через useListContext: проп <List empty>
 // в react-admin v5 НЕ рендерится при активных фильтрах, а ТЗ требует кастомный
 // empty-state и для отфильтрованного результата (фильтр по сотруднику без смен).
@@ -152,6 +231,9 @@ const OrgShiftDatagrid = () => {
       <FunctionField label="Отработано" render={durationField} />
       <FunctionField label="Точка" render={workLocationName} sortable={false} />
       <FunctionField label="Чек-листы" render={checklistsSummaryCell} />
+      <FunctionField label="График" render={scheduleField} sortable={false} />
+      <FunctionField label="Опоздание" render={lateField} sortable={false} />
+      <FunctionField label="Переработка" render={overtimeField} sortable={false} />
     </Datagrid>
   );
 };
@@ -369,6 +451,128 @@ const SectionCard = ({ title, children }: { title: string; children: ReactNode }
   </Card>
 );
 
+// Диалог смены графика администратором (work_schedules R7): селект графиков организации
+// (архивные тоже доступны — исправление задним числом) + «Без графика». PATCH .../shifts/{id}/schedule
+// пересчитывает scheduled_*/late_seconds от НЕИЗМЕННОГО started_at; фактическое время не меняется.
+const ChangeScheduleDialog = ({
+  shiftId,
+  currentScheduleId,
+  onClose,
+  onDone,
+}: {
+  shiftId: string;
+  currentScheduleId: string | null;
+  onClose: () => void;
+  onDone: () => void;
+}) => {
+  const dataProvider = useDataProvider();
+  const notify = useNotify();
+  const [scheduleId, setScheduleId] = useState<string>(currentScheduleId ?? '');
+  const [saving, setSaving] = useState(false);
+  const { data: schedules } = useGetList('work-schedules', {
+    pagination: { page: 1, perPage: 200 },
+    sort: { field: 'name', order: 'ASC' },
+    filter: { include_archived: true },
+  });
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      await dataProvider.changeShiftSchedule(shiftId, scheduleId === '' ? null : scheduleId);
+      notify('График смены обновлён', { type: 'success' });
+      onDone();
+    } catch (e) {
+      notify(scheduleErrorMessage(e, 'Не удалось изменить график'), { type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle>Изменить график смены</DialogTitle>
+      <DialogContent>
+        <DialogContentText sx={{ mb: 2 }}>
+          Плановое время и опоздание будут пересчитаны; фактическое время смены не изменится.
+        </DialogContentText>
+        <Select
+          fullWidth
+          size="small"
+          value={scheduleId}
+          onChange={(e) => setScheduleId(e.target.value)}
+        >
+          <MenuItem value="">— без графика —</MenuItem>
+          {(schedules ?? []).map((s) => (
+            <MenuItem key={s.id} value={s.id}>
+              {s.name}
+              {s.is_archived ? ' (архив)' : ''}
+            </MenuItem>
+          ))}
+        </Select>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={saving}>
+          Отмена
+        </Button>
+        <Button variant="contained" onClick={() => void submit()} disabled={saving}>
+          Сохранить
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
+// Блок «План»: плановое окно графика в таймзоне организации, факт, опоздание, причина
+// завершения (work_schedules, admin.md §3) + действие «Изменить график» (R7).
+const ShiftPlanSection = () => {
+  const record = useRecordContext();
+  const refresh = useRefresh();
+  const tz = useOrgTimezone();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  if (!record) return null;
+
+  const hasSchedule = Boolean(record.work_schedule_id) || Boolean(record.scheduled_start_at);
+
+  return (
+    <SectionCard title="План">
+      <Stack spacing={0.5}>
+        <InfoRow label="График">{record.schedule_name ?? '—'}</InfoRow>
+        <InfoRow label="Плановое начало">
+          {formatDateTimeInTz(record.scheduled_start_at, tz)}
+        </InfoRow>
+        <InfoRow label="Плановый конец">{formatDateTimeInTz(record.scheduled_end_at, tz)}</InfoRow>
+        <InfoRow label="Опоздание">
+          {typeof record.late_seconds === 'number' && record.late_seconds > 0
+            ? formatDuration(record.late_seconds)
+            : '—'}
+        </InfoRow>
+        <InfoRow label="Причина завершения">{finishReasonLabel(record.finish_reason)}</InfoRow>
+      </Stack>
+      <Box sx={{ mt: 1.5 }}>
+        <Button size="small" startIcon={<EditCalendarIcon />} onClick={() => setDialogOpen(true)}>
+          Изменить график
+        </Button>
+      </Box>
+      {!hasSchedule && (
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+          У смены нет графика — плановое время не рассчитывается, опоздание не показывается.
+        </Typography>
+      )}
+      {dialogOpen && (
+        <ChangeScheduleDialog
+          shiftId={String(record.id)}
+          currentScheduleId={record.work_schedule_id ?? null}
+          onClose={() => setDialogOpen(false)}
+          onDone={() => {
+            setDialogOpen(false);
+            refresh();
+          }}
+        />
+      )}
+    </SectionCard>
+  );
+};
+
 // Деталь чужой орг-смены (read-only): шапка + паузы + чек-листы.
 export const OrgShiftShow = () => (
   <Show component="div" title="Смена сотрудника">
@@ -376,6 +580,7 @@ export const OrgShiftShow = () => (
       <SectionCard title="Смена">
         <ShiftHeader />
       </SectionCard>
+      <ShiftPlanSection />
       {/* Штраф за смену — пишущее действие owner/admin (super_admin не ведёт штрафы). */}
       <ShiftPenaltySection />
       <SectionCard title="Паузы">
