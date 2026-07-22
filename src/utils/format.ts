@@ -200,3 +200,107 @@ export const pluralizeChecklists = (n: number): string => {
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'чек-листа';
   return 'чек-листов';
 };
+
+// --- Графики работы (work_schedules) ---
+
+// Диапазон «HH:MM – HH:MM», с пометкой «через полночь» для ночных графиков (crosses_midnight).
+export const formatScheduleTimeRange = (
+  start_time: string,
+  end_time: string,
+  crosses_midnight: boolean,
+): string =>
+  crosses_midnight ? `${start_time} – ${end_time} (через полночь)` : `${start_time} – ${end_time}`;
+
+// Результат клиентского расчёта длительности графика по двум полям времени (живая подсказка
+// под полями формы, backend.md R2 — та же арифметика, что и на сервере, без учёта DST:
+// клиенту DST не нужен, это лишь предпросмотр «сколько часов», сервер посчитает точно).
+export interface ScheduleDurationInfo {
+  minutes: number;
+  crossesMidnight: boolean;
+}
+
+// null — время не заполнено или начало равно концу (невалидно, см. SCHEDULE_INVALID_TIME).
+export const computeScheduleDuration = (
+  start: string | null | undefined,
+  end: string | null | undefined,
+): ScheduleDurationInfo | null => {
+  if (!start || !end) return null;
+  const startMatch = /^(\d{2}):(\d{2})$/.exec(start);
+  const endMatch = /^(\d{2}):(\d{2})$/.exec(end);
+  if (!startMatch || !endMatch) return null;
+  const startMin = Number(startMatch[1]) * 60 + Number(startMatch[2]);
+  const endMin = Number(endMatch[1]) * 60 + Number(endMatch[2]);
+  if (startMin === endMin) return null;
+  const crossesMidnight = endMin < startMin;
+  const minutes = crossesMidnight ? 24 * 60 - startMin + endMin : endMin - startMin;
+  return { minutes, crossesMidnight };
+};
+
+// Живой текст подсказки под полями времени формы графика (admin.md, «Создание/редактирование»).
+export const scheduleDurationHint = (
+  info: ScheduleDurationInfo,
+  start: string,
+  end: string,
+): string =>
+  info.crossesMidnight
+    ? `Ночная смена: ${start} → ${end} следующего дня, ${formatDuration(info.minutes * 60)}`
+    : `Смена длится ${formatDuration(info.minutes * 60)}`;
+
+// Код ошибки бэка (work_schedules/backend.md) → понятный текст. Тот же приём, что
+// checklistLocationErrorMessage.
+const SCHEDULE_ERROR_MESSAGES: Record<string, string> = {
+  SCHEDULE_NOT_FOUND: 'График не найден',
+  SCHEDULE_INVALID_TIME: 'Время начала и конца не должны совпадать',
+  SCHEDULE_NOT_AVAILABLE: 'График недоступен этому сотруднику',
+  SCHEDULE_REQUIRED: 'Сотруднику нужно выбрать график',
+  SCHEDULE_REQUIRED_NO_SCHEDULES: 'В организации нет ни одного неархивного графика',
+  ROLE_NOT_FOUND: 'Роль не найдена в этой организации',
+  WORK_LOCATION_NOT_FOUND: 'Точка не найдена',
+  INVALID_TIMEZONE: 'Неизвестный часовой пояс',
+};
+
+export const scheduleErrorMessage = (error: unknown, fallback = 'Ошибка'): string => {
+  const code = error instanceof HttpError ? error.body?.code : undefined;
+  if (code && SCHEDULE_ERROR_MESSAGES[code]) return SCHEDULE_ERROR_MESSAGES[code];
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
+
+// --- Переработки (shift_overtime_requests) ---
+
+export const OVERTIME_STATUS_LABELS: Record<string, string> = {
+  pending: 'на согласовании',
+  approved: 'согласовано',
+  rejected: 'отклонено',
+};
+
+export const overtimeStatusLabel = (status: string | null | undefined): string =>
+  (status && OVERTIME_STATUS_LABELS[status]) || status || '—';
+
+export const OVERTIME_STATUS_CHOICES = Object.entries({
+  pending: 'На согласовании',
+  approved: 'Согласовано',
+  rejected: 'Отклонено',
+}).map(([id, name]) => ({ id, name }));
+
+// Причина завершения смены (finish_reason, work_schedules R4): null — активна/старая смена.
+export const FINISH_REASON_LABELS: Record<string, string> = {
+  manual: 'Завершена вручную',
+  auto_schedule: 'Завершена автоматически по графику',
+};
+
+export const finishReasonLabel = (reason: string | null | undefined): string =>
+  (reason && FINISH_REASON_LABELS[reason]) || '—';
+
+// Дата-время ISO → строка в конкретной IANA-таймзоне (плановое окно смены — «по этому времени
+// считаются графики», admin.md §3). Фолбэк на локальную таймзону браузера при некорректной зоне.
+export const formatDateTimeInTz = (value: string | null | undefined, tz: string): string => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  try {
+    return date.toLocaleString('ru-RU', { timeZone: tz });
+  } catch {
+    return date.toLocaleString('ru-RU');
+  }
+};

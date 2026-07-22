@@ -93,6 +93,8 @@ const deleteOnePath = (resource: string, id: string): string => {
       return `${orgBase()}/locations/${id}`;
     case 'checklist-templates':
       return `${orgBase()}/checklist-templates/${id}`;
+    case 'work-schedules':
+      return `${orgBase()}/work-schedules/${id}`;
     case 'penalty-templates':
       return `${orgBase()}/penalty-templates/${id}`;
     case 'penalties':
@@ -308,13 +310,65 @@ export const dataProvider: DataProvider = {
       return { data: data?.items ?? [], total: data?.total ?? 0 };
     }
     if (resource === 'org-shifts') {
-      return orgServerList(params, {
-        path: 'shifts',
-        defaultSort: 'started_at',
-        // checklists — состояние чек-листов смены (none/all_completed/has_incomplete/
-        // required_incomplete), см. checklist_reports/backend.md.
-        filterKeys: ['user_id', 'status', 'date_from', 'date_to', 'checklists'],
+      // only_late — булев тумблер «Только опоздавшие»: снятое состояние (false) не должно
+      // становиться сетевым фильтром (контракт знает только `only_late=true` как включённый
+      // фильтр) — вырезаем его из filter, а не шлём buildQuery'ем как есть (тот включает
+      // булевы значения безусловно, включая false).
+      const filter = { ...(params.filter ?? {}) } as Record<string, unknown>;
+      if (filter.only_late === false) delete filter.only_late;
+      return orgServerList(
+        { ...params, filter },
+        {
+          path: 'shifts',
+          defaultSort: 'started_at',
+          // checklists — состояние чек-листов смены (none/all_completed/has_incomplete/
+          // required_incomplete), см. checklist_reports/backend.md. only_late/work_schedule_id/
+          // has_overtime — work_schedules/backend.md, «Фильтры в списке смен организации».
+          filterKeys: [
+            'user_id',
+            'status',
+            'date_from',
+            'date_to',
+            'checklists',
+            'only_late',
+            'work_schedule_id',
+            'has_overtime',
+          ],
+        },
+      );
+    }
+    if (resource === 'work-schedules') {
+      // include_archived — параметр запроса (не поле записи): выносим из filter, иначе
+      // clientPaginate попытался бы сверять его со значениями строк и обнулил бы список.
+      if (!getCurrentOrgId()) return { data: [], total: 0 };
+      const filter = { ...(params.filter ?? {}) } as Record<string, unknown>;
+      const includeArchived = filter.include_archived === true;
+      delete filter.include_archived;
+      const data = await request(`${orgBase()}/work-schedules?include_archived=${includeArchived}`);
+      const items: any[] = data?.items ?? [];
+      return clientPaginate(items, { ...params, filter });
+    }
+    if (resource === 'overtime-requests') {
+      // Реестр заявок на переработку (org_admin). Серверная пагинация limit/offset, фиксированная
+      // сортировка на бэке — sort/order не шлём. user_id (форма фильтра, единичный выбор через
+      // MemberSelectFilter) уходит в контрактный user_ids (CSV из одного элемента).
+      if (!getCurrentOrgId()) return { data: [], total: 0 };
+      const filter = toUtcDayRangeFilter((params.filter ?? {}) as Record<string, unknown>);
+      const { page, perPage } = params.pagination ?? { page: 1, perPage: 50 };
+      const query = new URLSearchParams({
+        limit: String(perPage),
+        offset: String((page - 1) * perPage),
       });
+      if (typeof filter.status === 'string' && filter.status !== '')
+        query.set('status', filter.status);
+      if (typeof filter.user_id === 'string' && filter.user_id !== '')
+        query.set('user_ids', filter.user_id);
+      if (typeof filter.date_from === 'string' && filter.date_from !== '')
+        query.set('date_from', filter.date_from);
+      if (typeof filter.date_to === 'string' && filter.date_to !== '')
+        query.set('date_to', filter.date_to);
+      const data = await request(`${orgBase()}/overtime-requests?${query.toString()}`);
+      return { data: data?.items ?? [], total: data?.total ?? 0 };
     }
     if (resource === 'checklist-instances') {
       // Реестр экземпляров чек-листов организации (checklist_reports/backend.md).
@@ -388,6 +442,10 @@ export const dataProvider: DataProvider = {
     if (resource === 'checklist-templates') {
       // детальная схема с пунктами
       return { data: await request(`${orgBase()}/checklist-templates/${id}`) };
+    }
+    if (resource === 'work-schedules') {
+      // объект + role_ids + work_location_ids (backend.md, «Графики — CRUD»).
+      return { data: await request(`${orgBase()}/work-schedules/${id}`) };
     }
     if (resource === 'penalties') {
       return { data: await request(`${orgBase()}/penalties/${id}`) };
@@ -493,6 +551,15 @@ export const dataProvider: DataProvider = {
         }),
       };
     }
+    if (resource === 'work-schedules') {
+      const body = { name: d.name, start_time: d.start_time, end_time: d.end_time };
+      return {
+        data: await request(`${orgBase()}/work-schedules`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        }),
+      };
+    }
     if (resource === 'penalty-templates') {
       const minor = parseRublesToMinor(String(d.amount_rub ?? ''));
       if (minor === null) {
@@ -550,10 +617,16 @@ export const dataProvider: DataProvider = {
     }
     if (resource === 'settings') {
       const body: Record<string, unknown> = {};
+      // auto_finish_hours убран из контракта (work_schedules заменяет его авто-завершением по
+      // графику); новые поля — auto_finish_by_schedule/require_schedule/late_tolerance_minutes/
+      // overtime_request_days (work_schedules/backend.md, «organization_settings — изменения»).
       for (const k of [
         'geo_check_enabled',
         'require_work_location',
-        'auto_finish_hours',
+        'auto_finish_by_schedule',
+        'require_schedule',
+        'late_tolerance_minutes',
+        'overtime_request_days',
         'max_pause_minutes',
         'max_pauses_per_shift',
       ]) {
@@ -594,6 +667,17 @@ export const dataProvider: DataProvider = {
         if (k in data) body[k] = data[k];
       }
       const updated = await request(`${orgBase()}/checklist-templates/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      return { data: { ...updated, id } };
+    }
+    if (resource === 'work-schedules') {
+      const body: Record<string, unknown> = {};
+      for (const k of ['name', 'start_time', 'end_time', 'is_archived']) {
+        if (k in data) body[k] = data[k];
+      }
+      const updated = await request(`${orgBase()}/work-schedules/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(body),
       });
@@ -762,6 +846,17 @@ export const dataProvider: DataProvider = {
       method: 'PATCH',
       body: JSON.stringify({ name }),
     }),
+  // Часовой пояс организации (work_schedules): PATCH /organizations/{org} c {timezone}, отдельный
+  // от renameOrganization вызов (settings.tsx правит его в том же экране, что и настройки, но
+  // это поле самой organizations, не organization_settings). Ошибка INVALID_TIMEZONE (400).
+  updateOrganizationTimezone: (
+    orgId: string,
+    timezone: string,
+  ): Promise<{ id: string; timezone: string } | null> =>
+    request(`/organizations/${orgId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ timezone }),
+    }),
   getShiftChecklists: async (shiftId: string) => {
     const data = await request(`/shifts/${shiftId}/checklists`);
     return data?.items ?? [];
@@ -828,6 +923,55 @@ export const dataProvider: DataProvider = {
   deleteTemplatePersonal: (templateId: string, userId: string) =>
     request(`${orgBase()}/checklist-templates/${templateId}/personal/${userId}`, {
       method: 'DELETE',
+    }),
+
+  // --- Графики работы (work_schedules): назначения — калька с checklist_work_location ---
+  // GET .../work-schedules/{id}/assignments → {role_ids, work_location_ids, personal_add,
+  // personal_remove}. personal_* — массивы user_id (не member_id), как у чек-листов.
+  getScheduleAssignments: (scheduleId: string) =>
+    request(`${orgBase()}/work-schedules/${scheduleId}/assignments`),
+  setScheduleRoles: (scheduleId: string, roleIds: string[]) =>
+    request(`${orgBase()}/work-schedules/${scheduleId}/roles`, {
+      method: 'PUT',
+      body: JSON.stringify({ role_ids: roleIds }),
+    }),
+  // Пустой массив снимает все привязки — график снова действует на всех точках.
+  setScheduleLocations: (scheduleId: string, locationIds: string[]) =>
+    request(`${orgBase()}/work-schedules/${scheduleId}/locations`, {
+      method: 'PUT',
+      body: JSON.stringify({ work_location_ids: locationIds }),
+    }),
+  // Личные переопределения сотрудника: контракт бэка заменяет ВЕСЬ список переопределений
+  // сотрудника по ВСЕМ графикам сразу (PUT .../members/{user_id}/schedule-overrides), в отличие
+  // от чек-листов (там PUT/DELETE точечно на пару template↔user). Вызывающий компонент
+  // (PersonalOverrides в workSchedules.tsx) обязан сам собрать полный список overrides по
+  // сотруднику перед вызовом — см. комментарий там же.
+  setMemberScheduleOverrides: (
+    userId: string,
+    overrides: { schedule_id: string; override_type: 'add' | 'remove' }[],
+  ) =>
+    request(`${orgBase()}/members/${userId}/schedule-overrides`, {
+      method: 'PUT',
+      body: JSON.stringify({ overrides }),
+    }),
+
+  // --- Смены: смена графика администратором (work_schedules R7) ---
+  // PATCH .../shifts/{shift_id}/schedule {work_schedule_id: uuid|null} → обновлённый ShiftResponse.
+  changeShiftSchedule: (shiftId: string, scheduleId: string | null) =>
+    request(`${orgBase()}/shifts/${shiftId}/schedule`, {
+      method: 'PATCH',
+      body: JSON.stringify({ work_schedule_id: scheduleId }),
+    }),
+
+  // --- Заявки на переработку (shift_overtime_requests): рассмотрение org_admin'ом ---
+  // PATCH .../overtime-requests/{id} {status: 'approved'|'rejected', review_comment?}.
+  reviewOvertimeRequest: (
+    requestId: string,
+    body: { status: 'approved' | 'rejected'; review_comment: string | null },
+  ) =>
+    request(`${orgBase()}/overtime-requests/${requestId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
     }),
 
   // --- Ставки участника (payroll): вложенный CRUD по member_id (id записи участника) ---
