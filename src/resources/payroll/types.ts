@@ -20,6 +20,8 @@ export interface PayrollBucket {
 export interface PayrollItem {
   user_id: string;
   user_name: string;
+  // member_display_name/admin.md: «Зарплата» — приоритет обратный (см. MemberNameCell reversed).
+  display_name: string | null;
   worked_seconds: number;
   shifts_count: number;
   gross_amount_minor: number;

@@ -7,6 +7,7 @@ import {
   localDayStartToUtcIso,
 } from '../utils/dates';
 import { parseRublesToMinor } from '../utils/format';
+import { normalizeDisplayName } from '../utils/memberName';
 import type { AccessState, FileUploadResult, ReorderInput } from '../resources/knowledge/types';
 
 // Категории ресурсов:
@@ -410,6 +411,9 @@ export const dataProvider: DataProvider = {
           id,
           shift_id: shiftId,
           user_name: shift?.user_name ?? null,
+          // member_display_name: тянем вместе с user_name из того же shift — деталь чек-листа
+          // сама его не отдаёт (см. комментарий выше).
+          display_name: shift?.display_name ?? null,
           user_email: shift?.user_email ?? null,
           work_location: shift?.work_location ?? null,
           shift_started_at: shift?.started_at ?? null,
@@ -615,6 +619,33 @@ export const dataProvider: DataProvider = {
           method: 'PATCH',
           body: JSON.stringify({ role_id: nextCustom }),
         });
+      }
+      // display_name (member_display_name): PATCH .../members/{userId} c {display_name}.
+      // Сравниваем нормализованные значения (пустая строка формы ≡ null), иначе пустой
+      // TextInput слал бы лишний PATCH и лишнюю аудит-запись «сброс на то же самое».
+      // Очистка поля шлём как null — бэк сам сбрасывает на настоящее имя.
+      if ('display_name' in data) {
+        const nextDisplayName = normalizeDisplayName(data.display_name);
+        const prevDisplayName = normalizeDisplayName(previousData?.display_name);
+        if (nextDisplayName !== prevDisplayName) {
+          try {
+            result = await request(`${orgBase()}/members/${userId}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ display_name: nextDisplayName }),
+            });
+          } catch (e: any) {
+            // INVALID_DISPLAY_NAME — не VALIDATION_ERROR, поэтому request() не разложил
+            // его в body.errors сам; мапим здесь в ошибку поля формы (admin.md, «Состояния
+            // и ошибки»: показать понятное сообщение у поля, а не общий тост).
+            if (e?.body?.code === 'INVALID_DISPLAY_NAME') {
+              throw new HttpError(e.message, e.status ?? 400, {
+                ...e.body,
+                errors: { display_name: e.message },
+              });
+            }
+            throw e;
+          }
+        }
       }
       return { data: mapMember({ ...previousData, ...data, ...(result ?? {}) }) };
     }

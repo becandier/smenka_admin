@@ -15,6 +15,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { formatClockDuration, formatMoneyMinor } from '../../utils/format';
+import { MemberNameCell } from '../../components/MemberNameCell';
 import { formatBucketLabel } from './buckets';
 import type { Granularity, PayrollItem, PayrollReport } from './types';
 
@@ -134,7 +135,15 @@ export const PayrollListView = ({
                     )}
                   </TableCell>
                 )}
-                <TableCell>{item.user_name}</TableCell>
+                <TableCell>
+                  {/* «Зарплата» — денежный документ, приоритет обратный (admin.md, «Исключение»):
+                      основное — настоящее user_name, подпись — display_name. */}
+                  <MemberNameCell
+                    reversed
+                    user_name={item.user_name}
+                    display_name={item.display_name}
+                  />
+                </TableCell>
                 <TableCell align="right">{formatClockDuration(item.worked_seconds)}</TableCell>
                 <TableCell align="right">{item.shifts_count}</TableCell>
                 <TableCell align="right">{formatMoneyMinor(item.gross_amount_minor)}</TableCell>

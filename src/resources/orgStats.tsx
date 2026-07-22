@@ -28,6 +28,7 @@ import { chartPalette } from '../brand';
 import { useCurrentOrg } from '../orgContext';
 import { DateRangeFields } from '../components/DateRangeFields';
 import { formatDateTime, formatDuration } from '../utils/format';
+import { formatMemberNameFlat } from '../utils/memberName';
 import {
   INVALID_RANGE_MESSAGE,
   isDayRangeInvalid,
@@ -39,6 +40,8 @@ import type { OrgStatsQuery } from '../providers/dataProvider';
 interface EmployeeStat {
   user_id: string;
   user_name: string;
+  // member_display_name/admin.md: рядом с настоящим именем, null если не задан.
+  display_name: string | null;
   user_email: string;
   shift_count: number;
   total_worked_seconds: number;
@@ -151,8 +154,11 @@ export const OrgStatsPage = () => {
       ]
     : [];
 
+  // Единое правило отображения (member_display_name/admin.md): подпись оси — display_name,
+  // если задан, с настоящим именем через «·» (иначе оно бы исчезло из интерфейса совсем —
+  // ось графика не место для двух отдельных строк, как в Datagrid).
   const chartData = (stats?.per_employee ?? []).map((e) => ({
-    name: e.user_name,
+    name: formatMemberNameFlat({ user_name: e.user_name, display_name: e.display_name }),
     hours: toHours(e.total_worked_seconds),
   }));
 

@@ -40,13 +40,16 @@ import {
 } from '../utils/format';
 import { localInputToUtcIso, utcIsoToLocalInput } from '../utils/dates';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { MemberNameCell } from '../components/MemberNameCell';
 
 // Penalty (admin-facing) — снимок суммы/причины на момент назначения (см. fines/admin.md).
+// display_name — member_display_name/admin.md: рядом с настоящим user_name, null если не задан.
 export interface Penalty {
   id: string;
   member_id: string;
   user_id: string;
   user_name: string;
+  display_name: string | null;
   template_id: string | null;
   reason: string;
   amount_minor: number;
@@ -410,6 +413,7 @@ export const MemberPenaltiesSection = () => {
     <Box sx={{ px: 2, pb: 2 }}>
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1.5 }} flexWrap="wrap">
         <Typography variant="h6">Штрафы</Typography>
+        <MemberNameCell user_name={record.user_name} display_name={record.display_name} />
         {canEdit && (
           <Button
             size="small"
@@ -534,6 +538,9 @@ export const ShiftPenaltySection = () => {
         <Typography variant="h6" gutterBottom>
           Штраф
         </Typography>
+        <Box sx={{ mb: 1.5 }}>
+          <MemberNameCell user_name={record.user_name} display_name={record.display_name} />
+        </Box>
         {isPending ? (
           <CircularProgress size={20} />
         ) : !memberId ? (
