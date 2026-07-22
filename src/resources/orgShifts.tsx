@@ -36,9 +36,11 @@ import {
   memberRoleLabel,
   shiftStatusLabel,
 } from '../utils/format';
+import { formatMemberNameFlat } from '../utils/memberName';
 import { useAsync } from '../utils/useAsync';
 import { isDayRangeInvalid } from '../utils/dates';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
+import { MemberNameCell } from '../components/MemberNameCell';
 import { DateRangeAlert } from '../components/DateRangeAlert';
 import { ChecklistItemPhotos } from '../components/ChecklistItemPhotos';
 import { ShiftPenaltySection } from './penalties';
@@ -88,6 +90,10 @@ const ShiftsEmpty = () => {
 };
 
 // Render-хелперы колонок (вынесены из JSX — стабильны и единообразны).
+// Колонка «Сотрудник» — единое правило отображения (member_display_name/admin.md).
+const nameField = (r: RaRecord) => (
+  <MemberNameCell user_name={r.user_name} display_name={r.display_name} />
+);
 const roleField = (r: RaRecord) => memberRoleLabel(r.role);
 const statusField = (r: RaRecord) => shiftStatusLabel(r.status);
 const durationField = (r: RaRecord) => formatDuration(r.worked_seconds);
@@ -136,7 +142,7 @@ const OrgShiftDatagrid = () => {
   if (!isPending && (data ?? []).length === 0) return <ShiftsEmpty />;
   return (
     <Datagrid bulkActionButtons={false} rowClick="show">
-      <TextField source="user_name" label="Сотрудник" emptyText="—" sortable={false} />
+      <FunctionField label="Сотрудник" render={nameField} sortable={false} />
       <EmailField source="user_email" label="Email" emptyText="—" sortable={false} />
       <FunctionField label="Роль" render={roleField} />
       <TextField source="custom_role_name" label="Кастомная роль" emptyText="—" sortable={false} />
@@ -181,7 +187,9 @@ const ShiftHeader = () => {
   if (!record) return null;
   return (
     <Stack spacing={0.5}>
-      <InfoRow label="Сотрудник">{record.user_name ?? '—'}</InfoRow>
+      <InfoRow label="Сотрудник">
+        {formatMemberNameFlat({ user_name: record.user_name, display_name: record.display_name })}
+      </InfoRow>
       <InfoRow label="Email">{record.user_email ?? '—'}</InfoRow>
       <InfoRow label="Роль">{memberRoleLabel(record.role)}</InfoRow>
       <InfoRow label="Кастомная роль">{record.custom_role_name ?? '—'}</InfoRow>

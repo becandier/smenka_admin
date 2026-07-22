@@ -4,7 +4,6 @@ import {
   List,
   Datagrid,
   DateField,
-  TextField,
   EmailField,
   FunctionField,
   SelectInput,
@@ -20,8 +19,10 @@ import { Box, Button, Card, CardContent, Chip, Stack, Tooltip, Typography } from
 import PhotoCameraOutlinedIcon from '@mui/icons-material/PhotoCameraOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { checklistReportStatusLabel, formatDateTime } from '../utils/format';
+import { formatMemberNameFlat } from '../utils/memberName';
 import { isDayRangeInvalid } from '../utils/dates';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
+import { MemberNameCell } from '../components/MemberNameCell';
 import { DateRangeAlert } from '../components/DateRangeAlert';
 import { ChecklistItemPhotos } from '../components/ChecklistItemPhotos';
 import { useCurrentOrg } from '../orgContext';
@@ -138,6 +139,11 @@ const ChecklistInstancesEmpty = () => {
   );
 };
 
+// Колонка «Сотрудник» — единое правило отображения (member_display_name/admin.md).
+const nameField = (r: RaRecord) => (
+  <MemberNameCell user_name={r.user_name} display_name={r.display_name} />
+);
+
 const workLocationName = (r: RaRecord) => r.work_location?.name ?? '—';
 
 const workLocationLabel = (
@@ -215,7 +221,7 @@ const ChecklistInstanceDatagrid = () => {
   return (
     <Datagrid bulkActionButtons={false} rowClick="show">
       <FunctionField label="Чек-лист" render={nameCell} />
-      <TextField source="user_name" label="Сотрудник" emptyText="—" sortable={false} />
+      <FunctionField label="Сотрудник" render={nameField} sortable={false} />
       <EmailField source="user_email" label="Email" emptyText="—" sortable={false} />
       <DateField source="shift_started_at" label="Смена" showTime />
       <FunctionField label="Точка" render={workLocationName} />
@@ -268,7 +274,9 @@ const ChecklistInstanceHeader = () => {
         />
       </InfoRow>
       <InfoRow label="Обязательный">{record.is_required ? 'Да' : 'Нет'}</InfoRow>
-      <InfoRow label="Сотрудник">{record.user_name ?? '—'}</InfoRow>
+      <InfoRow label="Сотрудник">
+        {formatMemberNameFlat({ user_name: record.user_name, display_name: record.display_name })}
+      </InfoRow>
       <InfoRow label="Email">{record.user_email ?? '—'}</InfoRow>
       <InfoRow label="Точка">{workLocationLabel(record.work_location ?? null)}</InfoRow>
       <InfoRow label="Начало смены">{formatDateTime(record.shift_started_at)}</InfoRow>
