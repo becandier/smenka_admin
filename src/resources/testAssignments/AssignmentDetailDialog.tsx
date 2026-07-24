@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Box,
@@ -12,11 +12,15 @@ import {
   Typography,
 } from '@mui/material';
 import type { RaRecord } from 'react-admin';
+import { TEST_ASSIGNMENT_STATUS_COLOR, testAssignmentStatusLabel } from '../../utils/format';
 import {
-  formatDateTime,
-  TEST_ASSIGNMENT_STATUS_COLOR,
-  testAssignmentStatusLabel,
-} from '../../utils/format';
+  attemptsUsed,
+  bestPercent,
+  dueAt,
+  lastAttemptAt,
+  memberDisplayName,
+  templateTitle,
+} from './fields';
 import { AttemptReviewDialog } from './AttemptReviewDialog';
 
 const InfoRow = ({ label, children }: { label: string; children: ReactNode }) => (
@@ -65,18 +69,16 @@ interface AssignmentDetailDialogProps {
 // список попыток (если данные доступны, см. extractAttemptRefs) с переходом к разметке
 // верно/неверно (AttemptReviewDialog).
 export const AssignmentDetailDialog = ({ assignment, onClose }: AssignmentDetailDialogProps) => {
-  const attemptRefs = extractAttemptRefs(assignment);
+  const attemptRefs = useMemo(() => extractAttemptRefs(assignment), [assignment]);
   const [openAttemptId, setOpenAttemptId] = useState<string | null>(null);
-  const template = assignment.template as { title?: string } | undefined;
-  const member = assignment.member as { display_name?: string } | undefined;
   const status = String(assignment.status ?? '');
 
   return (
     <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Назначение: {template?.title ?? '—'}</DialogTitle>
+      <DialogTitle>Назначение: {templateTitle(assignment)}</DialogTitle>
       <DialogContent>
         <Stack spacing={1} sx={{ mb: 2 }}>
-          <InfoRow label="Сотрудник">{member?.display_name ?? '—'}</InfoRow>
+          <InfoRow label="Сотрудник">{memberDisplayName(assignment)}</InfoRow>
           <InfoRow label="Статус">
             <Chip
               size="small"
@@ -84,18 +86,10 @@ export const AssignmentDetailDialog = ({ assignment, onClose }: AssignmentDetail
               label={testAssignmentStatusLabel(status)}
             />
           </InfoRow>
-          <InfoRow label="Лучший результат">
-            {typeof assignment.best_percent === 'number' ? `${assignment.best_percent}%` : '—'}
-          </InfoRow>
-          <InfoRow label="Попыток">
-            {`${assignment.attempts_used ?? 0} / ${assignment.max_attempts ?? '—'}`}
-          </InfoRow>
-          <InfoRow label="Дедлайн">
-            {assignment.due_at ? formatDateTime(String(assignment.due_at)) : '—'}
-          </InfoRow>
-          <InfoRow label="Последняя сдача">
-            {assignment.last_attempt_at ? formatDateTime(String(assignment.last_attempt_at)) : '—'}
-          </InfoRow>
+          <InfoRow label="Лучший результат">{bestPercent(assignment)}</InfoRow>
+          <InfoRow label="Попыток">{attemptsUsed(assignment)}</InfoRow>
+          <InfoRow label="Дедлайн">{dueAt(assignment)}</InfoRow>
+          <InfoRow label="Последняя сдача">{lastAttemptAt(assignment)}</InfoRow>
         </Stack>
 
         <Typography variant="subtitle1" sx={{ mb: 1 }}>

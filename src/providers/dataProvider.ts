@@ -6,7 +6,7 @@ import {
   localDayEndToUtcIso,
   localDayStartToUtcIso,
 } from '../utils/dates';
-import { parseRublesToMinor } from '../utils/format';
+import { parseRublesToMinor, textOrEmpty } from '../utils/format';
 import { normalizeDisplayName } from '../utils/memberName';
 import type { AccessState, FileUploadResult, ReorderInput } from '../resources/knowledge/types';
 
@@ -304,10 +304,6 @@ const toSearch = (query: Record<string, string | undefined>): string => {
 
 // --- Тестирование сотрудников (employee_tests) ---
 
-// Текстовое поле формы (react-hook-form хранит значение как unknown) — только если это
-// действительно строка; иначе '' (без риска словить [object Object] через String(obj)).
-const asText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
-
 // Тело запроса шаблона теста (create/update формы-конструктора): нормализует значения
 // ArrayInput в контрактный формат POST/PATCH .../test-templates (backend.md, «POST
 // .../test-templates»; тот же формат — импорт, см. import-format.md). id/position/
@@ -316,20 +312,21 @@ const asText = (value: unknown): string => (typeof value === 'string' ? value.tr
 // назначает position по порядку элементов массива.
 const buildTestTemplateBody = (d: Record<string, unknown>): Record<string, unknown> => {
   const questions = Array.isArray(d.questions) ? (d.questions as Record<string, unknown>[]) : [];
+  const description = textOrEmpty(d.description).trim();
   return {
-    title: asText(d.title),
-    description: asText(d.description) !== '' ? asText(d.description) : null,
+    title: textOrEmpty(d.title).trim(),
+    description: description !== '' ? description : null,
     pass_threshold_percent: Number(d.pass_threshold_percent),
     max_attempts: Number(d.max_attempts),
     reveal_answers: Boolean(d.reveal_answers),
     shuffle_questions: Boolean(d.shuffle_questions),
     questions: questions.map((q) => ({
-      text: asText(q.text),
+      text: textOrEmpty(q.text).trim(),
       type: q.type,
       points: Number(q.points),
       options: (Array.isArray(q.options) ? (q.options as Record<string, unknown>[]) : []).map(
         (o) => ({
-          text: asText(o.text),
+          text: textOrEmpty(o.text).trim(),
           is_correct: Boolean(o.is_correct),
         }),
       ),

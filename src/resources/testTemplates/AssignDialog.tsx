@@ -44,7 +44,9 @@ export const AssignTestDialog = ({
   const { data: members } = useGetList<MemberNameSource & { id: string }>(
     'members',
     { pagination: { page: 1, perPage: 500 }, sort: { field: 'user_name', order: 'ASC' } },
-    { enabled: open },
+    // staleTime — состав сотрудников организации меняется редко; без него каждое открытие
+    // диалога заново перезапрашивает список 500 записей.
+    { enabled: open, staleTime: 5 * 60 * 1000 },
   );
 
   const options = useMemo<MemberOption[]>(

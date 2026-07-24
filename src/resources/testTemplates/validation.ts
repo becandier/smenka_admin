@@ -1,3 +1,5 @@
+import { textOrEmpty } from '../../utils/format';
+
 // Тип вопроса (employee_tests/backend.md): single_choice — ровно один верный вариант,
 // multiple_choice — минимум один. Значения — контрактные строки enum'а (native_enum=False).
 export const QUESTION_TYPE_CHOICES = [
@@ -5,18 +7,25 @@ export const QUESTION_TYPE_CHOICES = [
   { id: 'multiple_choice', name: 'Несколько вариантов ответа' },
 ];
 
-// Значения по умолчанию для Create (Edit подставляет их из record через getOne).
-export const TEST_TEMPLATE_DEFAULT_VALUES = {
+// Значения по умолчанию для Create (Edit подставляет их из record через getOne). Фабрика,
+// а не общий объект-константа: SimpleForm defaultValues передаётся напрямую в useForm,
+// и общий на все монтирования Create массив questions — латентная ловушка на случай,
+// если react-hook-form когда-нибудь перестанет клонировать defaultValues на входе.
+export const getTestTemplateDefaultValues = () => ({
   pass_threshold_percent: 70,
   max_attempts: 1,
   reveal_answers: true,
   shuffle_questions: false,
-  questions: [],
-};
+  questions: [] as unknown[],
+});
 
-// Текстовое значение формы (react-hook-form хранит поле как unknown) — только если это
-// действительно строка; иначе '' (без риска словить [object Object] через String(obj)).
-const asText = (value: unknown): string => (typeof value === 'string' ? value : '');
+// «Целое число ≥ min (и ≤ max, если задан)» — общая проверка для pass_threshold_percent/
+// max_attempts/points (одна и та же форма инварианта из import-format.md с разными границами).
+const isValidInt = (value: unknown, min: number, max = Infinity): boolean => {
+  if (value === undefined || value === null || value === '') return false;
+  const num = Number(value);
+  return Number.isInteger(num) && num >= min && num <= max;
+};
 
 // Валидация конструктора теста целиком — одна form-level функция (SimpleForm validate),
 // а не validate на отдельных инпутах: react-hook-form-резолвер, который react-admin строит
@@ -34,30 +43,13 @@ const asText = (value: unknown): string => (typeof value === 'string' ? value : 
 export const validateTestTemplate = (values: Record<string, any>): Record<string, any> => {
   const errors: Record<string, any> = {};
 
-  if (!asText(values.title).trim()) {
+  if (!textOrEmpty(values.title).trim()) {
     errors.title = 'Укажите название';
   }
-
-  const thresholdNum = Number(values.pass_threshold_percent);
-  if (
-    values.pass_threshold_percent === undefined ||
-    values.pass_threshold_percent === null ||
-    values.pass_threshold_percent === '' ||
-    !Number.isInteger(thresholdNum) ||
-    thresholdNum < 0 ||
-    thresholdNum > 100
-  ) {
+  if (!isValidInt(values.pass_threshold_percent, 0, 100)) {
     errors.pass_threshold_percent = 'Целое число от 0 до 100';
   }
-
-  const maxAttemptsNum = Number(values.max_attempts);
-  if (
-    values.max_attempts === undefined ||
-    values.max_attempts === null ||
-    values.max_attempts === '' ||
-    !Number.isInteger(maxAttemptsNum) ||
-    maxAttemptsNum < 1
-  ) {
+  if (!isValidInt(values.max_attempts, 1)) {
     errors.max_attempts = 'Целое число, не меньше 1';
   }
 
@@ -69,19 +61,12 @@ export const validateTestTemplate = (values: Record<string, any>): Record<string
   } else {
     const questionErrors = questions.map((q) => {
       const qErr: Record<string, unknown> = {};
-      if (!asText(q.text).trim()) qErr.text = 'Укажите текст вопроса';
+      if (!textOrEmpty(q.text).trim()) qErr.text = 'Укажите текст вопроса';
 
       const isValidType = q.type === 'single_choice' || q.type === 'multiple_choice';
       if (!isValidType) qErr.type = 'Выберите тип вопроса';
 
-      const pointsNum = Number(q.points);
-      if (
-        q.points === undefined ||
-        q.points === null ||
-        q.points === '' ||
-        !Number.isInteger(pointsNum) ||
-        pointsNum < 1
-      ) {
+      if (!isValidInt(q.points, 1)) {
         qErr.points = 'Целое число, не меньше 1';
       }
 
@@ -92,7 +77,7 @@ export const validateTestTemplate = (values: Record<string, any>): Record<string
         qErr.options = 'Минимум 2 варианта ответа';
       } else {
         const optionErrors = options.map((o) =>
-          !asText(o.text).trim() ? { text: 'Укажите текст варианта' } : {},
+          !textOrEmpty(o.text).trim() ? { text: 'Укажите текст варианта' } : {},
         );
         if (optionErrors.some((e) => Object.keys(e).length > 0)) {
           qErr.options = optionErrors;

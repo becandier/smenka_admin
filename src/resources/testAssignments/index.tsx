@@ -2,22 +2,29 @@ import { useMemo, useState } from 'react';
 import {
   List,
   Datagrid,
+  FunctionField,
   SelectInput,
   useGetList,
   useListContext,
-  useRecordContext,
   type RaRecord,
 } from 'react-admin';
 import { Box, Button, Chip, Typography } from '@mui/material';
 import { useMyOrgRole } from '../../utils/useMyOrgRole';
 import { formatMemberNameFlat } from '../../utils/memberName';
 import {
-  formatDateTime,
   TEST_ASSIGNMENT_STATUS_CHOICES,
   TEST_ASSIGNMENT_STATUS_COLOR,
   testAssignmentStatusLabel,
 } from '../../utils/format';
 import { AssignmentDetailDialog } from './AssignmentDetailDialog';
+import {
+  attemptsUsed,
+  bestPercent,
+  dueAt,
+  lastAttemptAt,
+  memberDisplayName,
+  templateTitle,
+} from './fields';
 
 const NoAccess = () => (
   <Box sx={{ p: 3 }}>
@@ -32,13 +39,19 @@ const useCanManage = (): boolean => {
   return role === 'owner' || role === 'admin';
 };
 
+// Кэшировать выбор фильтров подольше: список тестов/сотрудников организации меняется редко,
+// а фильтры и диалог «Назначить» (AssignDialog.tsx) дёргают ровно те же списки на каждой
+// смене экрана — без staleTime это был бы повторный сетевой запрос на каждый заход.
+const REFERENCE_STALE_TIME = 5 * 60 * 1000;
+
 // Селект-фильтр по тестам организации — тот же приём, что TemplateSelectFilter в
 // checklistInstances.tsx (локальный, единственное место использования).
 const TestTemplateSelectFilter = (props: { source: string; label: string; alwaysOn?: boolean }) => {
-  const { data } = useGetList('test-templates', {
-    pagination: { page: 1, perPage: 200 },
-    sort: { field: 'created_at', order: 'DESC' },
-  });
+  const { data } = useGetList(
+    'test-templates',
+    { pagination: { page: 1, perPage: 200 }, sort: { field: 'created_at', order: 'DESC' } },
+    { staleTime: REFERENCE_STALE_TIME },
+  );
   const choices = useMemo(() => (data ?? []).map((t) => ({ id: t.id, name: t.title })), [data]);
   return <SelectInput {...props} choices={choices} />;
 };
@@ -47,10 +60,11 @@ const TestTemplateSelectFilter = (props: { source: string; label: string; always
 // member_id в query реестра результатов (backend.md, «GET .../test-assignments»). Отличается
 // от MemberSelectFilter (components/), где значение — user_id.
 const TestMemberSelectFilter = (props: { source: string; label: string; alwaysOn?: boolean }) => {
-  const { data } = useGetList('members', {
-    pagination: { page: 1, perPage: 500 },
-    sort: { field: 'user_name', order: 'ASC' },
-  });
+  const { data } = useGetList(
+    'members',
+    { pagination: { page: 1, perPage: 500 }, sort: { field: 'user_name', order: 'ASC' } },
+    { staleTime: REFERENCE_STALE_TIME },
+  );
   const choices = useMemo(
     () => (data ?? []).map((m) => ({ id: m.id, name: formatMemberNameFlat(m) })),
     [data],
@@ -81,33 +95,12 @@ const TestAssignmentsEmpty = () => {
   );
 };
 
-// Колонки — компоненты-поля (не FunctionField), т.к. нужен доступ к record через
-// useRecordContext внутри Datagrid (стандартный react-admin приём). label в JSX читает
-// только сам Datagrid (для заголовка колонки) — компонент его не использует; props всё
-// равно принимается и явно void'ится (тот же приём, что AudienceCell в workSchedules.tsx),
-// иначе типизация Datagrid не примет проп label, а no-unused-vars — параметр.
-interface FieldProps {
-  label?: string;
-}
-
-const TemplateTitleField = (props: FieldProps) => {
-  void props;
-  const record = useRecordContext();
-  const template = record?.template as { title?: string } | undefined;
-  return <Typography variant="body2">{template?.title ?? '—'}</Typography>;
-};
-
-const MemberNameField = (props: FieldProps) => {
-  void props;
-  const record = useRecordContext();
-  const member = record?.member as { display_name?: string } | undefined;
-  return <Typography variant="body2">{member?.display_name ?? '—'}</Typography>;
-};
-
-const StatusField = (props: FieldProps) => {
-  void props;
-  const record = useRecordContext();
-  const status = String(record?.status ?? '');
+// Колонки — FunctionField (render получает record напрямую, доступ через useRecordContext
+// не нужен), тот же приём, что thresholdField/RowActions в testTemplates/index.tsx.
+// Читатели полей (templateTitle/memberDisplayName/bestPercent/dueAt/lastAttemptAt) —
+// в ./fields.ts, переиспользуются AssignmentDetailDialog для тех же полей в деталях.
+const statusChip = (r: RaRecord) => {
+  const status = String(r.status ?? '');
   return (
     <Chip
       size="small"
@@ -117,68 +110,26 @@ const StatusField = (props: FieldProps) => {
   );
 };
 
-const BestPercentField = (props: FieldProps) => {
-  void props;
-  const record = useRecordContext();
-  const value = record?.best_percent;
-  return <Typography variant="body2">{typeof value === 'number' ? `${value}%` : '—'}</Typography>;
-};
-
-const AttemptsField = (props: FieldProps) => {
-  void props;
-  const record = useRecordContext();
-  return (
-    <Typography variant="body2">
-      {record?.attempts_used ?? 0} / {record?.max_attempts ?? '—'}
-    </Typography>
-  );
-};
-
-const DueAtField = (props: FieldProps) => {
-  void props;
-  const record = useRecordContext();
-  return (
-    <Typography variant="body2">
-      {record?.due_at ? formatDateTime(String(record.due_at)) : '—'}
-    </Typography>
-  );
-};
-
-const LastAttemptField = (props: FieldProps) => {
-  void props;
-  const record = useRecordContext();
-  return (
-    <Typography variant="body2">
-      {record?.last_attempt_at ? formatDateTime(String(record.last_attempt_at)) : '—'}
-    </Typography>
-  );
-};
-
-const DetailsButtonField = ({
-  onSelect,
-}: FieldProps & { onSelect: (record: RaRecord) => void }) => {
-  const record = useRecordContext();
-  if (!record) return null;
-  return (
-    <Button size="small" onClick={() => onSelect(record)}>
-      Детали
-    </Button>
-  );
-};
-
 const TestAssignmentDatagrid = ({ onSelect }: { onSelect: (record: RaRecord) => void }) => {
   const { isPending, data } = useListContext();
   if (!isPending && (data ?? []).length === 0) return <TestAssignmentsEmpty />;
   return (
     <Datagrid bulkActionButtons={false} rowClick={false}>
-      <TemplateTitleField label="Тест" />
-      <MemberNameField label="Сотрудник" />
-      <StatusField label="Статус" />
-      <BestPercentField label="Лучший %" />
-      <AttemptsField label="Попыток" />
-      <DueAtField label="Дедлайн" />
-      <LastAttemptField label="Последняя сдача" />
-      <DetailsButtonField label="" onSelect={onSelect} />
+      <FunctionField label="Тест" render={templateTitle} />
+      <FunctionField label="Сотрудник" render={memberDisplayName} />
+      <FunctionField label="Статус" render={statusChip} />
+      <FunctionField label="Лучший %" render={bestPercent} />
+      <FunctionField label="Попыток" render={attemptsUsed} />
+      <FunctionField label="Дедлайн" render={dueAt} />
+      <FunctionField label="Последняя сдача" render={lastAttemptAt} />
+      <FunctionField
+        label=""
+        render={(r: RaRecord) => (
+          <Button size="small" onClick={() => onSelect(r)}>
+            Детали
+          </Button>
+        )}
+      />
     </Datagrid>
   );
 };

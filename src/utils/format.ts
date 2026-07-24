@@ -307,6 +307,12 @@ export const formatDateTimeInTz = (value: string | null | undefined, tz: string)
 
 // --- Тестирование сотрудников (employee_tests) ---
 
+// Текстовое значение формы (react-hook-form хранит поле как unknown) — только если это
+// действительно строка; иначе '' (без риска словить [object Object] через String(obj)).
+// Общий хелпер для dataProvider (buildTestTemplateBody) и клиентской валидации
+// (validateTestTemplate) — раньше дублировался в обоих местах с чуть разным поведением.
+export const textOrEmpty = (value: unknown): string => (typeof value === 'string' ? value : '');
+
 // Код ошибки бэка (employee_tests/backend.md) → понятный текст. Тот же приём, что
 // scheduleErrorMessage/checklistLocationErrorMessage. TEST_TEMPLATE_INVALID сюда намеренно
 // не включён: у него нет фиксированного текста (message описывает конкретный вопрос),

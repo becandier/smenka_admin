@@ -26,7 +26,7 @@ import AssignmentIndIcon from '@mui/icons-material/AssignmentInd';
 import { useMyOrgRole } from '../../utils/useMyOrgRole';
 import { testErrorMessage } from '../../utils/format';
 import { TestTemplateFields } from './TemplateForm';
-import { TEST_TEMPLATE_DEFAULT_VALUES, validateTestTemplate } from './validation';
+import { getTestTemplateDefaultValues, validateTestTemplate } from './validation';
 import { ImportTestTemplateDialog } from './ImportDialog';
 import { AssignTestDialog } from './AssignDialog';
 
@@ -43,6 +43,17 @@ const NoAccess = () => (
 const useCanManage = (): boolean => {
   const role = useMyOrgRole();
   return role === 'owner' || role === 'admin';
+};
+
+// Баннер серверной ошибки создания/сохранения (TEST_TEMPLATE_INVALID/TEST_TEMPLATE_ARCHIVED
+// и т.п.) — общий для Create и Edit форм, которые отличаются только текстом фолбэка.
+const ServerErrorAlert = ({ error }: { error: string | null }) => {
+  if (!error) return null;
+  return (
+    <Alert severity="error" sx={{ mb: 2 }}>
+      {error}
+    </Alert>
+  );
 };
 
 const testTemplateFilters = [
@@ -74,13 +85,20 @@ const TestTemplateListActions = () => {
 
 const thresholdField = (r: RaRecord): string => `${r.pass_threshold_percent}%`;
 
-// Действия строки: «Назначить» (диалог) и «В архив»/«Из архива». Клик по строке уже ведёт
-// на редактирование (rowClick="edit") — stopPropagation, чтобы клик по кнопке не открывал форму.
-const RowActions = ({ record }: { record: RaRecord }) => {
+// Действия строки: «Назначить» (открывает диалог, поднятый на уровень списка — см.
+// TestTemplateListInner: один <AssignTestDialog>, а не по экземпляру на каждую строку)
+// и «В архив»/«Из архива». Клик по строке уже ведёт на редактирование (rowClick="edit") —
+// stopPropagation, чтобы клик по кнопке не открывал форму.
+const RowActions = ({
+  record,
+  onAssign,
+}: {
+  record: RaRecord;
+  onAssign: (record: RaRecord) => void;
+}) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const refresh = useRefresh();
-  const [assignOpen, setAssignOpen] = useState(false);
   const [archiving, setArchiving] = useState(false);
 
   const toggleArchive = async (e: MouseEvent): Promise<void> => {
@@ -106,7 +124,7 @@ const RowActions = ({ record }: { record: RaRecord }) => {
         startIcon={<AssignmentIndIcon />}
         onClick={(e) => {
           e.stopPropagation();
-          setAssignOpen(true);
+          onAssign(record);
         }}
         disabled={Boolean(record.is_archived)}
       >
@@ -121,44 +139,61 @@ const RowActions = ({ record }: { record: RaRecord }) => {
       >
         {record.is_archived ? 'Из архива' : 'В архив'}
       </Button>
-      <AssignTestDialog
-        templateId={String(record.id)}
-        templateTitle={String(record.title ?? '')}
-        open={assignOpen}
-        onClose={() => setAssignOpen(false)}
-        onDone={() => {
-          setAssignOpen(false);
-          refresh();
-        }}
-      />
     </Stack>
+  );
+};
+
+const TestTemplateDatagrid = ({ onAssign }: { onAssign: (record: RaRecord) => void }) => (
+  <Datagrid rowClick="edit" bulkActionButtons={false}>
+    <TextField source="title" label="Название" />
+    <NumberField source="question_count" label="Вопросов" sortable={false} />
+    <NumberField source="total_points" label="Баллов" sortable={false} />
+    <NumberField source="max_attempts" label="Попыток" sortable={false} />
+    <FunctionField label="Порог" render={thresholdField} sortable={false} />
+    <BooleanField source="is_archived" label="Архив" sortable={false} />
+    <FunctionField
+      label=""
+      render={(r: RaRecord) => <RowActions record={r} onAssign={onAssign} />}
+      sortable={false}
+    />
+  </Datagrid>
+);
+
+// Один экземпляр AssignTestDialog на весь список (не по одному на строку — иначе каждая
+// видимая строка держала бы собственный useGetList('members', ...) диалога вхолостую).
+const TestTemplateListInner = () => {
+  const refresh = useRefresh();
+  const [assignTarget, setAssignTarget] = useState<RaRecord | null>(null);
+
+  return (
+    <>
+      <List
+        filters={testTemplateFilters}
+        sort={{ field: 'created_at', order: 'DESC' }}
+        exporter={false}
+        actions={<TestTemplateListActions />}
+      >
+        <TestTemplateDatagrid onAssign={setAssignTarget} />
+      </List>
+      {assignTarget && (
+        <AssignTestDialog
+          templateId={String(assignTarget.id)}
+          templateTitle={String(assignTarget.title ?? '')}
+          open
+          onClose={() => setAssignTarget(null)}
+          onDone={() => {
+            setAssignTarget(null);
+            refresh();
+          }}
+        />
+      )}
+    </>
   );
 };
 
 export const TestTemplateList = () => {
   if (!useCanManage()) return <NoAccess />;
-  return (
-    <List
-      filters={testTemplateFilters}
-      sort={{ field: 'created_at', order: 'DESC' }}
-      exporter={false}
-      actions={<TestTemplateListActions />}
-    >
-      <Datagrid rowClick="edit" bulkActionButtons={false}>
-        <TextField source="title" label="Название" />
-        <NumberField source="question_count" label="Вопросов" sortable={false} />
-        <NumberField source="total_points" label="Баллов" sortable={false} />
-        <NumberField source="max_attempts" label="Попыток" sortable={false} />
-        <FunctionField label="Порог" render={thresholdField} sortable={false} />
-        <BooleanField source="is_archived" label="Архив" sortable={false} />
-        <FunctionField
-          label=""
-          render={(r: RaRecord) => <RowActions record={r} />}
-          sortable={false}
-        />
-      </Datagrid>
-    </List>
-  );
+  return <TestTemplateListInner />;
 };
 
 // Предупреждение в форме редактирования архивного шаблона: PATCH метаданных/вопросов
@@ -183,12 +218,8 @@ const TestTemplateCreateForm = () => {
         onError: (e: unknown) => setServerError(testErrorMessage(e, 'Не удалось создать тест')),
       }}
     >
-      <SimpleForm validate={validateTestTemplate} defaultValues={TEST_TEMPLATE_DEFAULT_VALUES}>
-        {serverError && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {serverError}
-          </Alert>
-        )}
+      <SimpleForm validate={validateTestTemplate} defaultValues={getTestTemplateDefaultValues()}>
+        <ServerErrorAlert error={serverError} />
         <TestTemplateFields />
       </SimpleForm>
     </Create>
@@ -212,11 +243,7 @@ const TestTemplateEditForm = () => {
     >
       <SimpleForm validate={validateTestTemplate}>
         <ArchivedNotice />
-        {serverError && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {serverError}
-          </Alert>
-        )}
+        <ServerErrorAlert error={serverError} />
         <TestTemplateFields />
       </SimpleForm>
     </Edit>
