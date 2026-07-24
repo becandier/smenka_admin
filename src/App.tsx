@@ -12,6 +12,8 @@ import HistoryIcon from '@mui/icons-material/History';
 import MoneyOffIcon from '@mui/icons-material/MoneyOff';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
+import QuizIcon from '@mui/icons-material/Quiz';
+import PollIcon from '@mui/icons-material/Poll';
 import { dataProvider } from './providers/dataProvider';
 import { authProvider, type Permissions } from './providers/authProvider';
 import { i18nProvider } from './i18n';
@@ -40,6 +42,8 @@ import {
   PenaltyTemplateEdit,
 } from './resources/penaltyTemplates';
 import { AuditLogList } from './resources/auditLogs';
+import { TestTemplateList, TestTemplateCreate, TestTemplateEdit } from './resources/testTemplates';
+import { TestAssignmentList } from './resources/testAssignments';
 import { SettingsPage } from './resources/settings';
 import { OrgStatsPage } from './resources/orgStats';
 import { PayrollPage } from './resources/payroll';
@@ -140,6 +144,16 @@ export const App = () => (
           />
           {/* Аудит — read-only лента действий owner/admin; без create/edit/show-мутаций. */}
           <Resource name="audit-logs" list={AuditLogList} icon={HistoryIcon} />
+          {/* Тестирование сотрудников (employee_tests) — только org owner/admin, не платформенная
+              фича (компоненты сами режут доступ, как penalty-templates/payroll). */}
+          <Resource
+            name="test-templates"
+            list={TestTemplateList}
+            create={TestTemplateCreate}
+            edit={TestTemplateEdit}
+            icon={QuizIcon}
+          />
+          <Resource name="test-assignments" list={TestAssignmentList} icon={PollIcon} />
 
           <CustomRoutes>
             <Route path="/invite-code" element={<InviteCodePage />} />
