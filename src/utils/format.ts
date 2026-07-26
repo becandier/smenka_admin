@@ -304,3 +304,55 @@ export const formatDateTimeInTz = (value: string | null | undefined, tz: string)
     return date.toLocaleString('ru-RU');
   }
 };
+
+// --- Тестирование сотрудников (employee_tests) ---
+
+// Текстовое значение формы (react-hook-form хранит поле как unknown) — только если это
+// действительно строка; иначе '' (без риска словить [object Object] через String(obj)).
+// Общий хелпер для dataProvider (buildTestTemplateBody) и клиентской валидации
+// (validateTestTemplate) — раньше дублировался в обоих местах с чуть разным поведением.
+export const textOrEmpty = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+// Код ошибки бэка (employee_tests/backend.md) → понятный текст. Тот же приём, что
+// scheduleErrorMessage/checklistLocationErrorMessage. TEST_TEMPLATE_INVALID сюда намеренно
+// не включён: у него нет фиксированного текста (message описывает конкретный вопрос),
+// поэтому для него используется фолбэк — уже человекочитаемый error.message с бэка.
+const TEST_ERROR_MESSAGES: Record<string, string> = {
+  TEST_TEMPLATE_NOT_FOUND: 'Тест не найден',
+  TEST_TEMPLATE_ARCHIVED: 'Тест в архиве — действие недоступно',
+  TEST_ASSIGNMENT_NOT_FOUND: 'Назначение не найдено',
+  TEST_ASSIGNMENT_HAS_ATTEMPTS: 'У назначения уже есть сданные попытки — снять нельзя',
+  TEST_ATTEMPT_NOT_FOUND: 'Попытка не найдена',
+  MEMBER_NOT_FOUND: 'Сотрудник не найден в организации',
+};
+
+export const testErrorMessage = (error: unknown, fallback = 'Ошибка'): string => {
+  const code = error instanceof HttpError ? error.body?.code : undefined;
+  if (code && TEST_ERROR_MESSAGES[code]) return TEST_ERROR_MESSAGES[code];
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
+
+export const TEST_ASSIGNMENT_STATUS_LABELS: Record<string, string> = {
+  assigned: 'Назначен',
+  in_progress: 'Проходит',
+  passed: 'Сдан',
+  failed: 'Не сдан',
+};
+
+export const testAssignmentStatusLabel = (status: string | null | undefined): string =>
+  (status && TEST_ASSIGNMENT_STATUS_LABELS[status]) || status || '—';
+
+export const TEST_ASSIGNMENT_STATUS_CHOICES = Object.entries(TEST_ASSIGNMENT_STATUS_LABELS).map(
+  ([id, name]) => ({ id, name }),
+);
+
+export const TEST_ASSIGNMENT_STATUS_COLOR: Record<
+  string,
+  'default' | 'info' | 'success' | 'error'
+> = {
+  assigned: 'default',
+  in_progress: 'info',
+  passed: 'success',
+  failed: 'error',
+};

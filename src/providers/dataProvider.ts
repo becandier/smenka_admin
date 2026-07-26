@@ -6,7 +6,7 @@ import {
   localDayEndToUtcIso,
   localDayStartToUtcIso,
 } from '../utils/dates';
-import { parseRublesToMinor } from '../utils/format';
+import { parseRublesToMinor, textOrEmpty } from '../utils/format';
 import { normalizeDisplayName } from '../utils/memberName';
 import type { AccessState, FileUploadResult, ReorderInput } from '../resources/knowledge/types';
 
@@ -302,6 +302,38 @@ const toSearch = (query: Record<string, string | undefined>): string => {
   return search.toString();
 };
 
+// --- Тестирование сотрудников (employee_tests) ---
+
+// Тело запроса шаблона теста (create/update формы-конструктора): нормализует значения
+// ArrayInput в контрактный формат POST/PATCH .../test-templates (backend.md, «POST
+// .../test-templates»; тот же формат — импорт, см. import-format.md). id/position/
+// template_id и прочие служебные поля из record (Edit подставляет их в defaultValues
+// формы) намеренно отбрасываются — сервер делает полную замену questions и сам
+// назначает position по порядку элементов массива.
+const buildTestTemplateBody = (d: Record<string, unknown>): Record<string, unknown> => {
+  const questions = Array.isArray(d.questions) ? (d.questions as Record<string, unknown>[]) : [];
+  const description = textOrEmpty(d.description).trim();
+  return {
+    title: textOrEmpty(d.title).trim(),
+    description: description !== '' ? description : null,
+    pass_threshold_percent: Number(d.pass_threshold_percent),
+    max_attempts: Number(d.max_attempts),
+    reveal_answers: Boolean(d.reveal_answers),
+    shuffle_questions: Boolean(d.shuffle_questions),
+    questions: questions.map((q) => ({
+      text: textOrEmpty(q.text).trim(),
+      type: q.type,
+      points: Number(q.points),
+      options: (Array.isArray(q.options) ? (q.options as Record<string, unknown>[]) : []).map(
+        (o) => ({
+          text: textOrEmpty(o.text).trim(),
+          is_correct: Boolean(o.is_correct),
+        }),
+      ),
+    })),
+  };
+};
+
 export const dataProvider: DataProvider = {
   getList: async (resource, params) => {
     if (PLATFORM_SERVER.has(resource)) {
@@ -413,6 +445,26 @@ export const dataProvider: DataProvider = {
         withSort: false,
       });
     }
+    if (resource === 'test-templates') {
+      // Реестр шаблонов тестов (employee_tests): limit/offset/archived, без sort/order
+      // в контракте (backend.md, «GET .../test-templates») → withSort:false.
+      return orgServerList(params, {
+        path: 'test-templates',
+        defaultSort: 'created_at',
+        filterKeys: ['archived'],
+        withSort: false,
+      });
+    }
+    if (resource === 'test-assignments') {
+      // Реестр результатов (employee_tests, «Результаты тестов»): фильтры
+      // template_id/member_id/status, без sort/order в контракте → withSort:false.
+      return orgServerList(params, {
+        path: 'test-assignments',
+        defaultSort: 'created_at',
+        filterKeys: ['template_id', 'member_id', 'status'],
+        withSort: false,
+      });
+    }
     if (resource === 'knowledge/nodes') {
       // Дерево целиком (tree=true), без пагинации; каждый верхнеуровневый узел с children.
       if (!getCurrentOrgId()) return { data: [], total: 0 };
@@ -449,6 +501,10 @@ export const dataProvider: DataProvider = {
     }
     if (resource === 'penalties') {
       return { data: await request(`${orgBase()}/penalties/${id}`) };
+    }
+    if (resource === 'test-templates') {
+      // Детальная схема с вопросами/вариантами (с is_correct — это админ, backend.md).
+      return { data: await request(`${orgBase()}/test-templates/${id}`) };
     }
     if (resource === 'checklist-instances') {
       // id составной ("{shift_id}:{instance_id}", см. getList выше). Пункты с комментариями
@@ -600,6 +656,16 @@ export const dataProvider: DataProvider = {
         data: await request(`${orgBase()}/knowledge/nodes`, {
           method: 'POST',
           body: JSON.stringify(d),
+        }),
+      };
+    }
+    if (resource === 'test-templates') {
+      // Конструктор (Create-форма). Импорт «сырого» JSON — отдельный кастомный метод
+      // importTestTemplate (шлёт тело как есть, без прогона через buildTestTemplateBody).
+      return {
+        data: await request(`${orgBase()}/test-templates`, {
+          method: 'POST',
+          body: JSON.stringify(buildTestTemplateBody(d)),
         }),
       };
     }
@@ -780,6 +846,15 @@ export const dataProvider: DataProvider = {
         body: JSON.stringify(data),
       });
       return { data: updated ?? { ...data, id } };
+    }
+    if (resource === 'test-templates') {
+      // Мета + полная замена questions (backend.md: «PATCH .../test-templates/{id}»).
+      // Архивный шаблон → TEST_TEMPLATE_ARCHIVED (400), обрабатывается вызывающим экраном.
+      const updated = await request(`${orgBase()}/test-templates/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(buildTestTemplateBody(data)),
+      });
+      return { data: { ...updated, id } };
     }
     return notImplemented();
   },
@@ -1074,4 +1149,40 @@ export const dataProvider: DataProvider = {
   },
   // Свежий presigned url по file_id (дотягивание протухшей/null ссылки на чтении).
   getKnowledgeFile: (fileId: string): Promise<FileUploadResult> => request(`/files/${fileId}`),
+
+  // --- Тестирование сотрудников (employee_tests) ---
+  // Сухая проверка тела шаблона (диалог «Импорт из JSON», кнопка «Проверить»): POST
+  // .../test-templates/validate → {valid, question_count, total_points}. Тело шлём как есть
+  // (то же, что POST .../test-templates, см. import-format.md) — без прогона через
+  // buildTestTemplateBody, чтобы не терять/не переинтерпретировать поля произвольного JSON.
+  validateTestTemplate: (
+    body: unknown,
+  ): Promise<{ valid: boolean; question_count: number; total_points: number }> =>
+    request(`${orgBase()}/test-templates/validate`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  // Создание шаблона из «сырого» JSON (диалог «Импорт из JSON», кнопка «Создать») —
+  // POST .../test-templates с телом как есть (не через конструктор-форму).
+  importTestTemplate: (body: unknown) =>
+    request(`${orgBase()}/test-templates`, { method: 'POST', body: JSON.stringify(body) }),
+  // Архивирование/разархивирование шаблона (список тестов, действие строки).
+  archiveTestTemplate: (templateId: string, isArchived: boolean) =>
+    request(`${orgBase()}/test-templates/${templateId}/archive`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_archived: isArchived }),
+    }),
+  // Назначение теста сотрудникам (диалог «Назначить»): POST .../assignments
+  // {member_ids, due_at} → {items, created, updated}.
+  assignTestTemplate: (
+    templateId: string,
+    body: { member_ids: string[]; due_at: string | null },
+  ): Promise<{ items: unknown[]; created: number; updated: number }> =>
+    request(`${orgBase()}/test-templates/${templateId}/assignments`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  // Деталь попытки для админа (реестр «Результаты тестов» → детали попытки):
+  // GET .../test-attempts/{id} → TestAttemptReview.
+  getTestAttempt: (attemptId: string) => request(`${orgBase()}/test-attempts/${attemptId}`),
 };

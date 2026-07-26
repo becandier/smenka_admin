@@ -26,6 +26,8 @@ import MoneyOffIcon from '@mui/icons-material/MoneyOff';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
+import QuizIcon from '@mui/icons-material/Quiz';
+import PollIcon from '@mui/icons-material/Poll';
 import { OrgSwitcher } from '../components/OrgSwitcher';
 import { OAUTH_LOGIN_ENABLED } from '../config';
 import { useCurrentOrg } from '../orgContext';
@@ -164,6 +166,18 @@ const MyMenu = () => {
               to="/penalty-templates"
               primaryText="Шаблоны штрафов"
               leftIcon={<MoneyOffIcon />}
+            />
+          )}
+          {/* Тестирование сотрудников (employee_tests) — только owner/admin, как зарплата
+              и шаблоны штрафов (не платформенная фича, super_admin сквозным доступом не видит). */}
+          {isOrgManager && (
+            <Menu.Item to="/test-templates" primaryText="Тесты" leftIcon={<QuizIcon />} />
+          )}
+          {isOrgManager && (
+            <Menu.Item
+              to="/test-assignments"
+              primaryText="Результаты тестов"
+              leftIcon={<PollIcon />}
             />
           )}
         </>

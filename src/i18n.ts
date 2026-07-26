@@ -21,6 +21,9 @@ const messages = {
     'work-schedules': { name: 'График работы |||| Графики работы' },
     'overtime-requests': { name: 'Переработка |||| Переработки' },
     'audit-logs': { name: 'Аудит |||| Аудит' },
+    // Тестирование сотрудников (employee_tests).
+    'test-templates': { name: 'Тест |||| Тесты' },
+    'test-assignments': { name: 'Назначение |||| Результаты тестов' },
   },
 };
 
