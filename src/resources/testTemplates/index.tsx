@@ -23,6 +23,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import ArchiveIcon from '@mui/icons-material/Archive';
 import UnarchiveIcon from '@mui/icons-material/Unarchive';
 import AssignmentIndIcon from '@mui/icons-material/AssignmentInd';
+import InboxIcon from '@mui/icons-material/Inbox';
 import { useMyOrgRole } from '../../utils/useMyOrgRole';
 import { testErrorMessage } from '../../utils/format';
 import { TestTemplateFields } from './TemplateForm';
@@ -80,6 +81,33 @@ const TestTemplateListActions = () => {
       <CreateButton label="Создать тест" />
       <ImportTestTemplateDialog open={importOpen} onClose={() => setImportOpen(false)} />
     </TopToolbar>
+  );
+};
+
+// Пустое состояние списка: react-admin при total===0 и без активных фильтров рендерит
+// ТОЛЬКО `empty`, полностью скрывая actions-тулбар (см. ListView.js — shouldRenderEmptyPage
+// заменяет renderList() целиком). Поэтому «Импорт из JSON» и «Создать тест» продублированы
+// здесь — иначе именно на пустом списке (первый тест в организации) кнопки пропадают.
+const TestTemplateEmpty = () => {
+  const [importOpen, setImportOpen] = useState(false);
+  return (
+    <Box sx={{ textAlign: 'center', mt: 8, mb: 4 }}>
+      <InboxIcon sx={{ width: '6em', height: '6em', color: 'text.disabled' }} />
+      <Typography variant="h6" color="text.secondary" sx={{ mt: 2, mb: 3 }}>
+        Тестов пока нет
+      </Typography>
+      <Stack direction="row" spacing={2} justifyContent="center">
+        <Button
+          variant="outlined"
+          startIcon={<UploadFileIcon />}
+          onClick={() => setImportOpen(true)}
+        >
+          Импорт из JSON
+        </Button>
+        <CreateButton label="Создать тест" variant="contained" />
+      </Stack>
+      <ImportTestTemplateDialog open={importOpen} onClose={() => setImportOpen(false)} />
+    </Box>
   );
 };
 
@@ -172,6 +200,7 @@ const TestTemplateListInner = () => {
         sort={{ field: 'created_at', order: 'DESC' }}
         exporter={false}
         actions={<TestTemplateListActions />}
+        empty={<TestTemplateEmpty />}
       >
         <TestTemplateDatagrid onAssign={setAssignTarget} />
       </List>
