@@ -1,5 +1,6 @@
 import { DataProvider, GetListParams, HttpError } from 'react-admin';
 import { API_BASE_URL, getAccessToken, getCurrentOrgId } from '../config';
+import { refreshTokens } from './tokenRefresh';
 import {
   INVALID_RANGE_MESSAGE,
   isDayRangeInvalid,
@@ -24,7 +25,12 @@ const ORG_CLIENT = new Set([
 ]);
 
 // Единая точка запроса: Bearer + разворачивание конверта {data, error}.
-const request = async (path: string, options: RequestInit = {}): Promise<any> => {
+// retried — внутренний флаг одного повтора после silent refresh; вызывающий код его не передаёт.
+const request = async (
+  path: string,
+  options: RequestInit = {},
+  retried = false,
+): Promise<any> => {
   const token = getAccessToken();
   const headers = new Headers(options.headers ?? {});
   headers.set('Accept', 'application/json');
@@ -42,6 +48,12 @@ const request = async (path: string, options: RequestInit = {}): Promise<any> =>
     json = null;
   }
   if (!res.ok || (json && json.error)) {
+    // Протухший access-токен: тихо обновляем (single-flight, см. tokenRefresh.ts) и повторяем
+    // ЭТОТ ЖЕ запрос один раз. Успешный silent refresh так и не долетает до checkError/UI —
+    // ошибку увидит только вызов, у которого протух и refresh-токен тоже (сессия реально мертва).
+    if (res.status === 401 && !retried && (await refreshTokens())) {
+      return request(path, options, true);
+    }
     const err = json?.error;
     const body: any = err ? { ...err } : { message: res.statusText };
     // VALIDATION_ERROR → ошибки полей формы (react-admin читает error.body.errors).
