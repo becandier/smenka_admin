@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Edit,
   SimpleForm,
@@ -255,6 +255,36 @@ const OrgTimezoneCard = ({ org }: { org: CurrentOrg }) => {
   );
 };
 
+// Секция настроек — та же визуальная карточка, что у OrgNameCard/OrgTimezoneCard выше
+// (заголовок + подпись + содержимое), но для группы полей SimpleForm вместо кастомной формы.
+// Дочерние Input-компоненты остаются подключены к общему react-hook-form контексту SimpleForm —
+// оборачивающий Card/Stack влияет только на разметку, не на форму.
+const SettingsSection = ({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) => (
+  <Card sx={{ mb: 2 }}>
+    <CardContent>
+      <Typography variant="h6" sx={{ mb: 0.5 }}>
+        {title}
+      </Typography>
+      {description && (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          {description}
+        </Typography>
+      )}
+      <Stack spacing={2.5} sx={{ mt: description ? 0 : 2 }}>
+        {children}
+      </Stack>
+    </CardContent>
+  </Card>
+);
+
 // Singleton-форма настроек организации: GET/PATCH /organizations/{org}/settings.
 // id записи = org_id (dataProvider маппит organization_id → id).
 export const SettingsPage = () => {
@@ -287,41 +317,62 @@ export const SettingsPage = () => {
         title={`Настройки — ${org.name}`}
       >
         <SimpleForm>
-          <BooleanInput source="geo_check_enabled" label="Геопроверка при старте смены" />
-          <RequireWorkLocationInput />
-          <BooleanInput
-            source="auto_finish_by_schedule"
-            label="Завершать смену по окончании графика"
-            helperText="Смена закроется автоматически в плановое время окончания. Переработку сотрудник оформляет отдельной заявкой."
-            defaultValue
-          />
-          <RequireScheduleInput />
-          <NumberInput
-            source="late_tolerance_minutes"
-            label="Допуск по опозданию, мин"
-            helperText="0–120; опоздание в пределах допуска не показывается"
-            defaultValue={0}
-            validate={[minValue(0), maxValue(120)]}
-          />
-          <NumberInput
-            source="overtime_request_days"
-            label="Срок подачи заявки на переработку, дней"
-            helperText="1–90"
-            defaultValue={7}
-            validate={[minValue(1), maxValue(90)]}
-          />
-          <NumberInput
-            source="max_pause_minutes"
-            label="Макс. длительность паузы, мин"
-            helperText="1–480; пусто — без ограничения"
-            validate={[minValue(1), maxValue(480)]}
-          />
-          <NumberInput
-            source="max_pauses_per_shift"
-            label="Макс. пауз за смену"
-            helperText="1–50; пусто — без ограничения"
-            validate={[minValue(1), maxValue(50)]}
-          />
+          <SettingsSection
+            title="Геопроверка и точки"
+            description="Проверка местоположения сотрудника при старте смены."
+          >
+            <BooleanInput
+              source="geo_check_enabled"
+              label="Геопроверка при старте смены"
+              helperText="Точку определяет сервер по координатам вместо ручного выбора"
+            />
+            <RequireWorkLocationInput />
+          </SettingsSection>
+
+          <SettingsSection
+            title="Графики работы"
+            description="Плановое время смены, опоздания и переработки."
+          >
+            <BooleanInput
+              source="auto_finish_by_schedule"
+              label="Завершать смену по окончании графика"
+              helperText="Смена закроется автоматически в плановое время окончания. Переработку сотрудник оформляет отдельной заявкой."
+              defaultValue
+            />
+            <RequireScheduleInput />
+            <NumberInput
+              source="late_tolerance_minutes"
+              label="Допуск по опозданию, мин"
+              helperText="0–120; опоздание в пределах допуска не показывается"
+              defaultValue={0}
+              validate={[minValue(0), maxValue(120)]}
+            />
+            <NumberInput
+              source="overtime_request_days"
+              label="Срок подачи заявки на переработку, дней"
+              helperText="1–90"
+              defaultValue={7}
+              validate={[minValue(1), maxValue(90)]}
+            />
+          </SettingsSection>
+
+          <SettingsSection
+            title="Лимиты пауз"
+            description="Ограничения на паузы во время смены — пусто означает «без ограничения»."
+          >
+            <NumberInput
+              source="max_pause_minutes"
+              label="Макс. длительность паузы, мин"
+              helperText="1–480; пусто — без ограничения"
+              validate={[minValue(1), maxValue(480)]}
+            />
+            <NumberInput
+              source="max_pauses_per_shift"
+              label="Макс. пауз за смену"
+              helperText="1–50; пусто — без ограничения"
+              validate={[minValue(1), maxValue(50)]}
+            />
+          </SettingsSection>
         </SimpleForm>
       </Edit>
     </>
