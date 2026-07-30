@@ -1,5 +1,7 @@
 import { AuthProvider } from 'react-admin';
 import { API_BASE_URL, getAccessToken, getRefreshToken, setTokens, clearTokens } from '../config';
+import { postJsonRaw } from './httpJson';
+import { fetchWithAuthRetry } from './tokenRefresh';
 
 // Ошибка авторизации с сохранённым кодом контракта (для маппинга по error.code)
 // и HTTP-статусом (checkError отличает 401-сессию от 5xx/сети именно по status).
@@ -9,18 +11,8 @@ interface AuthError extends Error {
 }
 
 const post = async (path: string, body: unknown): Promise<any> => {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
-  });
-  let json: any;
-  try {
-    json = await res.json();
-  } catch {
-    json = null;
-  }
-  if (!res.ok || json?.error) {
+  const { ok, json } = await postJsonRaw(path, body);
+  if (!ok || json?.error) {
     const err: AuthError = new Error(json?.error?.message ?? 'Ошибка авторизации');
     err.code = json?.error?.code;
     throw err;
@@ -64,11 +56,10 @@ const publicGet = async (path: string): Promise<any> => {
   return json?.data;
 };
 
+// Авторизация и тихий retry протухшего access-токена — в fetchWithAuthRetry() (tokenRefresh.ts),
+// как и в request() из dataProvider.ts.
 const authGet = async (path: string): Promise<any> => {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token ?? ''}`, Accept: 'application/json' },
-  });
+  const res = await fetchWithAuthRetry(path, { headers: { Accept: 'application/json' } });
   let json: any;
   try {
     json = await res.json();
@@ -121,21 +112,6 @@ export interface Permissions {
   role: string;
   organizations: OrgPermission[];
 }
-
-// Обновление access по refresh-токену. true — токены обновлены, false — refresh
-// невозможен/отклонён (мёртвая сессия). Единый источник логики для checkError и getPermissions.
-const tryRefresh = async (): Promise<boolean> => {
-  const refresh = getRefreshToken();
-  if (!refresh) return false;
-  try {
-    const data = await post('/auth/refresh', { refresh_token: refresh });
-    if (!data?.access_token || !data?.refresh_token) return false;
-    setTokens(data.access_token, data.refresh_token);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 // Загрузка роли + организаций пользователя. Ошибку /users/me НЕ глотает (её обработка —
 // в getPermissions). Сбой под-запроса /organizations деградирует до пустого списка:
@@ -200,14 +176,17 @@ export const authProvider: AuthProvider = {
   checkAuth: () =>
     getAccessToken() ? Promise.resolve() : Promise.reject(new Error('Не авторизован')),
 
-  checkError: async (error) => {
+  checkError: (error) => {
     const status = (error as { status?: number })?.status;
+    // 401 сюда долетает только если тихий retry уже случился на уровне request()/authGet()
+    // (single-flight refresh, см. tokenRefresh.ts) и провалился — сессия реально мертва.
+    // Успешный silent refresh до checkError не доходит вообще (исходный запрос уже отработал).
     if (status === 401) {
-      if (await tryRefresh()) return;
       clearTokens();
-      throw new Error('Сессия истекла');
+      return Promise.reject(new Error('Сессия истекла'));
     }
     // 403 — нет прав на конкретное действие; не разлогиниваем.
+    return Promise.resolve();
   },
 
   getIdentity: async () => {
@@ -220,16 +199,12 @@ export const authProvider: AuthProvider = {
     try {
       return await loadPermissions();
     } catch (error) {
+      // loadPermissions() дергает authGet(), которая уже тихо ретраила 401 один раз
+      // (single-flight refresh) — если ошибка всё равно 401, refresh-токен тоже мёртв.
+      // Сеть/5xx сессию не трогаем: пробрасываем как есть, checkError на не-401 резолвится
+      // без ложного логаута, а Dashboard покажет ошибку вместо вечного спиннера.
       const status = (error as { status?: number })?.status;
-      // Сеть/5xx (нет статуса или не 401): сессию не трогаем — пробрасываем ошибку.
-      // usePermissions → logoutIfAccessDenied → checkError; checkError на не-401 резолвится,
-      // ложного логаута нет, а Dashboard покажет ошибку вместо вечного спиннера.
-      if (status !== 401) throw error;
-      // Протухший access (401 INVALID_TOKEN): пробуем refresh и повторяем запрос.
-      if (await tryRefresh()) return await loadPermissions();
-      // Мёртвая сессия (refresh тоже отклонён): чистим токены и пробрасываем 401 →
-      // usePermissions → logoutIfAccessDenied → checkError → logout + redirect /login.
-      clearTokens();
+      if (status === 401) clearTokens();
       throw error;
     }
   },
