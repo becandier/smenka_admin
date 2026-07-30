@@ -35,6 +35,7 @@ import {
   scheduleErrorMessage,
 } from '../utils/format';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
+import { MemberNameCell } from '../components/MemberNameCell';
 import { DateRangeAlert } from '../components/DateRangeAlert';
 import { isDayRangeInvalid } from '../utils/dates';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
@@ -131,7 +132,11 @@ const ReviewDialog = ({
 };
 
 // Render-хелперы колонок.
-const employeeField = (r: RaRecord) => r.user?.name ?? '—';
+// Бэкенд отдаёт объект user: {user_name, display_name, email} (backend.md,
+// OrgOvertimeRequestUser) — единая ячейка «сотрудник», как в списке смен (orgShifts.tsx).
+const employeeField = (r: RaRecord) => (
+  <MemberNameCell user_name={r.user?.user_name} display_name={r.user?.display_name} />
+);
 const shiftField = (r: RaRecord) => {
   const shift = r.shift ?? {};
   const period =
