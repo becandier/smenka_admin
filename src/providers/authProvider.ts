@@ -1,6 +1,7 @@
 import { AuthProvider } from 'react-admin';
 import { API_BASE_URL, getAccessToken, getRefreshToken, setTokens, clearTokens } from '../config';
-import { refreshTokens } from './tokenRefresh';
+import { postJsonRaw } from './httpJson';
+import { fetchWithAuthRetry } from './tokenRefresh';
 
 // Ошибка авторизации с сохранённым кодом контракта (для маппинга по error.code)
 // и HTTP-статусом (checkError отличает 401-сессию от 5xx/сети именно по status).
@@ -10,18 +11,8 @@ interface AuthError extends Error {
 }
 
 const post = async (path: string, body: unknown): Promise<any> => {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
-  });
-  let json: any;
-  try {
-    json = await res.json();
-  } catch {
-    json = null;
-  }
-  if (!res.ok || json?.error) {
+  const { ok, json } = await postJsonRaw(path, body);
+  if (!ok || json?.error) {
     const err: AuthError = new Error(json?.error?.message ?? 'Ошибка авторизации');
     err.code = json?.error?.code;
     throw err;
@@ -65,12 +56,10 @@ const publicGet = async (path: string): Promise<any> => {
   return json?.data;
 };
 
-// retried — внутренний флаг одного повтора после silent refresh; вызывающий код его не передаёт.
-const authGet = async (path: string, retried = false): Promise<any> => {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token ?? ''}`, Accept: 'application/json' },
-  });
+// Авторизация и тихий retry протухшего access-токена — в fetchWithAuthRetry() (tokenRefresh.ts),
+// как и в request() из dataProvider.ts.
+const authGet = async (path: string): Promise<any> => {
+  const res = await fetchWithAuthRetry(path, { headers: { Accept: 'application/json' } });
   let json: any;
   try {
     json = await res.json();
@@ -78,11 +67,6 @@ const authGet = async (path: string, retried = false): Promise<any> => {
     json = null;
   }
   if (!res.ok || json?.error) {
-    // Протухший access-токен: тихо обновляем (single-flight, см. tokenRefresh.ts) и повторяем
-    // ЭТОТ ЖЕ запрос один раз — так же, как request() в dataProvider.ts.
-    if (res.status === 401 && !retried && (await refreshTokens())) {
-      return authGet(path, true);
-    }
     // Сохраняем HTTP-статус и error.code: по ним checkError/getPermissions отличают
     // 401 (мёртвая сессия) от 5xx/сети. Раньше status терялся и 401 «глотался».
     const err: AuthError = new Error(json?.error?.message ?? 'Ошибка запроса');

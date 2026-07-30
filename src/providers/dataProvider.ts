@@ -1,6 +1,6 @@
 import { DataProvider, GetListParams, HttpError } from 'react-admin';
-import { API_BASE_URL, getAccessToken, getCurrentOrgId } from '../config';
-import { refreshTokens } from './tokenRefresh';
+import { getCurrentOrgId } from '../config';
+import { fetchWithAuthRetry } from './tokenRefresh';
 import {
   INVALID_RANGE_MESSAGE,
   isDayRangeInvalid,
@@ -24,23 +24,18 @@ const ORG_CLIENT = new Set([
   'penalty-templates',
 ]);
 
-// Единая точка запроса: Bearer + разворачивание конверта {data, error}.
-// retried — внутренний флаг одного повтора после silent refresh; вызывающий код его не передаёт.
-const request = async (
-  path: string,
-  options: RequestInit = {},
-  retried = false,
-): Promise<any> => {
-  const token = getAccessToken();
+// Единая точка запроса: Bearer + разворачивание конверта {data, error}. Авторизация и тихий
+// retry протухшего access-токена — в fetchWithAuthRetry() (tokenRefresh.ts), здесь только
+// Content-Type/Accept и разбор {data,error}.
+const request = async (path: string, options: RequestInit = {}): Promise<any> => {
   const headers = new Headers(options.headers ?? {});
   headers.set('Accept', 'application/json');
   // FormData (загрузка файла) — Content-Type с boundary браузер выставляет сам; не трогаем.
   if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
-  if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  const res = await fetchWithAuthRetry(path, { ...options, headers });
   let json: any;
   try {
     json = await res.json();
@@ -48,12 +43,6 @@ const request = async (
     json = null;
   }
   if (!res.ok || (json && json.error)) {
-    // Протухший access-токен: тихо обновляем (single-flight, см. tokenRefresh.ts) и повторяем
-    // ЭТОТ ЖЕ запрос один раз. Успешный silent refresh так и не долетает до checkError/UI —
-    // ошибку увидит только вызов, у которого протух и refresh-токен тоже (сессия реально мертва).
-    if (res.status === 401 && !retried && (await refreshTokens())) {
-      return request(path, options, true);
-    }
     const err = json?.error;
     const body: any = err ? { ...err } : { message: res.statusText };
     // VALIDATION_ERROR → ошибки полей формы (react-admin читает error.body.errors).
@@ -303,6 +292,41 @@ const filenameFromDisposition = (header: string | null): string | null => {
   }
   const plain = /filename="?([^";]+)"?/i.exec(header);
   return plain?.[1] ? plain[1].trim() : null;
+};
+
+// Экспорт payroll в .xlsx: бинарный ответ (НЕ конверт {data,error}), поэтому идёт мимо
+// request() — но Bearer-токен и тихий retry-after-refresh на 401 нужны точно так же, отсюда
+// тот же fetchWithAuthRetry() (тот же класс бага, что и у остальных authenticated-запросов).
+const fetchPayrollExport = async (
+  query: PayrollQuery,
+): Promise<{ blob: Blob; filename: string | null }> => {
+  const headers = new Headers({
+    Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/json',
+  });
+  const search = buildPayrollQuery(query);
+  search.set('format', 'xlsx');
+  const res = await fetchWithAuthRetry(`${orgBase()}/payroll/export?${search.toString()}`, {
+    headers,
+  });
+  const contentType = res.headers.get('Content-Type') ?? '';
+  if (!res.ok || contentType.includes('application/json')) {
+    // Ошибки до отдачи файла приходят JSON-конвертом — распознаём по Content-Type и бросаем
+    // HttpError, как request().
+    let json: any;
+    try {
+      json = await res.json();
+    } catch {
+      json = null;
+    }
+    const err = json?.error;
+    throw new HttpError(
+      err?.message ?? res.statusText ?? 'Ошибка экспорта',
+      res.status,
+      err ? { ...err } : { message: res.statusText },
+    );
+  }
+  const blob = await res.blob();
+  return { blob, filename: filenameFromDisposition(res.headers.get('Content-Disposition')) };
 };
 
 // Query-строка из непустых значений (для кастомных методов вне GetListParams).
@@ -1084,37 +1108,8 @@ export const dataProvider: DataProvider = {
     const qs = buildPayrollQuery(query).toString();
     return request(`${orgBase()}/payroll${qs ? `?${qs}` : ''}`);
   },
-  // Экспорт payroll в .xlsx: бинарный ответ (НЕ конверт {data,error}). Ошибки до отдачи файла
-  // приходят JSON-конвертом — распознаём по Content-Type и бросаем HttpError, как request().
-  exportPayroll: async (query: PayrollQuery): Promise<{ blob: Blob; filename: string | null }> => {
-    const token = getAccessToken();
-    const headers = new Headers({
-      Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/json',
-    });
-    if (token) headers.set('Authorization', `Bearer ${token}`);
-    const search = buildPayrollQuery(query);
-    search.set('format', 'xlsx');
-    const res = await fetch(`${API_BASE_URL}${orgBase()}/payroll/export?${search.toString()}`, {
-      headers,
-    });
-    const contentType = res.headers.get('Content-Type') ?? '';
-    if (!res.ok || contentType.includes('application/json')) {
-      let json: any;
-      try {
-        json = await res.json();
-      } catch {
-        json = null;
-      }
-      const err = json?.error;
-      throw new HttpError(
-        err?.message ?? res.statusText ?? 'Ошибка экспорта',
-        res.status,
-        err ? { ...err } : { message: res.statusText },
-      );
-    }
-    const blob = await res.blob();
-    return { blob, filename: filenameFromDisposition(res.headers.get('Content-Disposition')) };
-  },
+  // Экспорт payroll в .xlsx (бинарный ответ, retry-after-refresh на 401 — см. fetchPayrollExport).
+  exportPayroll: (query: PayrollQuery) => fetchPayrollExport(query),
 
   // --- Файловое хранилище (file_storage): общий слой для фич-потребителей ---
   // POST /files (multipart) → { id, url, ... }. organization_id обязателен для org-категорий,
