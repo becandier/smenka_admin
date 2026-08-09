@@ -11,3 +11,8 @@ dist-ssr
 # CLAUDE.md держим локально (как в smenka_back / smenka_mobile)
 CLAUDE.md
 .claude/
+
+# Пароли и токены — никогда не в репозиторий
+creditinals.md
+CREDENTIALS.md
+credentials.md
