@@ -24,7 +24,7 @@ import { OrgProvider } from './orgContext';
 import { Dashboard } from './dashboard/Dashboard';
 import { UserList, UserEdit, UserShow } from './resources/users';
 import { OrganizationList, OrganizationCreate } from './resources/organizations';
-import { MemberList, MemberEdit } from './resources/members';
+import { MemberList, MemberEdit, MemberCreate } from './resources/members';
 import { RoleList, RoleEdit, RoleCreate } from './resources/roles';
 import { WorkLocationList, WorkLocationEdit, WorkLocationCreate } from './resources/workLocations';
 import {
@@ -86,7 +86,16 @@ export const App = () => (
             />
           )}
 
-          <Resource name="members" list={MemberList} edit={MemberEdit} icon={GroupIcon} />
+          {/* create — MemberCreate сам режет доступ до owner/admin (admin.md, «RBAC»);
+              CreateButton в MemberList скрыт для остальных, но /members/create доступен
+              по прямому переходу — компонент показывает NoAccess. */}
+          <Resource
+            name="members"
+            list={MemberList}
+            edit={MemberEdit}
+            create={MemberCreate}
+            icon={GroupIcon}
+          />
           <Resource
             name="roles"
             list={RoleList}

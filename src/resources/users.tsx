@@ -40,7 +40,10 @@ const userFilters = [
 export const UserList = () => (
   <List filters={userFilters} sort={{ field: 'created_at', order: 'DESC' }} exporter={false}>
     <Datagrid rowClick="show">
-      <EmailField source="email" label="Email" />
+      {/* email nullable (admin_created_accounts/backend.md: учётка может быть заведена
+          организацией без почты) — EmailField.emptyText реагирует на null, показываем «—». */}
+      <EmailField source="email" label="Email" emptyText="—" />
+      <TextField source="login" label="Логин" emptyText="—" sortable={false} />
       <TextField source="name" label="Имя" sortable={false} />
       <BooleanField source="is_verified" label="Подтверждён" sortable={false} />
       <SelectField source="role" label="Роль" choices={roleChoices} sortable={false} />
@@ -62,7 +65,8 @@ export const UserEdit = () => (
 export const UserShow = () => (
   <Show>
     <SimpleShowLayout>
-      <EmailField source="email" label="Email" />
+      <EmailField source="email" label="Email" emptyText="—" />
+      <TextField source="login" label="Логин" emptyText="—" />
       <TextField source="name" label="Имя" />
       <TextField source="phone" label="Телефон" emptyText="—" />
       <BooleanField source="is_verified" label="Подтверждён" />
