@@ -266,24 +266,25 @@ const DisplayNameInput = () => {
 // организацией — admin.md, п.4); иначе — только для чтения (учётка пришла по инвайту,
 // логином управляет сам сотрудник). source="login" — плоское поле из mapMember (алиас
 // user_login), которое dataProvider.update сравнивает с previousData и шлёт PATCH при смене.
-// Если у сотрудника нет email (user_email === '' — контрактное отсутствие, backend.md п.5),
-// логин — единственный идентификатор входа: очистка поля запрещена клиентской валидацией,
-// иначе запись рискует остаться без единого идентификатора (backend.md: CHECK email IS NOT
-// NULL OR login IS NOT NULL) и сотрудник вовсе потеряет возможность войти.
+// Очистка уже заданного логина запрещена клиентской валидацией независимо от наличия email
+// (решение аналитика, admin_created_accounts/STATUS.md): бэк трактует login: null в PATCH
+// как «поле не передано» и молча не меняет его — без этой проверки форма отрапортовала бы
+// успех при фактическом no-op. Логин — способ входа, снимать его незачем; если он уже задан,
+// пустое значение — ошибка, а не «выключить логин».
 const LoginInput = () => {
   const record = useRecordContext();
   const managed = record?.password_managed === true;
-  const hasEmail = typeof record?.user_email === 'string' && record.user_email !== '';
+  const hadLogin = typeof record?.login === 'string' && record.login !== '';
   const validateLogin = useCallback(
     (value: unknown): string | undefined => {
       const formatError = validateLoginFormat(value);
       if (formatError) return formatError;
       const isEmpty = value === undefined || value === null || value === '';
-      return isEmpty && !hasEmail
-        ? 'У сотрудника нет email — логин нельзя очистить, иначе он не сможет войти'
+      return isEmpty && hadLogin
+        ? 'Логин нельзя очистить — это способ входа сотрудника. Задайте другой логин вместо удаления.'
         : undefined;
     },
-    [hasEmail],
+    [hadLogin],
   );
   return (
     <TextInput

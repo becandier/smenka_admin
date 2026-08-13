@@ -24,6 +24,14 @@ const ORG_CLIENT = new Set([
   'penalty-templates',
 ]);
 
+// Pydantic отдаёт error.validation[].field полным loc-путём запроса — "body.login",
+// "body.items.0.name" (см. validation_exception_handler в smenka_back/src/app/main.py), а
+// react-admin ищет ошибку поля формы по его исходному имени — "login". Срезаем только
+// ведущий "body." (остальной путь, включая вложенные индексы/поля, оставляем как есть) —
+// без этого подсветка полей молчала во всех формах админки, не только в новых.
+const stripBodyPrefix = (field: string): string =>
+  field.startsWith('body.') ? field.slice('body.'.length) : field;
+
 // Единая точка запроса: Bearer + разворачивание конверта {data, error}. Авторизация и тихий
 // retry протухшего access-токена — в fetchWithAuthRetry() (tokenRefresh.ts), здесь только
 // Content-Type/Accept и разбор {data,error}.
@@ -49,7 +57,7 @@ const request = async (path: string, options: RequestInit = {}): Promise<any> =>
     if (err?.code === 'VALIDATION_ERROR' && Array.isArray(err.validation)) {
       body.errors = {};
       for (const v of err.validation) {
-        if (v?.field) body.errors[v.field] = v.message;
+        if (v?.field) body.errors[stripBodyPrefix(v.field)] = v.message;
       }
     }
     throw new HttpError(err?.message ?? res.statusText ?? 'Ошибка запроса', res.status, body);
