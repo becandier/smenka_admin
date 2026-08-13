@@ -24,6 +24,14 @@ const ORG_CLIENT = new Set([
   'penalty-templates',
 ]);
 
+// Pydantic отдаёт error.validation[].field полным loc-путём запроса — "body.login",
+// "body.items.0.name" (см. validation_exception_handler в smenka_back/src/app/main.py), а
+// react-admin ищет ошибку поля формы по его исходному имени — "login". Срезаем только
+// ведущий "body." (остальной путь, включая вложенные индексы/поля, оставляем как есть) —
+// без этого подсветка полей молчала во всех формах админки, не только в новых.
+const stripBodyPrefix = (field: string): string =>
+  field.startsWith('body.') ? field.slice('body.'.length) : field;
+
 // Единая точка запроса: Bearer + разворачивание конверта {data, error}. Авторизация и тихий
 // retry протухшего access-токена — в fetchWithAuthRetry() (tokenRefresh.ts), здесь только
 // Content-Type/Accept и разбор {data,error}.
@@ -49,7 +57,7 @@ const request = async (path: string, options: RequestInit = {}): Promise<any> =>
     if (err?.code === 'VALIDATION_ERROR' && Array.isArray(err.validation)) {
       body.errors = {};
       for (const v of err.validation) {
-        if (v?.field) body.errors[v.field] = v.message;
+        if (v?.field) body.errors[stripBodyPrefix(v.field)] = v.message;
       }
     }
     throw new HttpError(err?.message ?? res.statusText ?? 'Ошибка запроса', res.status, body);
@@ -105,8 +113,30 @@ const deleteOnePath = (resource: string, id: string): string => {
   }
 };
 
-// member → добавляем плоский custom_role_id для SelectInput'а в форме.
-const mapMember = (m: any): any => ({ ...m, custom_role_id: m?.custom_role?.id ?? null });
+// member → добавляем плоский custom_role_id для SelectInput'а в форме и login (алиас
+// user_login, admin_created_accounts/backend.md) для editable LoginInput в MemberEdit.
+const mapMember = (m: any): any => ({
+  ...m,
+  custom_role_id: m?.custom_role?.id ?? null,
+  login: typeof m?.user_login === 'string' ? m.user_login : null,
+});
+
+// members (create/update): LOGIN_TAKEN/EMAIL_TAKEN/INVALID_DISPLAY_NAME/
+// PASSWORD_RESET_NOT_ALLOWED приходят не как VALIDATION_ERROR, поэтому request() их сам
+// в body.errors не раскладывает — единая точка ремаппинга код→поле формы для обеих веток
+// (admin_created_accounts/admin.md: «LOGIN_TAKEN → ошибка на поле «Логин»» и т.п.).
+const rethrowMemberErrorAsField = (
+  e: any,
+  mapping: Record<string, { field: string; status: number; message?: string }>,
+): never => {
+  const rule = mapping[e?.body?.code];
+  if (!rule) throw e;
+  const message = rule.message ?? e.message;
+  throw new HttpError(message, e.status ?? rule.status, {
+    ...e.body,
+    errors: { [rule.field]: message },
+  });
+};
 
 // penalty-template → плоское amount_rub (рубли) для NumberInput'а формы; обратную
 // конвертацию в amount_minor делает create/update (деньги хранятся в копейках).
@@ -705,6 +735,45 @@ export const dataProvider: DataProvider = {
         }),
       };
     }
+    if (resource === 'members') {
+      // Завести сотрудника (admin_created_accounts/backend.md, «POST .../members»): ответ —
+      // {member, login, password}, а не голый MemberResponse. Пароль возвращается один раз —
+      // кладём его во временные _login/_password поля возвращаемой записи (НЕ в user_login/
+      // password_managed, которые остаются производными от member), чтобы MemberCreate достал
+      // их из onSuccess мутации и показал в окне выдачи доступа; в кэш ресурса `members` они
+      // не персистятся отдельным запросом (следующий getList/getOne их не вернёт).
+      const body = {
+        name: d.name,
+        // trim + пустая строка → null: та же семантика, что normalizeDisplayName уже
+        // реализует для display_name (utils/memberName) — переиспользуем вместо повтора.
+        login: normalizeDisplayName(d.login),
+        email: normalizeDisplayName(d.email),
+        phone: normalizeDisplayName(d.phone),
+        password: typeof d.password === 'string' && d.password !== '' ? d.password : null,
+        role: d.role ?? 'employee',
+        role_id: d.role_id ? d.role_id : null,
+        display_name: normalizeDisplayName(d.display_name),
+      };
+      let created: any;
+      try {
+        created = await request(`${orgBase()}/members`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+      } catch (e: any) {
+        rethrowMemberErrorAsField(e, {
+          LOGIN_TAKEN: { field: 'login', status: 409 },
+          EMAIL_TAKEN: { field: 'email', status: 409 },
+        });
+      }
+      return {
+        data: {
+          ...mapMember(created?.member ?? {}),
+          _login: created?.login ?? null,
+          _password: created?.password ?? null,
+        },
+      };
+    }
     return notImplemented();
   },
 
@@ -806,31 +875,39 @@ export const dataProvider: DataProvider = {
           body: JSON.stringify({ role_id: nextCustom }),
         });
       }
-      // display_name (member_display_name): PATCH .../members/{userId} c {display_name}.
-      // Сравниваем нормализованные значения (пустая строка формы ≡ null), иначе пустой
-      // TextInput слал бы лишний PATCH и лишнюю аудит-запись «сброс на то же самое».
-      // Очистка поля шлём как null — бэк сам сбрасывает на настоящее имя.
+      // Партиальный PATCH .../members/{userId}: display_name (member_display_name) и login
+      // (admin_created_accounts/backend.md, «PATCH .../members/{user_id} — расширение»,
+      // только для password_managed === true — иначе бэк вернёт PASSWORD_RESET_NOT_ALLOWED)
+      // собираем в одно тело, чтобы не слать два PATCH'а, если оба поля изменились разом.
+      // Сравнение — с нормализованными значениями (пустая строка формы ≡ null/не изменено),
+      // иначе немодифицированный TextInput слал бы лишний запрос и лишнюю аудит-запись.
+      const patchBody: Record<string, unknown> = {};
       if ('display_name' in data) {
         const nextDisplayName = normalizeDisplayName(data.display_name);
         const prevDisplayName = normalizeDisplayName(previousData?.display_name);
-        if (nextDisplayName !== prevDisplayName) {
-          try {
-            result = await request(`${orgBase()}/members/${userId}`, {
-              method: 'PATCH',
-              body: JSON.stringify({ display_name: nextDisplayName }),
-            });
-          } catch (e: any) {
-            // INVALID_DISPLAY_NAME — не VALIDATION_ERROR, поэтому request() не разложил
-            // его в body.errors сам; мапим здесь в ошибку поля формы (admin.md, «Состояния
-            // и ошибки»: показать понятное сообщение у поля, а не общий тост).
-            if (e?.body?.code === 'INVALID_DISPLAY_NAME') {
-              throw new HttpError(e.message, e.status ?? 400, {
-                ...e.body,
-                errors: { display_name: e.message },
-              });
-            }
-            throw e;
-          }
+        if (nextDisplayName !== prevDisplayName) patchBody.display_name = nextDisplayName;
+      }
+      if ('login' in data) {
+        const nextLogin = normalizeDisplayName(data.login);
+        const prevLogin = normalizeDisplayName(previousData?.login);
+        if (nextLogin !== prevLogin) patchBody.login = nextLogin;
+      }
+      if (Object.keys(patchBody).length > 0) {
+        try {
+          result = await request(`${orgBase()}/members/${userId}`, {
+            method: 'PATCH',
+            body: JSON.stringify(patchBody),
+          });
+        } catch (e: any) {
+          rethrowMemberErrorAsField(e, {
+            INVALID_DISPLAY_NAME: { field: 'display_name', status: 400 },
+            LOGIN_TAKEN: { field: 'login', status: 409 },
+            PASSWORD_RESET_NOT_ALLOWED: {
+              field: 'login',
+              status: 403,
+              message: 'Логин можно менять только для учёток, созданных этой организацией',
+            },
+          });
         }
       }
       return { data: mapMember({ ...previousData, ...data, ...(result ?? {}) }) };
@@ -927,6 +1004,19 @@ export const dataProvider: DataProvider = {
 
   // --- Кастомные методы (вызываются через useDataProvider) ---
   getPlatformStats: () => request('/admin/stats'),
+  // Сброс пароля учётки, заведённой этой организацией (admin_created_accounts/backend.md,
+  // «POST .../members/{user_id}/reset-password»): password undefined/null → сервер
+  // сгенерирует; иначе — те же правила валидации, что при создании. Ответ содержит новый
+  // пароль в открытом виде один раз — вызывающий компонент (ResetPasswordDialog) сразу
+  // передаёт его в окно выдачи доступа и нигде не персистит.
+  resetMemberPassword: (
+    userId: string,
+    password?: string,
+  ): Promise<{ user_id: string; login: string | null; password: string } | null> =>
+    request(`${orgBase()}/members/${userId}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ password: password ?? null }),
+    }),
   // Настройки платформы → Провайдеры входа (oauth_login, super_admin-only). Контракт
   // (backend.md) не фиксирует конверт списка — принимаем и {items:[...]}, и голый массив.
   getOauthProviders: async (): Promise<OauthProviderRow[]> => {
