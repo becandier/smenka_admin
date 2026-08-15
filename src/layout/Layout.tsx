@@ -19,6 +19,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import type { Theme } from '@mui/material/styles';
 import { useEffect, useState, type ReactNode } from 'react';
 import { matchPath, useLocation } from 'react-router-dom';
 import PeopleIcon from '@mui/icons-material/People';
@@ -77,21 +78,85 @@ const groupSx = {
   fontWeight: 600,
   textTransform: 'uppercase',
   letterSpacing: '0.06em',
+  // Небольшой отступ сверху — секция физически отделена от группы уровня 2 даже
+  // после того, как заголовок группы (subMenuHeaderSx) стал жирным и тёмным:
+  // без него уровень 1 и уровень 2 визуально сближаются, admin_menu_hierarchy критерий №4.
+  mt: 0.5,
 } as const;
 
-// Заголовок сворачиваемой подгруппы: иконка + название + шеврон. В icon-режиме
-// сайдбара текст и шеврон скрываются, остаётся только иконка с Tooltip (как у
-// обычных Menu.Item — react-admin's MenuItemLink делает то же самое сама).
-// `sidebarOpen` приходит пропом от MyMenu, а не из отдельного useSidebarState() —
-// значение уже read один раз в родителе, второй подписки на стор не нужно.
-const subMenuHeaderSx = {
-  color: 'text.secondary',
-} as const;
+// Заголовок сворачиваемой подгруппы (уровень 2): иконка + название + шеврон.
+// admin_menu_hierarchy п.1 — группа должна доминировать над вложенным пунктом:
+// текст темнее (text.primary вместо приглушённого text.secondary у детей) и
+// заметно жирнее (fontWeightBold из темы, а не дефолтный вес MenuItemLink).
+// Свёрнутая группа, внутри которой открыта текущая страница (`active`, ТЗ п.3),
+// дополнительно акцентируется бренд-цветом — иначе после ручного сворачивания
+// пользователь теряет ориентир, в какой группе он находится. Оформлено как
+// функция теми (а не статический объект + spread) — так и `theme.palette`/
+// `theme.typography` типизируются полноценным `Theme`, без ручных мини-типов.
+// В icon-режиме сайдбара текст и шеврон скрываются, остаётся только иконка с
+// Tooltip (как у обычных Menu.Item — react-admin's MenuItemLink делает то же
+// самое сама). `sidebarOpen` приходит пропом от MyMenu, а не из отдельного
+// useSidebarState() — значение уже read один раз в родителе, второй подписки
+// на стор не нужно.
+const subMenuHeaderSx = (theme: Theme, active: boolean) => ({
+  color: active ? theme.palette.primary.main : theme.palette.text.primary,
+  fontWeight: theme.typography.fontWeightBold,
+});
 
 // Иконка группы не dense — совпадает по ширине с иконками вложенных Menu.Item
 // (те тоже без dense) и с иконками одиночных пунктов меню верхнего уровня.
-const subMenuIconSx = {
-  minWidth: (theme: { spacing: (n: number) => string }) => theme.spacing(5),
+// Иконку саму по себе (размер/положение) не трогаем — она и так основной
+// визуальный якорь уровня (ТЗ п.1), кроме цвета при активной свёрнутой группе.
+const subMenuIconSx = (theme: Theme, active: boolean) => ({
+  minWidth: theme.spacing(5),
+  ...(active && { color: theme.palette.primary.main }),
+});
+
+// Контейнер вложенных пунктов (уровень 3, ТЗ п.2): подчинён группе —
+// - отступ слева заметно больше, чем в v2 (pl 1 → 1.5, плюс ml до рельсы), текст
+//   ребёнка стартует правее текста группы;
+// - вертикальная линия-рельса (border) слева визуально привязывает детей к своей
+//   группе и отделяет от соседних — цвет берём из палитры темы (`divider`),
+//   не хардкодим.
+// Уменьшение/приглушение самих иконок детей живёт отдельно, в childItemIconSx
+// ниже — не здесь: это стиль конкретного Menu.Item, а не контейнера-списка.
+const childListSx = (theme: Theme, sidebarOpen: boolean) => ({
+  pl: sidebarOpen ? 1.5 : 0,
+  ...(sidebarOpen && {
+    ml: 2.5,
+    borderLeft: `2px solid ${theme.palette.divider}`,
+  }),
+});
+
+// Иконка вложенного пункта (уровень 3, ТЗ п.2): НЕ убрана совсем (вариант из ТЗ
+// «убрать»), а уменьшена и приглушена (второй вариант, явно разрешённый ТЗ п.2
+// и п.6) — полное удаление иконки оставило бы пункт пустым в icon-режиме
+// сайдбара (там остаётся только иконка + Tooltip, текста нет вовсе, см.
+// MenuItemLink), уменьшенная иконка продолжает работать как есть в обоих
+// режимах без спецкейсов. Тот же приём покрывает и бейдж «Переработок»: он
+// висит на иконке (Badge > MoreTimeIcon), иконка не удаляется — счётчик
+// остаётся на месте и виден.
+// Стиль вешается через `sx` прямо на каждый <Menu.Item> (а не CSS-селектором
+// с родителя-контейнера): MenuItemLink пробрасывает `sx` из пропов напрямую в
+// свой собственный `styled(MenuItem)` (`...rest`, MenuItemLink.tsx) — MUI
+// сливает входящий `sx` поверх стилей styled-компонента в одну генерацию
+// класса, это штатная документированная точка расширения самого MenuItemLink
+// («Additional props are passed down to the underlying MUI <MenuItem>»).
+// Таргетинг того же класса `RaMenuItemLink-icon` через sx родителя-List (первая
+// версия этого фикса) конкурировал бы за специфичность с собственным правилом
+// react-admin на тот же класс — победитель решался бы порядком вставки CSS-правил
+// в emotion, а не гарантированным оверрайдом (code-review admin_menu_hierarchy).
+// Класс не импортирован (react-admin не экспортирует MenuItemLinkClasses из
+// публичного барреля 'react-admin'/'ra-ui-materialui') — строка используется как
+// публично документированный стабильный слот-класс компонента.
+const childItemIconSx = {
+  '& .RaMenuItemLink-icon': {
+    minWidth: '32px',
+    opacity: 0.65,
+  },
+  '& .RaMenuItemLink-icon .MuiSvgIcon-root': {
+    fontSize: '1.05rem',
+  },
 } as const;
 
 type SubMenuProps = {
@@ -100,13 +165,21 @@ type SubMenuProps = {
   open: boolean;
   onToggle: () => void;
   sidebarOpen: boolean;
+  // Текущий маршрут принадлежит одному из путей группы (см. useGroupOpen) —
+  // используется только для акцента заголовка свёрнутой группы, ТЗ п.3.
+  isActive: boolean;
   children: ReactNode;
 };
 
-const SubMenu = ({ name, icon, open, onToggle, sidebarOpen, children }: SubMenuProps) => {
+const SubMenu = ({ name, icon, open, onToggle, sidebarOpen, isActive, children }: SubMenuProps) => {
+  // Акцент нужен именно у свёрнутой активной группы: пока группа открыта,
+  // активный пункт внутри уже подсвечен самим MenuItemLink (ТЗ п.3 говорит
+  // явно про «свёрнутую» группу — раскрытая и так читается через дочерний пункт).
+  const showActiveAccent = isActive && !open;
+
   const header = (
-    <MenuItem onClick={onToggle} sx={subMenuHeaderSx}>
-      <ListItemIcon sx={subMenuIconSx}>{icon}</ListItemIcon>
+    <MenuItem onClick={onToggle} sx={(theme) => subMenuHeaderSx(theme, showActiveAccent)}>
+      <ListItemIcon sx={(theme) => subMenuIconSx(theme, showActiveAccent)}>{icon}</ListItemIcon>
       {sidebarOpen && (
         <>
           <Typography variant="inherit" noWrap sx={{ flexGrow: 1 }}>
@@ -130,7 +203,7 @@ const SubMenu = ({ name, icon, open, onToggle, sidebarOpen, children }: SubMenuP
         {header}
       </Tooltip>
       <Collapse in={open} timeout="auto" unmountOnExit>
-        <List component="div" disablePadding sx={{ pl: sidebarOpen ? 1 : 0 }}>
+        <List component="div" disablePadding sx={(theme) => childListSx(theme, sidebarOpen)}>
           {children}
         </List>
       </Collapse>
@@ -144,6 +217,9 @@ const SubMenu = ({ name, icon, open, onToggle, sidebarOpen, children }: SubMenuP
 // только открывает, никогда не закрывает через RBAC/навигацию. matchPath (react-router)
 // вместо ручного startsWith — тот же механизм, что использует MenuItemLink (useMatch)
 // для подсветки активного пункта, корректно учитывает границы сегментов пути.
+// Третий элемент (isActive) идёт наружу для SubMenu — акцент свёрнутой активной
+// группы (ТЗ admin_menu_hierarchy п.3) использует тот же matchPath, что и
+// авто-раскрытие, а не отдельное вычисление.
 const useGroupOpen = (paths: string[]) => {
   const { pathname } = useLocation();
   const isActive = paths.some((p) => matchPath({ path: p, end: false }, pathname) !== null);
@@ -151,7 +227,7 @@ const useGroupOpen = (paths: string[]) => {
   useEffect(() => {
     if (isActive) setOpen(true);
   }, [isActive]);
-  return [open, setOpen] as const;
+  return [open, setOpen, isActive] as const;
 };
 
 // Пункт меню «Переработки» с бейджем непросмотренных заявок (status=pending, admin.md).
@@ -169,7 +245,14 @@ const OvertimeMenuItem = () => {
     ) : (
       <MoreTimeIcon />
     );
-  return <Menu.Item to="/overtime-requests" primaryText="Переработки" leftIcon={icon} />;
+  return (
+    <Menu.Item
+      to="/overtime-requests"
+      primaryText="Переработки"
+      leftIcon={icon}
+      sx={childItemIconSx}
+    />
+  );
 };
 
 const MyMenu = () => {
@@ -193,18 +276,24 @@ const MyMenu = () => {
 
   // Состояние сворачиваемых подгрупп «Операционки». Хуки вызываются безусловно
   // (правило хуков) — видимость самих групп по RBAC решается уже в JSX ниже.
-  const [shiftsOpen, setShiftsOpen] = useGroupOpen([
+  const [shiftsOpen, setShiftsOpen, shiftsActive] = useGroupOpen([
     '/org-shifts',
     '/overtime-requests',
     '/work-schedules',
   ]);
-  const [staffOpen, setStaffOpen] = useGroupOpen(['/members', '/roles']);
-  const [checklistsOpen, setChecklistsOpen] = useGroupOpen([
+  const [staffOpen, setStaffOpen, staffActive] = useGroupOpen(['/members', '/roles']);
+  const [checklistsOpen, setChecklistsOpen, checklistsActive] = useGroupOpen([
     '/checklist-instances',
     '/checklist-templates',
   ]);
-  const [testsOpen, setTestsOpen] = useGroupOpen(['/test-templates', '/test-assignments']);
-  const [financeOpen, setFinanceOpen] = useGroupOpen(['/payroll', '/penalty-templates']);
+  const [testsOpen, setTestsOpen, testsActive] = useGroupOpen([
+    '/test-templates',
+    '/test-assignments',
+  ]);
+  const [financeOpen, setFinanceOpen, financeActive] = useGroupOpen([
+    '/payroll',
+    '/penalty-templates',
+  ]);
 
   return (
     <Menu>
@@ -236,7 +325,7 @@ const MyMenu = () => {
           сворачиваемые подсписки (SubMenu), чтобы не перегружать плоский список. */}
       {showOps && (
         <>
-          {showPlatform && <Divider sx={{ my: 1 }} />}
+          {showPlatform && <Divider sx={{ my: 1.5 }} />}
           {sidebarOpen && (
             <ListSubheader disableSticky sx={groupSx}>
               Операционка
@@ -250,10 +339,22 @@ const MyMenu = () => {
             open={shiftsOpen}
             onToggle={() => setShiftsOpen((o) => !o)}
             sidebarOpen={sidebarOpen}
+            isActive={shiftsActive}
           >
-            <Menu.Item to="/org-shifts" primaryText="Смены" leftIcon={<AccessTimeIcon />} />
+            {/* Было «Смены» — тавтология с названием группы (ТЗ п.5). */}
+            <Menu.Item
+              to="/org-shifts"
+              primaryText="Журнал смен"
+              leftIcon={<AccessTimeIcon />}
+              sx={childItemIconSx}
+            />
             {isOrgManager && <OvertimeMenuItem />}
-            <Menu.Item to="/work-schedules" primaryText="Графики работы" leftIcon={<ScheduleIcon />} />
+            <Menu.Item
+              to="/work-schedules"
+              primaryText="Графики работы"
+              leftIcon={<ScheduleIcon />}
+              sx={childItemIconSx}
+            />
           </SubMenu>
 
           {/* Персонал: сотрудники и роли (роли — перенос из секции «Организация»). */}
@@ -263,9 +364,15 @@ const MyMenu = () => {
             open={staffOpen}
             onToggle={() => setStaffOpen((o) => !o)}
             sidebarOpen={sidebarOpen}
+            isActive={staffActive}
           >
-            <Menu.Item to="/members" primaryText="Сотрудники" leftIcon={<GroupIcon />} />
-            <Menu.Item to="/roles" primaryText="Роли" leftIcon={<BadgeIcon />} />
+            <Menu.Item
+              to="/members"
+              primaryText="Сотрудники"
+              leftIcon={<GroupIcon />}
+              sx={childItemIconSx}
+            />
+            <Menu.Item to="/roles" primaryText="Роли" leftIcon={<BadgeIcon />} sx={childItemIconSx} />
           </SubMenu>
 
           {/* Чек-листы: реестр экземпляров (checklist_reports) и шаблоны. */}
@@ -275,16 +382,20 @@ const MyMenu = () => {
             open={checklistsOpen}
             onToggle={() => setChecklistsOpen((o) => !o)}
             sidebarOpen={sidebarOpen}
+            isActive={checklistsActive}
           >
+            {/* Было «Чек-листы» — тавтология с названием группы (ТЗ п.5). */}
             <Menu.Item
               to="/checklist-instances"
-              primaryText="Чек-листы"
+              primaryText="Заполненные чек-листы"
               leftIcon={<FactCheckIcon />}
+              sx={childItemIconSx}
             />
             <Menu.Item
               to="/checklist-templates"
               primaryText="Шаблоны чек-листов"
               leftIcon={<ChecklistIcon />}
+              sx={childItemIconSx}
             />
           </SubMenu>
 
@@ -297,12 +408,20 @@ const MyMenu = () => {
               open={testsOpen}
               onToggle={() => setTestsOpen((o) => !o)}
               sidebarOpen={sidebarOpen}
+              isActive={testsActive}
             >
-              <Menu.Item to="/test-templates" primaryText="Тесты" leftIcon={<QuizIcon />} />
+              {/* Было «Тесты» — тавтология с названием группы (ТЗ п.5). */}
+              <Menu.Item
+                to="/test-templates"
+                primaryText="Шаблоны тестов"
+                leftIcon={<QuizIcon />}
+                sx={childItemIconSx}
+              />
               <Menu.Item
                 to="/test-assignments"
                 primaryText="Результаты тестов"
                 leftIcon={<PollIcon />}
+                sx={childItemIconSx}
               />
             </SubMenu>
           )}
@@ -316,12 +435,19 @@ const MyMenu = () => {
               open={financeOpen}
               onToggle={() => setFinanceOpen((o) => !o)}
               sidebarOpen={sidebarOpen}
+              isActive={financeActive}
             >
-              <Menu.Item to="/payroll" primaryText="Зарплата" leftIcon={<CurrencyRubleIcon />} />
+              <Menu.Item
+                to="/payroll"
+                primaryText="Зарплата"
+                leftIcon={<CurrencyRubleIcon />}
+                sx={childItemIconSx}
+              />
               <Menu.Item
                 to="/penalty-templates"
                 primaryText="Шаблоны штрафов"
                 leftIcon={<MoneyOffIcon />}
+                sx={childItemIconSx}
               />
             </SubMenu>
           )}
@@ -339,7 +465,7 @@ const MyMenu = () => {
           в группу «Персонал» секции «Операционка». */}
       {showOrg && (
         <>
-          {(showPlatform || showOps) && <Divider sx={{ my: 1 }} />}
+          {(showPlatform || showOps) && <Divider sx={{ my: 1.5 }} />}
           {sidebarOpen && (
             <ListSubheader disableSticky sx={groupSx}>
               Организация
