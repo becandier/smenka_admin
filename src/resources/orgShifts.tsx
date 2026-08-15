@@ -62,6 +62,7 @@ import { MemberNameCell } from '../components/MemberNameCell';
 import { DateRangeAlert } from '../components/DateRangeAlert';
 import { ChecklistItemPhotos } from '../components/ChecklistItemPhotos';
 import { ShiftPenaltySection } from './penalties';
+import { wideDatagridScrollSx } from '../theme';
 
 const statusChoices = [
   { id: 'active', name: 'Активна' },
@@ -220,7 +221,16 @@ const OrgShiftDatagrid = () => {
   if (isDayRangeInvalid(filterValues?.date_from, filterValues?.date_to)) return null;
   if (!isPending && (data ?? []).length === 0) return <ShiftsEmpty />;
   return (
-    <Datagrid bulkActionButtons={false} rowClick="show">
+    <Datagrid
+      bulkActionButtons={false}
+      rowClick="show"
+      // Точечная правка (admin_table_styles/admin.md, критерий 3): единственная таблица
+      // админки реально шире контейнера (13 колонок) — без контейнмента растягивает всю
+      // страницу по горизонтали. Не в теме: почему это нельзя сделать глобально для всех
+      // Datagrid (ломает sticky-шапку) и что делает wideDatagridScrollSx — см. комментарий
+      // у RaDatagrid в theme.ts.
+      sx={wideDatagridScrollSx}
+    >
       <FunctionField label="Сотрудник" render={nameField} sortable={false} />
       <EmailField source="user_email" label="Email" emptyText="—" sortable={false} />
       <FunctionField label="Роль" render={roleField} />
