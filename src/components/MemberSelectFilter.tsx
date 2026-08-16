@@ -11,6 +11,11 @@ interface MemberChoice extends MemberNameSource {
   id: string;
 }
 
+interface RawMember extends MemberNameSource {
+  id: string;
+  user_id: string;
+}
+
 // Опция выпадающего списка: отображение по единому правилу (member_display_name/admin.md) —
 // основная строка + подпись настоящим именем, если отличается.
 const MemberOption = () => {
@@ -27,29 +32,33 @@ const inputText = (choice: MemberChoice): string => formatMemberNameFlat(choice)
 const matchSuggestion = (filter: string, choice: MemberChoice): boolean =>
   memberSearchHaystack(choice).includes(filter.trim().toLowerCase());
 
-// Фильтр-select по участникам организации: значения — user_id, отображение и поиск — по
-// единому правилу имени. Общий для ленты смен («Сотрудник») и реестра чек-листов.
+// Фильтр-select по участникам организации: значения по умолчанию — user_id (лента смен,
+// реестр чек-листов — эти эндпоинты фильтруют по user_id), отображение и поиск — по
+// единому правилу имени. idField='id' переключает значения на organization_members.id
+// (payroll_adjustments/manual_time_entry: GET .../adjustments фильтрует по member_id, не user_id).
 export const MemberSelectFilter = (props: {
   source: string;
   label: string;
   alwaysOn?: boolean;
+  idField?: 'user_id' | 'id';
 }) => {
-  const { data } = useGetList('members', {
+  const { idField = 'user_id', ...inputProps } = props;
+  const { data } = useGetList<RawMember>('members', {
     pagination: { page: 1, perPage: 200 },
     sort: { field: 'user_name', order: 'ASC' },
   });
   const choices = useMemo<MemberChoice[]>(
     () =>
       (data ?? []).map((m) => ({
-        id: m.user_id,
+        id: idField === 'id' ? m.id : m.user_id,
         user_name: m.user_name,
         display_name: m.display_name ?? null,
       })),
-    [data],
+    [data, idField],
   );
   return (
     <AutocompleteInput
-      {...props}
+      {...inputProps}
       choices={choices}
       optionText={optionText}
       inputText={inputText}

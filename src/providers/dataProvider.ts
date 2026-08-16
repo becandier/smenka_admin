@@ -108,6 +108,8 @@ const deleteOnePath = (resource: string, id: string): string => {
       return `${orgBase()}/penalty-templates/${id}`;
     case 'penalties':
       return `${orgBase()}/penalties/${id}`;
+    case 'adjustments':
+      return `${orgBase()}/adjustments/${id}`;
     default:
       throw new Error(`Удаление не поддержано для ресурса: ${resource}`);
   }
@@ -408,12 +410,14 @@ export const dataProvider: DataProvider = {
       return { data: data?.items ?? [], total: data?.total ?? 0 };
     }
     if (resource === 'org-shifts') {
-      // only_late — булев тумблер «Только опоздавшие»: снятое состояние (false) не должно
-      // становиться сетевым фильтром (контракт знает только `only_late=true` как включённый
-      // фильтр) — вырезаем его из filter, а не шлём buildQuery'ем как есть (тот включает
-      // булевы значения безусловно, включая false).
+      // only_late/only_manual/include_deleted — булевы тумблеры: снятое состояние (false) не
+      // должно становиться сетевым фильтром (контракт знает только `=true` как включённый
+      // фильтр, default и так false) — вырезаем их из filter, а не шлём buildQuery'ем как есть
+      // (тот включает булевы значения безусловно, включая false).
       const filter = { ...(params.filter ?? {}) } as Record<string, unknown>;
       if (filter.only_late === false) delete filter.only_late;
+      if (filter.only_manual === false) delete filter.only_manual;
+      if (filter.include_deleted === false) delete filter.include_deleted;
       return orgServerList(
         { ...params, filter },
         {
@@ -422,6 +426,7 @@ export const dataProvider: DataProvider = {
           // checklists — состояние чек-листов смены (none/all_completed/has_incomplete/
           // required_incomplete), см. checklist_reports/backend.md. only_late/work_schedule_id/
           // has_overtime — work_schedules/backend.md, «Фильтры в списке смен организации».
+          // only_manual/include_deleted — manual_time_entry (A5).
           filterKeys: [
             'user_id',
             'status',
@@ -431,6 +436,8 @@ export const dataProvider: DataProvider = {
             'only_late',
             'work_schedule_id',
             'has_overtime',
+            'only_manual',
+            'include_deleted',
           ],
         },
       );
@@ -511,6 +518,19 @@ export const dataProvider: DataProvider = {
         withSort: false,
       });
     }
+    if (resource === 'adjustments') {
+      // Ручные начисления/удержания (manual_time_entry, B2): фикс-сортировка бэка
+      // occurred_at DESC → withSort:false, та же семантика, что и penalties. `type`
+      // (доплата/удержание/все) — клиентский фильтр по знаку суммы (admin.md §4.1:
+      // «фильтруется на клиенте»), в filterKeys НЕ входит — на сервер не уходит,
+      // применяется в AdjustmentDatagrid поверх уже полученной страницы.
+      return orgServerList(params, {
+        path: 'adjustments',
+        defaultSort: 'occurred_at',
+        filterKeys: ['member_id', 'shift_id', 'date_from', 'date_to'],
+        withSort: false,
+      });
+    }
     if (resource === 'test-templates') {
       // Реестр шаблонов тестов (employee_tests): limit/offset/archived, без sort/order
       // в контракте (backend.md, «GET .../test-templates») → withSort:false.
@@ -554,8 +574,31 @@ export const dataProvider: DataProvider = {
       return { data: { ...(s ?? {}), id: s?.organization_id ?? id } };
     }
     if (resource === 'org-shifts') {
-      // деталь чужой орг-смены: GET /organizations/{org}/shifts/{shift_id}
-      return { data: await request(`${orgBase()}/shifts/${id}`) };
+      // деталь чужой орг-смены: GET /organizations/{org}/shifts/{shift_id}.
+      try {
+        return { data: await request(`${orgBase()}/shifts/${id}`) };
+      } catch (e: any) {
+        // manual_time_entry: этот эндпоинт на бэке безусловно фильтрует is_deleted=false —
+        // include_deleted есть только у списка (A5), не у единичного GET. Деталь удалённой
+        // смены при этом должна открываться (admin.md §1.3/§3: «клик открывает деталь, где
+        // доступно восстановление»), поэтому при SHIFT_NOT_FOUND ищем смену в списке с
+        // include_deleted=true — бэк отдаёт максимум 100 записей за страницу, сканируем
+        // ограниченное число страниц вместо неограниченного цикла (best-effort: смена,
+        // удалённая давно и «утонувшая» за пределами первых 1000 записей списка, здесь не
+        // найдётся — это расхождение с ТЗ описано в отчёте разработчика).
+        if (e?.body?.code !== 'SHIFT_NOT_FOUND') throw e;
+        const maxPages = 10;
+        for (let page = 0; page < maxPages; page += 1) {
+          const data = await request(
+            `${orgBase()}/shifts?include_deleted=true&limit=100&offset=${page * 100}`,
+          );
+          const items: any[] = data?.items ?? [];
+          const found = items.find((it) => String(it.id) === id);
+          if (found) return { data: found };
+          if (items.length < 100) break;
+        }
+        throw e;
+      }
     }
     if (resource === 'checklist-templates') {
       // детальная схема с пунктами
@@ -711,6 +754,44 @@ export const dataProvider: DataProvider = {
       };
       return {
         data: await request(`${orgBase()}/penalties`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        }),
+      };
+    }
+    if (resource === 'org-shifts') {
+      // Создать смену вручную (manual_time_entry A1): POST .../shifts. Тело собирает форма
+      // (resources/manualShifts) — started_at/finished_at уже сконвертированы в UTC ISO из
+      // таймзоны организации, pauses — полный список {started_at,finished_at}.
+      const body = {
+        user_id: d.user_id,
+        started_at: d.started_at,
+        finished_at: d.finished_at,
+        work_location_id: d.work_location_id ?? null,
+        work_schedule_id: d.work_schedule_id ?? null,
+        pauses: d.pauses ?? [],
+        note: d.note ? String(d.note) : null,
+      };
+      return {
+        data: await request(`${orgBase()}/shifts`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        }),
+      };
+    }
+    if (resource === 'adjustments') {
+      // Создать ручное начисление (manual_time_entry B1): POST .../adjustments.
+      const body = {
+        member_id: d.member_id,
+        amount_minor: d.amount_minor,
+        currency: d.currency ?? 'RUB',
+        reason: d.reason,
+        occurred_at: d.occurred_at ?? null,
+        shift_id: d.shift_id ?? null,
+        comment: d.comment ? String(d.comment) : null,
+      };
+      return {
+        data: await request(`${orgBase()}/adjustments`, {
           method: 'POST',
           body: JSON.stringify(body),
         }),
@@ -951,6 +1032,33 @@ export const dataProvider: DataProvider = {
       });
       return { data: updated ?? { ...data, id } };
     }
+    if (resource === 'org-shifts') {
+      // Изменить смену вручную (manual_time_entry A2): PATCH .../shifts/{id}, только
+      // переданные ключи (частичное обновление; для active/paused finished_at завершает
+      // смену задним числом — см. resources/manualShifts, ManualShiftEditDialog/FinishDialog).
+      const body: Record<string, unknown> = {};
+      for (const k of ['started_at', 'finished_at', 'work_location_id', 'pauses', 'note']) {
+        if (k in data) body[k] = data[k];
+      }
+      const updated = await request(`${orgBase()}/shifts/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      return { data: updated ?? { ...data, id } };
+    }
+    if (resource === 'adjustments') {
+      // Исправить начисление (manual_time_entry B3): member_id неизменен (не входит в
+      // список ключей — форма и не должна его слать при правке).
+      const body: Record<string, unknown> = {};
+      for (const k of ['amount_minor', 'reason', 'comment', 'occurred_at', 'shift_id']) {
+        if (k in data) body[k] = data[k];
+      }
+      const updated = await request(`${orgBase()}/adjustments/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      return { data: updated ?? { ...data, id } };
+    }
     if (resource === 'knowledge/nodes') {
       // Partial PATCH (M4): тело = переданные ключи (title?/icon?/all_members?/content?/
       // parent_id?/position?). Ответ — NodeDetailResponse с обогащённым content.
@@ -989,6 +1097,15 @@ export const dataProvider: DataProvider = {
       // Удаление узла и поддерева (M5): каскад на бэке. Ответ {data:null}.
       await request(`${orgBase()}/knowledge/nodes/${id}`, { method: 'DELETE' });
       return { data: { id: params.id } as any };
+    }
+    if (resource === 'org-shifts') {
+      // Удалить смену (soft-delete, manual_time_entry A3): DELETE .../shifts/{id}?note=...
+      // note — необязательная причина удаления (admin.md §3.1), приходит через meta (у
+      // DELETE в контракте нет тела, только query).
+      const note = (params.meta as { note?: string } | undefined)?.note;
+      const query = note ? `?${new URLSearchParams({ note }).toString()}` : '';
+      await request(`${orgBase()}/shifts/${id}${query}`, { method: 'DELETE' });
+      return { data: fallback };
     }
     await request(deleteOnePath(resource, id), { method: 'DELETE' });
     return { data: fallback };
@@ -1163,6 +1280,11 @@ export const dataProvider: DataProvider = {
       method: 'PATCH',
       body: JSON.stringify({ work_schedule_id: scheduleId }),
     }),
+  // Восстановить удалённую смену (manual_time_entry A4): POST .../shifts/{id}/restore →
+  // обновлённый ShiftResponse. Не CRUD-глагол dataProvider — отдельный кастомный метод,
+  // как changeShiftSchedule.
+  restoreShift: (shiftId: string) =>
+    request(`${orgBase()}/shifts/${shiftId}/restore`, { method: 'POST' }),
 
   // --- Заявки на переработку (shift_overtime_requests): рассмотрение org_admin'ом ---
   // PATCH .../overtime-requests/{id} {status: 'approved'|'rejected', review_comment?}.

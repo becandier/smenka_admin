@@ -70,6 +70,11 @@ export const formatRubles = (minor: number): string => {
 export const formatMoneyMinor = (minor: number | null | undefined): string =>
   minor === null || minor === undefined ? '—' : `${formatRubles(minor)} ₽`;
 
+// Знаковая сумма со «+» перед положительным значением (manual_time_entry, payroll_adjustments):
+// formatRubles уже отдаёт «-» для отрицательных через toLocaleString, «+» дописываем сами.
+export const formatSignedMoneyMinor = (minor: number): string =>
+  minor > 0 ? `+${formatMoneyMinor(minor)}` : formatMoneyMinor(minor);
+
 // Ввод суммы в рублях → копейки (целое > 0); максимум 2 знака после запятой.
 export const parseRublesToMinor = (raw: string): number | null => {
   const normalized = raw.trim().replace(',', '.');
@@ -356,3 +361,63 @@ export const TEST_ASSIGNMENT_STATUS_COLOR: Record<
   passed: 'success',
   failed: 'error',
 };
+
+// --- Ручной учёт времени и начисления (manual_time_entry) ---
+
+// Код ошибки бэка (manual_time_entry/backend.md «Новые коды ошибок» + переиспользуемые) →
+// понятный текст. Тот же приём, что scheduleErrorMessage/checklistLocationErrorMessage.
+const MANUAL_SHIFT_ERROR_MESSAGES: Record<string, string> = {
+  SHIFT_OVERLAP: 'У сотрудника уже есть смена в это время',
+  MEMBER_NOT_FOUND: 'Сотрудник не найден в организации',
+  SHIFT_NOT_FOUND: 'Смена не найдена',
+  WORK_LOCATION_NOT_FOUND: 'Точка не найдена',
+  SCHEDULE_NOT_FOUND: 'График не найден',
+  ORG_NOT_FOUND: 'Организация не найдена',
+  FORBIDDEN: 'Нет прав на это действие',
+};
+
+export const manualShiftErrorMessage = (error: unknown, fallback = 'Ошибка'): string => {
+  const code = error instanceof HttpError ? error.body?.code : undefined;
+  if (code && MANUAL_SHIFT_ERROR_MESSAGES[code]) return MANUAL_SHIFT_ERROR_MESSAGES[code];
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
+
+// Отдельный текст для SHIFT_OVERLAP при восстановлении удалённой смены (admin.md §3.1):
+// та же ошибка, что и при создании/правке, но причина другая — за время «удалённости»
+// на этот интервал завели другую смену.
+export const restoreErrorMessage = (error: unknown, fallback = 'Ошибка'): string => {
+  const code = error instanceof HttpError ? error.body?.code : undefined;
+  if (code === 'SHIFT_OVERLAP') return 'На это время уже заведена другая смена';
+  return manualShiftErrorMessage(error, fallback);
+};
+
+const ADJUSTMENT_ERROR_MESSAGES: Record<string, string> = {
+  ADJUSTMENT_NOT_FOUND: 'Начисление не найдено или уже отменено',
+  MEMBER_NOT_FOUND: 'Сотрудник не найден в организации',
+  SHIFT_NOT_FOUND: 'Смена не найдена или не принадлежит этому сотруднику',
+  ORG_NOT_FOUND: 'Организация не найдена',
+  FORBIDDEN: 'Нет прав на это действие',
+};
+
+export const adjustmentErrorMessage = (error: unknown, fallback = 'Ошибка'): string => {
+  const code = error instanceof HttpError ? error.body?.code : undefined;
+  if (code && ADJUSTMENT_ERROR_MESSAGES[code]) return ADJUSTMENT_ERROR_MESSAGES[code];
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
+
+// Тип ручного начисления по знаку суммы (payroll_adjustments: сервер знает только сумму,
+// UI-концепция «доплата/удержание» — только на клиенте, backend.md «Калькулятор часов»).
+export const ADJUSTMENT_TYPE_LABELS: Record<string, string> = {
+  credit: 'Доплата',
+  debit: 'Удержание',
+};
+
+export const ADJUSTMENT_TYPE_CHOICES = [
+  { id: 'all', name: 'Все' },
+  ...Object.entries(ADJUSTMENT_TYPE_LABELS).map(([id, name]) => ({ id, name })),
+];
+
+export const adjustmentTypeOf = (amountMinor: number): 'credit' | 'debit' =>
+  amountMinor >= 0 ? 'credit' : 'debit';

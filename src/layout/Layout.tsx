@@ -37,6 +37,7 @@ import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import CurrencyRubleIcon from '@mui/icons-material/CurrencyRuble';
 import MoneyOffIcon from '@mui/icons-material/MoneyOff';
+import PaidIcon from '@mui/icons-material/Paid';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
@@ -293,6 +294,7 @@ const MyMenu = () => {
   const [financeOpen, setFinanceOpen, financeActive] = useGroupOpen([
     '/payroll',
     '/penalty-templates',
+    '/adjustments',
   ]);
 
   return (
@@ -447,6 +449,13 @@ const MyMenu = () => {
                 to="/penalty-templates"
                 primaryText="Шаблоны штрафов"
                 leftIcon={<MoneyOffIcon />}
+                sx={childItemIconSx}
+              />
+              {/* manual_time_entry §4.1: рядом с «Зарплата» и «Шаблоны штрафов». */}
+              <Menu.Item
+                to="/adjustments"
+                primaryText="Начисления"
+                leftIcon={<PaidIcon />}
                 sx={childItemIconSx}
               />
             </SubMenu>
