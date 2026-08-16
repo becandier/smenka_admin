@@ -9,7 +9,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { formatClockDuration, formatMoneyMinor } from '../../utils/format';
+import { formatClockDuration, formatMoneyMinor, formatSignedMoneyMinor } from '../../utils/format';
 import { MemberNameCell } from '../../components/MemberNameCell';
 import { buildMatrix, formatBucketShort, MAX_MATRIX_COLUMNS } from './buckets';
 import type { Granularity, PayrollReport } from './types';
@@ -78,8 +78,7 @@ const TotalCell = ({
         display="block"
       >
         {penalty_amount_minor > 0 && `−${formatMoneyMinor(penalty_amount_minor)} `}
-        {adjustment_amount_minor !== 0 &&
-          `${adjustment_amount_minor > 0 ? '+' : ''}${formatMoneyMinor(adjustment_amount_minor)} `}
+        {adjustment_amount_minor !== 0 && `${formatSignedMoneyMinor(adjustment_amount_minor)} `}
         → {formatMoneyMinor(net_amount_minor)}
       </Typography>
     )}
