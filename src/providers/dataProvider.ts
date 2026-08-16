@@ -110,6 +110,8 @@ const deleteOnePath = (resource: string, id: string): string => {
       return `${orgBase()}/penalties/${id}`;
     case 'adjustments':
       return `${orgBase()}/adjustments/${id}`;
+    case 'test-templates':
+      return `${orgBase()}/test-templates/${id}`;
     default:
       throw new Error(`Удаление не поддержано для ресурса: ${resource}`);
   }
@@ -147,8 +149,15 @@ const mapTemplate = (t: any): any => ({
   amount_rub: typeof t?.amount_minor === 'number' ? t.amount_minor / 100 : null,
 });
 
+// checklist-templates/penalty-templates поддерживают мягкое удаление (unified_soft_delete):
+// тянем include_deleted=true всегда (ORG_CLIENT и так грузит список целиком) — «показывать ли
+// удалённые» дальше решает клиент (getList режет по filter.include_deleted, getOne/getMany
+// видят полный список, иначе клик по удалённой строке в списке не открывал бы её на редактирование).
+const SOFT_DELETE_CLIENT = new Set(['checklist-templates', 'penalty-templates']);
+
 const loadClient = async (resource: string): Promise<any[]> => {
-  const data = await request(clientListPath(resource));
+  const query = SOFT_DELETE_CLIENT.has(resource) ? '?include_deleted=true' : '';
+  const data = await request(`${clientListPath(resource)}${query}`);
   const items: any[] = data?.items ?? [];
   if (resource === 'members') return items.map(mapMember);
   if (resource === 'penalty-templates') return items.map(mapTemplate);
@@ -443,13 +452,16 @@ export const dataProvider: DataProvider = {
       );
     }
     if (resource === 'work-schedules') {
-      // include_archived — параметр запроса (не поле записи): выносим из filter, иначе
+      // include_paused — параметр запроса (не поле записи): выносим из filter, иначе
       // clientPaginate попытался бы сверять его со значениями строк и обнулил бы список.
+      // Графики не участвуют в unified_soft_delete (is_archived → is_paused — временное
+      // выключение, не удаление; физический DELETE остаётся отдельно, backend.md «Единственное
+      // исключение»).
       if (!getCurrentOrgId()) return { data: [], total: 0 };
       const filter = { ...(params.filter ?? {}) } as Record<string, unknown>;
-      const includeArchived = filter.include_archived === true;
-      delete filter.include_archived;
-      const data = await request(`${orgBase()}/work-schedules?include_archived=${includeArchived}`);
+      const includePaused = filter.include_paused === true;
+      delete filter.include_paused;
+      const data = await request(`${orgBase()}/work-schedules?include_paused=${includePaused}`);
       const items: any[] = data?.items ?? [];
       return clientPaginate(items, { ...params, filter });
     }
@@ -511,10 +523,11 @@ export const dataProvider: DataProvider = {
     }
     if (resource === 'penalties') {
       // фикс-сортировка бэка occurred_at DESC → sort/order не шлём (withSort:false).
+      // include_deleted (unified_soft_delete): показать снятые/удалённые штрафы для восстановления.
       return orgServerList(params, {
         path: 'penalties',
         defaultSort: 'occurred_at',
-        filterKeys: ['member_id', 'shift_id', 'date_from', 'date_to'],
+        filterKeys: ['member_id', 'shift_id', 'date_from', 'date_to', 'include_deleted'],
         withSort: false,
       });
     }
@@ -523,21 +536,23 @@ export const dataProvider: DataProvider = {
       // occurred_at DESC → withSort:false, та же семантика, что и penalties. `type`
       // (доплата/удержание/все) — клиентский фильтр по знаку суммы (admin.md §4.1:
       // «фильтруется на клиенте»), в filterKeys НЕ входит — на сервер не уходит,
-      // применяется в AdjustmentDatagrid поверх уже полученной страницы.
+      // применяется в AdjustmentDatagrid поверх уже полученной страницы. include_deleted
+      // (unified_soft_delete) — показать отменённые/удалённые начисления для восстановления.
       return orgServerList(params, {
         path: 'adjustments',
         defaultSort: 'occurred_at',
-        filterKeys: ['member_id', 'shift_id', 'date_from', 'date_to'],
+        filterKeys: ['member_id', 'shift_id', 'date_from', 'date_to', 'include_deleted'],
         withSort: false,
       });
     }
     if (resource === 'test-templates') {
-      // Реестр шаблонов тестов (employee_tests): limit/offset/archived, без sort/order
+      // Реестр шаблонов тестов (unified_soft_delete: archived→include_deleted, тесты — часть
+      // единой схемы мягкого удаления, backend.md): limit/offset/include_deleted, без sort/order
       // в контракте (backend.md, «GET .../test-templates») → withSort:false.
       return orgServerList(params, {
         path: 'test-templates',
         defaultSort: 'created_at',
-        filterKeys: ['archived'],
+        filterKeys: ['include_deleted'],
         withSort: false,
       });
     }
@@ -560,7 +575,16 @@ export const dataProvider: DataProvider = {
     }
     if (ORG_CLIENT.has(resource)) {
       if (!getCurrentOrgId()) return { data: [], total: 0 };
-      return clientPaginate(await loadClient(resource), params);
+      let rows = await loadClient(resource);
+      const filter = { ...(params.filter ?? {}) } as Record<string, unknown>;
+      if (SOFT_DELETE_CLIENT.has(resource)) {
+        // include_deleted — параметр запроса (не поле записи), как include_archived у графиков:
+        // вырезаем из filter, иначе clientPaginate сверял бы его со значениями строк.
+        const includeDeleted = filter.include_deleted === true;
+        delete filter.include_deleted;
+        if (!includeDeleted) rows = rows.filter((r) => !r.is_deleted);
+      }
+      return clientPaginate(rows, { ...params, filter });
     }
     throw new Error(`getList: неизвестный ресурс ${resource}`);
   },
@@ -909,7 +933,7 @@ export const dataProvider: DataProvider = {
     }
     if (resource === 'work-schedules') {
       const body: Record<string, unknown> = {};
-      for (const k of ['name', 'start_time', 'end_time', 'is_archived']) {
+      for (const k of ['name', 'start_time', 'end_time', 'is_paused']) {
         if (k in data) body[k] = data[k];
       }
       const updated = await request(`${orgBase()}/work-schedules/${id}`, {
@@ -1053,7 +1077,7 @@ export const dataProvider: DataProvider = {
     }
     if (resource === 'test-templates') {
       // Мета + полная замена questions (backend.md: «PATCH .../test-templates/{id}»).
-      // Архивный шаблон → TEST_TEMPLATE_ARCHIVED (400), обрабатывается вызывающим экраном.
+      // Удалённый шаблон → TEST_TEMPLATE_DELETED (400), обрабатывается вызывающим экраном.
       const updated = await request(`${orgBase()}/test-templates/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(buildTestTemplateBody(data)),
@@ -1166,6 +1190,10 @@ export const dataProvider: DataProvider = {
     request(`/shifts/${shiftId}/checklists/${instanceId}`),
   getTemplateAssignments: (templateId: string) =>
     request(`${orgBase()}/checklist-templates/${templateId}/assignments`),
+  // Восстановление удалённого шаблона чек-листа (unified_soft_delete). Раньше обратного
+  // перехода не было вовсе (backend.md, «checklist_templates … никак — обратного перехода нет»).
+  restoreChecklistTemplate: (templateId: string) =>
+    request(`${orgBase()}/checklist-templates/${templateId}/restore`, { method: 'POST' }),
   addTemplateItem: (
     templateId: string,
     // photo_requirement/photo_source — опц. (checklist_photos); при none source не шлём.
@@ -1205,7 +1233,7 @@ export const dataProvider: DataProvider = {
       body: JSON.stringify({ location_ids: locationIds }),
     }),
   // checklist_work_location: обратный срез — какие шаблоны привязаны к точке (карточка точки).
-  // Архивные шаблоны включены в выдачу (is_archived: true) — админ должен видеть привязку.
+  // Удалённые шаблоны включены в выдачу (is_deleted: true) — админ должен видеть привязку.
   getLocationTemplates: async (locationId: string) => {
     const data = await request(`${orgBase()}/locations/${locationId}/checklist-templates`);
     return data?.items ?? [];
@@ -1268,6 +1296,17 @@ export const dataProvider: DataProvider = {
   // как changeShiftSchedule.
   restoreShift: (shiftId: string) =>
     request(`${orgBase()}/shifts/${shiftId}/restore`, { method: 'POST' }),
+
+  // --- Штрафы, шаблоны штрафов, начисления (unified_soft_delete): восстановление ---
+  // Удаление у всех троих остаётся общим dataProvider.delete (deleteOnePath); раньше обратного
+  // перехода не было ни у одного (backend.md, «сейчас снятый штраф или отменённое начисление
+  // вернуть невозможно»).
+  restorePenaltyTemplate: (templateId: string) =>
+    request(`${orgBase()}/penalty-templates/${templateId}/restore`, { method: 'POST' }),
+  restorePenalty: (penaltyId: string) =>
+    request(`${orgBase()}/penalties/${penaltyId}/restore`, { method: 'POST' }),
+  restoreAdjustment: (adjustmentId: string) =>
+    request(`${orgBase()}/adjustments/${adjustmentId}/restore`, { method: 'POST' }),
 
   // --- Заявки на переработку (shift_overtime_requests): рассмотрение org_admin'ом ---
   // PATCH .../overtime-requests/{id} {status: 'approved'|'rejected', review_comment?}.
@@ -1368,12 +1407,10 @@ export const dataProvider: DataProvider = {
   // POST .../test-templates с телом как есть (не через конструктор-форму).
   importTestTemplate: (body: unknown) =>
     request(`${orgBase()}/test-templates`, { method: 'POST', body: JSON.stringify(body) }),
-  // Архивирование/разархивирование шаблона (список тестов, действие строки).
-  archiveTestTemplate: (templateId: string, isArchived: boolean) =>
-    request(`${orgBase()}/test-templates/${templateId}/archive`, {
-      method: 'PATCH',
-      body: JSON.stringify({ is_archived: isArchived }),
-    }),
+  // Восстановление удалённого шаблона (unified_soft_delete, список тестов, действие строки).
+  // Удаление — общий dataProvider.delete('test-templates', ...) (deleteOnePath).
+  restoreTestTemplate: (templateId: string) =>
+    request(`${orgBase()}/test-templates/${templateId}/restore`, { method: 'POST' }),
   // Назначение теста сотрудникам (диалог «Назначить»): POST .../assignments
   // {member_ids, due_at} → {items, created, updated}.
   assignTestTemplate: (

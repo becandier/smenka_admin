@@ -125,7 +125,7 @@ const useScheduleOptions = () =>
   useGetList('work-schedules', {
     pagination: { page: 1, perPage: 200 },
     sort: { field: 'name', order: 'ASC' },
-    filter: { include_archived: true },
+    filter: { include_paused: true },
   }).data ?? [];
 
 // Список строк «с — по» с кнопкой «+ Пауза» (admin.md §2). Время внутри тех же суток смены
@@ -465,7 +465,7 @@ export const ManualShiftCreateDialog = ({
             {schedules.map((s) => (
               <MenuItem key={s.id} value={s.id}>
                 {s.name}
-                {s.is_archived ? ' (архив)' : ''}
+                {s.is_paused ? ' (приостановлен)' : ''}
               </MenuItem>
             ))}
           </TextField>

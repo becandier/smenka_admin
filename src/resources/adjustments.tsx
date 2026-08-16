@@ -4,6 +4,7 @@ import {
   Datagrid,
   DateField,
   TextField,
+  BooleanInput,
   FunctionField,
   SelectInput,
   DateInput,
@@ -54,6 +55,7 @@ import { useMyOrgRole } from '../utils/useMyOrgRole';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { DateRangeAlert } from '../components/DateRangeAlert';
 import { MemberNameCell } from '../components/MemberNameCell';
+import { RestoreButton } from '../components/RestoreButton';
 import { wideDatagridScrollSx } from '../theme';
 
 // Ручные начисления/удержания (manual_time_entry B1-B4, payroll_adjustments). Ресурс
@@ -76,6 +78,7 @@ export interface Adjustment {
   created_by_user_id: string;
   created_by_name: string;
   created_at: string;
+  is_deleted?: boolean;
 }
 
 interface CurrentRate {
@@ -475,22 +478,34 @@ const AdjustmentRowActions = ({ record }: { record: Adjustment }) => {
     setSaving(true);
     try {
       await dataProvider.delete('adjustments', { id: record.id, previousData: record });
-      notify('Начисление отменено', { type: 'success' });
+      notify('Начисление удалено', { type: 'success' });
       setDeleting(false);
       refresh();
     } catch (e: any) {
-      notify(adjustmentErrorMessage(e, 'Не удалось отменить начисление'), { type: 'error' });
+      notify(adjustmentErrorMessage(e, 'Не удалось удалить начисление'), { type: 'error' });
     } finally {
       setSaving(false);
     }
   };
+
+  const handleRestore = async (): Promise<void> => {
+    try {
+      await dataProvider.restoreAdjustment(String(record.id));
+      notify('Начисление восстановлено', { type: 'success' });
+      refresh();
+    } catch (e: any) {
+      notify(adjustmentErrorMessage(e, 'Не удалось восстановить начисление'), { type: 'error' });
+    }
+  };
+
+  if (record.is_deleted) return <RestoreButton onRestore={handleRestore} />;
 
   return (
     <Stack direction="row" spacing={0.5}>
       <IconButton size="small" aria-label="Исправить" onClick={() => setEditing(true)}>
         <EditIcon fontSize="small" />
       </IconButton>
-      <IconButton size="small" aria-label="Отменить начисление" onClick={() => setDeleting(true)}>
+      <IconButton size="small" aria-label="Удалить начисление" onClick={() => setDeleting(true)}>
         <DeleteIcon fontSize="small" />
       </IconButton>
       {editing && (
@@ -505,19 +520,24 @@ const AdjustmentRowActions = ({ record }: { record: Adjustment }) => {
       )}
       {deleting && (
         <Dialog open onClose={() => setDeleting(false)} maxWidth="xs" fullWidth>
-          <DialogTitle>Отменить начисление?</DialogTitle>
+          <DialogTitle>Удалить начисление?</DialogTitle>
           <DialogContent>
             <Typography>
-              {formatMoneyMinor(record.amount_minor)} — {record.reason}. Перестанет учитываться
-              в зарплате.
+              {formatMoneyMinor(record.amount_minor)} — {record.reason}. Перестанет учитываться в
+              зарплате; восстановить можно через фильтр «Показывать удалённые».
             </Typography>
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setDeleting(false)} disabled={saving}>
               Отмена
             </Button>
-            <Button color="error" variant="contained" onClick={() => void handleDelete()} disabled={saving}>
-              Отменить
+            <Button
+              color="error"
+              variant="contained"
+              onClick={() => void handleDelete()}
+              disabled={saving}
+            >
+              Удалить
             </Button>
           </DialogActions>
         </Dialog>
@@ -553,7 +573,13 @@ const AdjustmentDatagrid = () => {
     // ветки, что и до подмены, просто TS не может это доказать после spread) — приведение типа
     // к тому же самому объявленному типу, форму объекта не меняем.
     <ListContextProvider value={{ ...listContext, data: filteredData } as typeof listContext}>
-      <Datagrid bulkActionButtons={false} sx={wideDatagridScrollSx}>
+      <Datagrid
+        bulkActionButtons={false}
+        // unified_soft_delete: удалённые строки (include_deleted=true) визуально погашены —
+        // тот же приём, что у смен (manual_time_entry §1.3, см. orgShifts.tsx).
+        rowSx={(record) => (record.is_deleted ? { opacity: 0.55 } : {})}
+        sx={wideDatagridScrollSx}
+      >
         <FunctionField label="Сотрудник" render={nameField} sortable={false} />
         <FunctionField label="Сумма" render={amountField} sortable={false} />
         <TextField source="reason" label="Основание" sortable={false} />
@@ -576,6 +602,12 @@ const adjustmentFilters = [
   <DateInput key="date_from" source="date_from" label="С даты" />,
   <DateInput key="date_to" source="date_to" label="По дату" />,
   <SelectInput key="type" source="type" label="Тип" choices={ADJUSTMENT_TYPE_CHOICES} />,
+  <BooleanInput
+    key="include_deleted"
+    source="include_deleted"
+    label="Показывать удалённые"
+    alwaysOn
+  />,
 ];
 
 const AdjustmentListActions = () => {

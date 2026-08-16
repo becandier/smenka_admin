@@ -3,6 +3,8 @@ import {
   Datagrid,
   TextField,
   DateField,
+  BooleanField,
+  BooleanInput,
   FunctionField,
   Edit,
   Create,
@@ -12,11 +14,15 @@ import {
   DeleteWithConfirmButton,
   required,
   maxLength,
+  useDataProvider,
+  useNotify,
+  useRefresh,
   type RaRecord,
 } from 'react-admin';
 import { Box, Typography } from '@mui/material';
 import { formatMoneyMinor, parseRublesToMinor } from '../utils/format';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { RestoreButton } from '../components/RestoreButton';
 
 // Шаблоны штрафов ведут только org owner/admin. super_admin штрафы конкретной
 // организации не ведёт (ТЗ fines) — для него экран закрыт (не полагаемся только на 403 бэка).
@@ -48,20 +54,61 @@ const validateAmountRub = (value: unknown): string | undefined => {
 const reasonValidators = [required(), maxLength(200)];
 const amountValidators = [required(), validateAmountRub];
 
+const penaltyTemplateFilters = [
+  <BooleanInput
+    key="include_deleted"
+    source="include_deleted"
+    label="Показывать удалённые"
+    alwaysOn
+  />,
+];
+
+// «Удалить»/«Восстановить» (unified_soft_delete): удалённая строка получает «Восстановить»
+// вместо «Удалить» — повторный DELETE на уже удалённом шаблоне бэк отверг бы 404.
+const PenaltyTemplateRowActions = ({ record }: { record: RaRecord }) => {
+  const dataProvider = useDataProvider();
+  const notify = useNotify();
+  const refresh = useRefresh();
+
+  const handleRestore = async (): Promise<void> => {
+    try {
+      await dataProvider.restorePenaltyTemplate(String(record.id));
+      notify('Шаблон штрафа восстановлен', { type: 'success' });
+      refresh();
+    } catch (e: any) {
+      notify(e?.message ?? 'Не удалось восстановить шаблон', { type: 'error' });
+    }
+  };
+
+  if (record.is_deleted) return <RestoreButton onRestore={handleRestore} />;
+  return (
+    <DeleteWithConfirmButton
+      confirmTitle="Удалить шаблон штрафа?"
+      confirmContent="Уже назначенные штрафы из него сохранятся (у них свой снимок суммы и причины); шаблон лишь исчезнет из списка выбора."
+    />
+  );
+};
+
 export const PenaltyTemplateList = () => {
   // Хук вызывается безусловно (первой строкой) — затем ветвимся по результату.
   if (!useCanManage()) return <NoAccess />;
   return (
-    <List sort={{ field: 'created_at', order: 'DESC' }} exporter={false}>
+    <List
+      filters={penaltyTemplateFilters}
+      sort={{ field: 'created_at', order: 'DESC' }}
+      exporter={false}
+    >
       <Datagrid rowClick="edit" bulkActionButtons={false}>
         <TextField source="reason" label="Причина" />
         <FunctionField label="Сумма" render={amountField} />
         <TextField source="currency" label="Валюта" />
+        <BooleanField source="is_deleted" label="Удалён" />
         <DateField source="created_at" label="Создан" showTime />
         <DateField source="updated_at" label="Изменён" showTime />
-        <DeleteWithConfirmButton
-          confirmTitle="Удалить шаблон штрафа?"
-          confirmContent="Уже назначенные штрафы из него сохранятся (у них свой снимок суммы и причины); шаблон лишь исчезнет из списка выбора."
+        <FunctionField
+          label=""
+          render={(r: RaRecord) => <PenaltyTemplateRowActions record={r} />}
+          sortable={false}
         />
       </Datagrid>
     </List>

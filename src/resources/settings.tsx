@@ -64,13 +64,13 @@ const RequireWorkLocationInput = () => {
 };
 
 // Тумблер «Требовать выбор графика» (work_schedules). Задизейблен, пока у организации нет
-// ни одного неархивного графика (бэк отверг бы включение 409 SCHEDULE_REQUIRED_NO_SCHEDULES) —
-// та же логика, что RequireWorkLocationInput.
+// ни одного активного (не приостановленного) графика (бэк отверг бы включение 409
+// SCHEDULE_REQUIRED_NO_SCHEDULES) — та же логика, что RequireWorkLocationInput.
 const RequireScheduleInput = () => {
   const { total, isPending, error } = useGetList('work-schedules', {
     pagination: { page: 1, perPage: 1 },
     sort: { field: 'name', order: 'ASC' },
-    filter: { include_archived: false },
+    filter: { include_paused: false },
   });
   const hasSchedules = (total ?? 0) > 0;
   const showAddHint = !isPending && !error && !hasSchedules;

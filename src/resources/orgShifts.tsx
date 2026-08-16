@@ -105,13 +105,13 @@ const overtimeFilterChoices = [
   { id: 'any', name: 'Есть заявка (любой статус)' },
 ];
 
-// Фильтр по графику: выбор — по названиям графиков организации (архивные тоже видны,
-// на них могли идти смены до архивации). useGetList — тот же приём, что MemberSelectFilter.
+// Фильтр по графику: выбор — по названиям графиков организации (приостановленные тоже видны,
+// на них могли идти смены до приостановки). useGetList — тот же приём, что MemberSelectFilter.
 const WorkScheduleSelectFilter = (props: { source: string; label: string }) => {
   const { data } = useGetList('work-schedules', {
     pagination: { page: 1, perPage: 200 },
     sort: { field: 'name', order: 'ASC' },
-    filter: { include_archived: true },
+    filter: { include_paused: true },
   });
   const choices = (data ?? []).map((s) => ({ id: s.id, name: s.name }));
   return <SelectInput {...props} choices={choices} emptyText="Любой" />;
@@ -702,7 +702,7 @@ export const SectionCard = ({ title, children }: { title: string; children: Reac
 );
 
 // Диалог смены графика администратором (work_schedules R7): селект графиков организации
-// (архивные тоже доступны — исправление задним числом) + «Без графика». PATCH .../shifts/{id}/schedule
+// (приостановленные тоже доступны — исправление задним числом) + «Без графика». PATCH .../shifts/{id}/schedule
 // пересчитывает scheduled_*/late_seconds от НЕИЗМЕННОГО started_at; фактическое время не меняется.
 const ChangeScheduleDialog = ({
   shiftId,
@@ -722,7 +722,7 @@ const ChangeScheduleDialog = ({
   const { data: schedules } = useGetList('work-schedules', {
     pagination: { page: 1, perPage: 200 },
     sort: { field: 'name', order: 'ASC' },
-    filter: { include_archived: true },
+    filter: { include_paused: true },
   });
 
   const submit = async () => {
@@ -755,7 +755,7 @@ const ChangeScheduleDialog = ({
           {(schedules ?? []).map((s) => (
             <MenuItem key={s.id} value={s.id}>
               {s.name}
-              {s.is_archived ? ' (архив)' : ''}
+              {s.is_paused ? ' (приостановлен)' : ''}
             </MenuItem>
           ))}
         </Select>

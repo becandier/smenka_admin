@@ -258,7 +258,7 @@ const SCHEDULE_ERROR_MESSAGES: Record<string, string> = {
   SCHEDULE_INVALID_TIME: 'Время начала и конца не должны совпадать',
   SCHEDULE_NOT_AVAILABLE: 'График недоступен этому сотруднику',
   SCHEDULE_REQUIRED: 'Сотруднику нужно выбрать график',
-  SCHEDULE_REQUIRED_NO_SCHEDULES: 'В организации нет ни одного неархивного графика',
+  SCHEDULE_REQUIRED_NO_SCHEDULES: 'В организации нет ни одного активного графика',
   ROLE_NOT_FOUND: 'Роль не найдена в этой организации',
   WORK_LOCATION_NOT_FOUND: 'Точка не найдена',
   INVALID_TIMEZONE: 'Неизвестный часовой пояс',
@@ -324,7 +324,7 @@ export const textOrEmpty = (value: unknown): string => (typeof value === 'string
 // поэтому для него используется фолбэк — уже человекочитаемый error.message с бэка.
 const TEST_ERROR_MESSAGES: Record<string, string> = {
   TEST_TEMPLATE_NOT_FOUND: 'Тест не найден',
-  TEST_TEMPLATE_ARCHIVED: 'Тест в архиве — действие недоступно',
+  TEST_TEMPLATE_DELETED: 'Тест удалён — восстановите его, чтобы редактировать',
   TEST_ASSIGNMENT_NOT_FOUND: 'Назначение не найдено',
   TEST_ASSIGNMENT_HAS_ATTEMPTS: 'У назначения уже есть сданные попытки — снять нельзя',
   TEST_ATTEMPT_NOT_FOUND: 'Попытка не найдена',

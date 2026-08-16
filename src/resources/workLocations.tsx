@@ -151,11 +151,14 @@ const LocationChecklistsSection = () => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const redirect = useRedirect();
+  // include_deleted: true — иначе уже привязанный, но впоследствии удалённый шаблон пропал бы
+  // из этого списка целиком, и разметка «уже привязан» ниже (visible) не сработала бы.
   const { data: templates } = useGetList('checklist-templates', {
     pagination: { page: 1, perPage: 500 },
     sort: { field: 'created_at', order: 'ASC' },
+    filter: { include_deleted: true },
   });
-  // linkedIds — снимок с сервера (нужен для фильтра архивных шаблонов); selected — live-правки формы.
+  // linkedIds — снимок с сервера (нужен для фильтра удалённых шаблонов); selected — live-правки формы.
   const [linkedIds, setLinkedIds] = useState<string[] | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [loadError, setLoadError] = useState(false);
@@ -211,11 +214,11 @@ const LocationChecklistsSection = () => {
     }
   };
 
-  // Архивные шаблоны показываем, только если уже привязаны (нельзя привязать новые архивные,
+  // Удалённые шаблоны показываем, только если уже привязаны (нельзя привязать новые удалённые,
   // admin.md п.2). Фильтруем по linkedIds (снимок сервера), а не по live selected — иначе строка
   // пропадала бы из формы сразу при снятии галочки, до нажатия «Сохранить».
   const visible = (templates ?? []).filter(
-    (t: any) => !t.is_archived || (linkedIds ?? []).includes(String(t.id)),
+    (t: any) => !t.is_deleted || (linkedIds ?? []).includes(String(t.id)),
   );
 
   return (
@@ -253,7 +256,7 @@ const LocationChecklistsSection = () => {
                 label={
                   <Stack direction="row" spacing={1} alignItems="center">
                     <span>{t.name}</span>
-                    {t.is_archived && <Chip size="small" label="архив" />}
+                    {t.is_deleted && <Chip size="small" label="удалён" />}
                   </Stack>
                 }
               />
