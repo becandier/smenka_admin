@@ -9,7 +9,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { formatClockDuration, formatMoneyMinor } from '../../utils/format';
+import { formatClockDuration, formatMoneyMinor, formatSignedMoneyMinor } from '../../utils/format';
 import { MemberNameCell } from '../../components/MemberNameCell';
 import { buildMatrix, formatBucketShort, MAX_MATRIX_COLUMNS } from './buckets';
 import type { Granularity, PayrollReport } from './types';
@@ -41,6 +41,7 @@ const TotalCell = ({
   worked_seconds,
   gross_amount_minor,
   penalty_amount_minor,
+  adjustment_amount_minor,
   net_amount_minor,
   overtime_seconds,
   planned_seconds,
@@ -52,6 +53,7 @@ const TotalCell = ({
   worked_seconds: number;
   gross_amount_minor: number;
   penalty_amount_minor: number;
+  adjustment_amount_minor: number;
   net_amount_minor: number;
   overtime_seconds: number;
   planned_seconds: number;
@@ -67,13 +69,17 @@ const TotalCell = ({
     <Typography variant="caption" color="text.secondary" display="block">
       {formatMoneyMinor(gross_amount_minor)}
     </Typography>
-    {penalty_amount_minor > 0 && (
+    {/* Штраф/начисления (manual_time_entry) — агрегат на сотрудника, не по корзинам,
+        поэтому только здесь, в итоговой ячейке. */}
+    {(penalty_amount_minor > 0 || adjustment_amount_minor !== 0) && (
       <Typography
         variant="caption"
         color={net_amount_minor < 0 ? 'error.main' : 'text.secondary'}
         display="block"
       >
-        −{formatMoneyMinor(penalty_amount_minor)} → {formatMoneyMinor(net_amount_minor)}
+        {penalty_amount_minor > 0 && `−${formatMoneyMinor(penalty_amount_minor)} `}
+        {adjustment_amount_minor !== 0 && `${formatSignedMoneyMinor(adjustment_amount_minor)} `}
+        → {formatMoneyMinor(net_amount_minor)}
       </Typography>
     )}
     <Typography variant="caption" color="text.secondary" display="block">
@@ -178,6 +184,7 @@ export const PayrollMatrixView = ({
                 worked_seconds={item.worked_seconds}
                 gross_amount_minor={item.gross_amount_minor}
                 penalty_amount_minor={item.penalty_amount_minor}
+                adjustment_amount_minor={item.adjustment_amount_minor}
                 net_amount_minor={item.net_amount_minor}
                 overtime_seconds={item.overtime_seconds}
                 planned_seconds={item.planned_seconds}
@@ -206,6 +213,7 @@ export const PayrollMatrixView = ({
               worked_seconds={report.totals.worked_seconds}
               gross_amount_minor={report.totals.gross_amount_minor}
               penalty_amount_minor={report.totals.penalty_amount_minor}
+              adjustment_amount_minor={report.totals.adjustment_amount_minor}
               net_amount_minor={report.totals.net_amount_minor}
               overtime_seconds={report.totals.overtime_seconds ?? 0}
               planned_seconds={report.totals.planned_seconds ?? 0}

@@ -1,4 +1,5 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
+import { useGetList } from 'react-admin';
 import {
   Box,
   Chip,
@@ -11,10 +12,11 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Link } from 'react-router-dom';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import { formatClockDuration, formatMoneyMinor } from '../../utils/format';
+import { formatClockDuration, formatMoneyMinor, formatSignedMoneyMinor } from '../../utils/format';
 import { MemberNameCell } from '../../components/MemberNameCell';
 import { formatBucketLabel } from './buckets';
 import type { Granularity, PayrollItem, PayrollReport } from './types';
@@ -31,6 +33,21 @@ const MissingRateBadge = ({ title }: { title: string }) => (
   </Tooltip>
 );
 
+// UTC-момент периода отчёта → календарный день БРАУЗЕРА (YYYY-MM-DD). report.period.date_from/
+// date_to — полные UTC-таймстемпы (границы дня в таймзоне админа, см. index.tsx: PayrollPage
+// строит их через localDayStartToUtcIso/localDayEndToUtcIso от браузерной таймзоны, не
+// org-таймзоны — тот же режим, что и у остальных day-range фильтров списков админки, включая
+// сам /adjustments). Ссылка «в начисления» должна передавать те же day-строки, что понимает
+// dataProvider.getList('adjustments') → toUtcDayRangeFilter → parseDay (строго YYYY-MM-DD) —
+// голый полный ISO-таймстемп в этот фильтр не матчится и молча отбрасывается.
+const isoToLocalDay = (iso: string | null): string | null => {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
 // Ячейка «Штраф»: сумма штрафов + подсказка с количеством (если штрафы есть).
 const PenaltyCell = ({ amount_minor, count }: { amount_minor: number; count: number }) =>
   count > 0 ? (
@@ -41,13 +58,61 @@ const PenaltyCell = ({ amount_minor, count }: { amount_minor: number; count: num
     <TableCell align="right">{formatMoneyMinor(amount_minor)}</TableCell>
   );
 
-// Ячейка «К выплате» (net = начислено − штрафы). Отрицательное (штрафы > начислений)
-// показываем как есть, акцентом, не обрезая до нуля (ТЗ fines).
+// Ячейка «К выплате» (net = начислено − штрафы + ручные начисления). Отрицательное
+// показываем как есть, акцентом, не обрезая до нуля (ТЗ fines/manual_time_entry).
 const NetCell = ({ amount_minor }: { amount_minor: number }) => (
   <TableCell align="right" sx={amount_minor < 0 ? { color: 'error.main' } : undefined}>
     {formatMoneyMinor(amount_minor)}
   </TableCell>
 );
+
+// Ячейка «Начисления» (manual_time_entry, backend.md раздел C): знаковая сумма, цвет по
+// знаку (плюс — зелёный, минус — красный, admin.md §5), подсказка с количеством. Ненулевая
+// сумма — ссылка в реестр /adjustments с фильтром по сотруднику и периодом отчёта; memberId
+// разрешаем через карту user_id→member_id (payroll отдаёт только user_id, adjustments
+// фильтруется по member_id) — при отсутствии маппинга (сотрудник выбыл из org) просто не
+// делаем ссылку кликабельной, сумму всё равно показываем.
+const AdjustmentCell = ({
+  amount_minor,
+  count,
+  memberId,
+  period,
+}: {
+  amount_minor: number;
+  count: number;
+  memberId: string | undefined;
+  period: { date_from: string | null; date_to: string | null };
+}) => {
+  const color = amount_minor > 0 ? 'success.main' : amount_minor < 0 ? 'error.main' : undefined;
+  const value = formatSignedMoneyMinor(amount_minor);
+  if (count === 0 || !memberId) {
+    return (
+      <TableCell align="right" sx={color ? { color } : undefined}>
+        {value}
+      </TableCell>
+    );
+  }
+  const filter: Record<string, string> = { member_id: memberId };
+  const dateFromDay = isoToLocalDay(period.date_from);
+  const dateToDay = isoToLocalDay(period.date_to);
+  if (dateFromDay) filter.date_from = dateFromDay;
+  if (dateToDay) filter.date_to = dateToDay;
+  const href = `/adjustments?filter=${encodeURIComponent(JSON.stringify(filter))}`;
+  return (
+    <Tooltip title={`${count} шт. · перейти в начисления`}>
+      <TableCell align="right" sx={{ p: 0 }}>
+        <Link
+          to={href}
+          style={{ color: color ? undefined : 'inherit', display: 'block', padding: '6px 16px' }}
+        >
+          <Typography variant="body2" component="span" sx={color ? { color } : undefined}>
+            {value}
+          </Typography>
+        </Link>
+      </TableCell>
+    </Tooltip>
+  );
+};
 
 // «По графику» (work_schedules R8): плановые часы + плановые деньги мелким шрифтом снизу.
 const PlannedCell = ({
@@ -131,6 +196,16 @@ export const PayrollListView = ({
 }) => {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const detailed = granularity !== 'none';
+  // user_id→member_id: те же params, что PayrollFilters уже запрашивает на этой странице —
+  // один и тот же react-query кэш-ключ, лишнего сетевого запроса не добавляет.
+  const { data: members } = useGetList('members', {
+    pagination: { page: 1, perPage: 200 },
+    sort: { field: 'user_name', order: 'ASC' },
+  });
+  const memberIdByUser = useMemo(
+    () => new Map((members ?? []).map((m) => [String(m.user_id), String(m.id)])),
+    [members],
+  );
 
   const toggle = (userId: string) =>
     setExpanded((prev) => {
@@ -154,6 +229,7 @@ export const PayrollListView = ({
           <TableCell align="right">Смен</TableCell>
           <TableCell align="right">Начислено</TableCell>
           <TableCell align="right">Штраф</TableCell>
+          <TableCell align="right">Начисления</TableCell>
           <TableCell align="right">К выплате</TableCell>
           <TableCell />
         </TableRow>
@@ -197,6 +273,12 @@ export const PayrollListView = ({
                   amount_minor={item.penalty_amount_minor}
                   count={item.penalties_count}
                 />
+                <AdjustmentCell
+                  amount_minor={item.adjustment_amount_minor}
+                  count={item.adjustments_count}
+                  memberId={memberIdByUser.get(item.user_id)}
+                  period={report.period}
+                />
                 <NetCell amount_minor={item.net_amount_minor} />
                 <TableCell>
                   {item.has_missing_rate && <MissingRateBadge title={missingRateHint(item)} />}
@@ -204,7 +286,7 @@ export const PayrollListView = ({
               </TableRow>
               {hasBreakdown && isOpen && (
                 <TableRow>
-                  <TableCell colSpan={12} sx={{ py: 0, borderBottom: 0 }}>
+                  <TableCell colSpan={13} sx={{ py: 0, borderBottom: 0 }}>
                     <BreakdownTable item={item} granularity={granularity} />
                   </TableCell>
                 </TableRow>
@@ -234,6 +316,19 @@ export const PayrollListView = ({
             amount_minor={report.totals.penalty_amount_minor}
             count={report.totals.penalties_count}
           />
+          <TableCell
+            align="right"
+            sx={{
+              color:
+                report.totals.adjustment_amount_minor > 0
+                  ? 'success.main'
+                  : report.totals.adjustment_amount_minor < 0
+                    ? 'error.main'
+                    : undefined,
+            }}
+          >
+            {formatSignedMoneyMinor(report.totals.adjustment_amount_minor)}
+          </TableCell>
           <NetCell amount_minor={report.totals.net_amount_minor} />
           <TableCell />
         </TableRow>

@@ -10,6 +10,7 @@ import FactCheckIcon from '@mui/icons-material/FactCheck';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import HistoryIcon from '@mui/icons-material/History';
 import MoneyOffIcon from '@mui/icons-material/MoneyOff';
+import PaidIcon from '@mui/icons-material/Paid';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import QuizIcon from '@mui/icons-material/Quiz';
@@ -41,6 +42,7 @@ import {
   PenaltyTemplateCreate,
   PenaltyTemplateEdit,
 } from './resources/penaltyTemplates';
+import { AdjustmentList } from './resources/adjustments';
 import { AuditLogList } from './resources/auditLogs';
 import { TestTemplateList, TestTemplateCreate, TestTemplateEdit } from './resources/testTemplates';
 import { TestAssignmentList } from './resources/testAssignments';
@@ -151,6 +153,9 @@ export const App = () => (
             edit={PenaltyTemplateEdit}
             icon={MoneyOffIcon}
           />
+          {/* Ручные начисления/удержания (manual_time_entry) — компонент сам режет доступ до
+              owner/admin (как penalty-templates/payroll); в меню пункт виден только им. */}
+          <Resource name="adjustments" list={AdjustmentList} icon={PaidIcon} />
           {/* Аудит — read-only лента действий owner/admin; без create/edit/show-мутаций. */}
           <Resource name="audit-logs" list={AuditLogList} icon={HistoryIcon} />
           {/* Тестирование сотрудников (employee_tests) — только org owner/admin, не платформенная

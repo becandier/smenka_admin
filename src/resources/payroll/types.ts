@@ -32,7 +32,12 @@ export interface PayrollItem {
   has_missing_rate: boolean;
   penalty_amount_minor: number;
   penalties_count: number;
-  net_amount_minor: number; // gross − penalty; может быть < 0 (не обрезаем)
+  // Знаковая сумма ручных начислений/удержаний за период (manual_time_entry, backend.md
+  // раздел C): > 0 — доплаты преобладают, < 0 — удержания. adjustments_count — их количество
+  // (оба знака вместе, как penalties_count для штрафов).
+  adjustment_amount_minor: number;
+  adjustments_count: number;
+  net_amount_minor: number; // gross − penalty + adjustment; может быть < 0 (не обрезаем)
   // work_schedules R8 — план против факта:
   overtime_seconds: number; // сумма approved-заявок на переработку по сменам периода
   planned_seconds: number; // план по графику; для смен без графика — факт (backend.md)
@@ -53,6 +58,11 @@ export interface PayrollTotals {
   gross_amount_minor: number;
   penalty_amount_minor: number;
   penalties_count: number;
+  // manual_time_entry (backend.md раздел C, «Те же два поля добавляются в totals») —
+  // гарантированы контрактом (default=0 на бэке), в отличие от overtime_*/planned_*/delta_*/
+  // late_* ниже (те держим опциональными).
+  adjustment_amount_minor: number;
+  adjustments_count: number;
   net_amount_minor: number;
   overtime_seconds?: number;
   planned_seconds?: number;

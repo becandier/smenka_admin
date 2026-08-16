@@ -10,6 +10,7 @@ import {
   BooleanInput,
   DateInput,
   Show,
+  TopToolbar,
   useListContext,
   useDataProvider,
   useGetList,
@@ -39,9 +40,15 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
+import EventBusyIcon from '@mui/icons-material/EventBusy';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PhotoCameraOutlinedIcon from '@mui/icons-material/PhotoCameraOutlined';
 import EditCalendarIcon from '@mui/icons-material/EditCalendar';
+import EditIcon from '@mui/icons-material/Edit';
+import PaidIcon from '@mui/icons-material/Paid';
 import {
   checklistStatusLabel,
   finishReasonLabel,
@@ -56,12 +63,23 @@ import {
 import { formatMemberNameFlat } from '../utils/memberName';
 import { useAsync } from '../utils/useAsync';
 import { useOrgTimezone } from '../utils/useOrgTimezone';
-import { isDayRangeInvalid } from '../utils/dates';
+import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { isDayRangeInvalid, utcIsoToZonedParts } from '../utils/dates';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { MemberNameCell } from '../components/MemberNameCell';
 import { DateRangeAlert } from '../components/DateRangeAlert';
 import { ChecklistItemPhotos } from '../components/ChecklistItemPhotos';
 import { ShiftPenaltySection } from './penalties';
+import {
+  ManualShiftCreateDialog,
+  ManualShiftDeleteDialog,
+  ManualShiftEditDialog,
+  ManualShiftFinishDialog,
+  RestoreShiftButton,
+  ShiftManualChips,
+  type ManualShiftCreateInitial,
+} from './manualShifts';
+import { AdjustmentFormDialog } from './adjustments';
 import { wideDatagridScrollSx } from '../theme';
 
 const statusChoices = [
@@ -120,6 +138,9 @@ const shiftFilters = [
     label="Переработка"
     choices={overtimeFilterChoices}
   />,
+  // manual_time_entry (A5): только ручные/правленые смены и/или показ удалённых.
+  <BooleanInput key="only_manual" source="only_manual" label="Только ручные" />,
+  <BooleanInput key="include_deleted" source="include_deleted" label="Показывать удалённые" />,
 ];
 
 // Empty-state для пустого/отфильтрованного результата. Текст зависит от наличия
@@ -211,6 +232,17 @@ const overtimeField = (r: RaRecord) => {
   );
 };
 
+// Восстановление прямо из списка (include_deleted=true), а не только с детали: единичный
+// GET .../shifts/{id} на бэке безусловно фильтрует is_deleted=false (в отличие от списка,
+// который честно поддерживает include_deleted, A5) — деталь удалённой смены поэтому не
+// всегда открывается, а «Показывать удалённые» без работающего восстановления бесполезен.
+const RestoreRowAction = ({ shift }: { shift: RaRecord }) => {
+  const role = useMyOrgRole();
+  const refresh = useRefresh();
+  if (!shift.is_deleted || (role !== 'owner' && role !== 'admin')) return null;
+  return <RestoreShiftButton shift={shift} onDone={refresh} size="small" />;
+};
+
 // Тело списка. Пустоту обрабатываем сами через useListContext: проп <List empty>
 // в react-admin v5 НЕ рендерится при активных фильтрах, а ТЗ требует кастомный
 // empty-state и для отфильтрованного результата (фильтр по сотруднику без смен).
@@ -224,6 +256,8 @@ const OrgShiftDatagrid = () => {
     <Datagrid
       bulkActionButtons={false}
       rowClick="show"
+      // manual_time_entry §1.3: удалённые строки (include_deleted=true) визуально погашены.
+      rowSx={(record) => (record.is_deleted ? { opacity: 0.55 } : {})}
       // Точечная правка (admin_table_styles/admin.md, критерий 3): единственная таблица
       // админки реально шире контейнера (13 колонок) — без контейнмента растягивает всю
       // страницу по горизонтали. Не в теме: почему это нельзя сделать глобально для всех
@@ -236,6 +270,9 @@ const OrgShiftDatagrid = () => {
       <FunctionField label="Роль" render={roleField} />
       <TextField source="custom_role_name" label="Кастомная роль" emptyText="—" sortable={false} />
       <FunctionField label="Статус" render={statusField} />
+      {/* manual_time_entry §1.3: чипы «Ручная»/«Изменена»/«Удалена» — Tooltip с manual_note
+          и кто правил. */}
+      <FunctionField label="Пометки" render={ShiftManualChips} sortable={false} />
       <DateField source="started_at" label="Начало" showTime />
       <DateField source="finished_at" label="Конец" showTime emptyText="—" />
       <FunctionField label="Отработано" render={durationField} />
@@ -244,7 +281,38 @@ const OrgShiftDatagrid = () => {
       <FunctionField label="График" render={scheduleField} sortable={false} />
       <FunctionField label="Опоздание" render={lateField} sortable={false} />
       <FunctionField label="Переработка" render={overtimeField} sortable={false} />
+      <FunctionField
+        label=""
+        render={(r: RaRecord) => <RestoreRowAction shift={r} />}
+        sortable={false}
+      />
     </Datagrid>
+  );
+};
+
+// Тулбар списка: «Добавить смену» (manual_time_entry §1.1) — основное действие, диалог
+// поверх списка (админ не теряет контекст фильтров). Видно только owner/admin — то же
+// правило доступа, что у всех пишущих действий этой фичи (R8 backend.md).
+const OrgShiftListActions = () => {
+  const role = useMyOrgRole();
+  const refresh = useRefresh();
+  const [open, setOpen] = useState(false);
+  if (role !== 'owner' && role !== 'admin') return null;
+  return (
+    <TopToolbar>
+      <Button startIcon={<AddIcon />} onClick={() => setOpen(true)}>
+        Добавить смену
+      </Button>
+      {open && (
+        <ManualShiftCreateDialog
+          onClose={() => setOpen(false)}
+          onDone={() => {
+            setOpen(false);
+            refresh();
+          }}
+        />
+      )}
+    </TopToolbar>
   );
 };
 
@@ -257,6 +325,7 @@ export const OrgShiftList = () => (
     sort={{ field: 'started_at', order: 'DESC' }}
     exporter={false}
     empty={false}
+    actions={<OrgShiftListActions />}
   >
     <DateRangeAlert />
     <OrgShiftDatagrid />
@@ -292,7 +361,178 @@ const ShiftHeader = () => {
         {record.finished_at ? formatDateTime(record.finished_at) : '—'}
       </InfoRow>
       <InfoRow label="Отработано">{formatDuration(record.worked_seconds)}</InfoRow>
+      <ShiftManualActionsBar />
     </Stack>
+  );
+};
+
+// manual_time_entry §3.1: действия в карточке «Смена» — изменить время, быстро завершить
+// зависшую смену, удалить/восстановить, скопировать (§2.2, «желательно»). Видно только
+// owner/admin (R8 backend.md) — то же правило, что у штрафа/зарплаты.
+type ShiftDialogKind = 'edit' | 'finish' | 'delete' | 'copy' | null;
+
+const ShiftManualActionsBar = () => {
+  const record = useRecordContext();
+  const role = useMyOrgRole();
+  const refresh = useRefresh();
+  const tz = useOrgTimezone();
+  const [dialog, setDialog] = useState<ShiftDialogKind>(null);
+  if (!record || (role !== 'owner' && role !== 'admin')) return null;
+
+  const isOpenShift = record.status === 'active' || record.status === 'paused';
+  const done = (): void => {
+    setDialog(null);
+    refresh();
+  };
+
+  // §2.2: предзаполняет форму создания сотрудником/временем/точкой/паузами исходной смены,
+  // дата — пустая (новая смена, не дубль той же даты).
+  const buildCopyInitial = (): ManualShiftCreateInitial => {
+    const startParts = utcIsoToZonedParts(record.started_at ?? null, tz);
+    const finishParts = utcIsoToZonedParts(record.finished_at ?? null, tz);
+    const pauses = ((record.pauses ?? []) as { id?: string; started_at: string; finished_at: string | null }[])
+      .filter((p) => p.finished_at)
+      .map((p) => ({
+        key: String(p.id ?? Math.random()),
+        startTime: utcIsoToZonedParts(p.started_at, tz)?.time ?? '',
+        endTime: utcIsoToZonedParts(p.finished_at, tz)?.time ?? '',
+      }));
+    return {
+      userIds: record.user_id ? [String(record.user_id)] : [],
+      date: '',
+      startTime: startParts?.time ?? '',
+      endTime: finishParts?.time ?? '',
+      workLocationId: record.work_location_id ?? null,
+      pauses,
+    };
+  };
+
+  return (
+    <Box sx={{ mt: 1.5, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+      {!record.is_deleted && (
+        <>
+          <Button size="small" startIcon={<EditIcon />} onClick={() => setDialog('edit')}>
+            Изменить время
+          </Button>
+          {isOpenShift && (
+            <Button
+              size="small"
+              color="warning"
+              startIcon={<EventBusyIcon />}
+              onClick={() => setDialog('finish')}
+            >
+              Завершить смену
+            </Button>
+          )}
+          <Button size="small" startIcon={<ContentCopyIcon />} onClick={() => setDialog('copy')}>
+            Скопировать
+          </Button>
+          <Button
+            size="small"
+            color="error"
+            startIcon={<DeleteForeverIcon />}
+            onClick={() => setDialog('delete')}
+          >
+            Удалить смену
+          </Button>
+        </>
+      )}
+      {record.is_deleted && <RestoreShiftButton shift={record} onDone={done} />}
+
+      {dialog === 'edit' && (
+        <ManualShiftEditDialog shift={record} onClose={() => setDialog(null)} onDone={done} />
+      )}
+      {dialog === 'finish' && (
+        <ManualShiftFinishDialog shift={record} onClose={() => setDialog(null)} onDone={done} />
+      )}
+      {dialog === 'delete' && (
+        <ManualShiftDeleteDialog shift={record} onClose={() => setDialog(null)} onDone={done} />
+      )}
+      {dialog === 'copy' && (
+        <ManualShiftCreateDialog initial={buildCopyInitial()} onClose={() => setDialog(null)} onDone={done} />
+      )}
+    </Box>
+  );
+};
+
+// manual_time_entry §3.2: карточка «Ручные правки» — только если смена заведена/правлена
+// вручную (is_manual/is_edited).
+const ManualEditsCard = () => {
+  const record = useRecordContext();
+  if (!record || !(record.is_manual || record.is_edited)) return null;
+  return (
+    <SectionCard title="Ручные правки">
+      <Stack spacing={0.5}>
+        {record.is_manual && <Typography>Добавлена вручную: {record.created_by_name ?? '—'}</Typography>}
+        {record.is_edited && (
+          <Typography>
+            Изменена: {record.edited_by_name ?? '—'}
+            {record.edited_at ? `, ${formatDateTime(record.edited_at)}` : ''}
+          </Typography>
+        )}
+        <Typography color="text.secondary">Комментарий: {record.manual_note ?? '—'}</Typography>
+      </Stack>
+    </SectionCard>
+  );
+};
+
+// manual_time_entry §3.4: «Начислить / удержать» рядом со штрафом — отдельная карточка,
+// не трогает penalties.tsx (ТЗ §6 «не меняется»). member_id выводим из shift.user_id, как
+// в ShiftPenaltySection.
+const ShiftAdjustmentAction = () => {
+  const record = useRecordContext();
+  const role = useMyOrgRole();
+  const refresh = useRefresh();
+  const [open, setOpen] = useState(false);
+  const canManage = role === 'owner' || role === 'admin';
+  const { data: members, isPending } = useGetList(
+    'members',
+    { pagination: { page: 1, perPage: 500 }, sort: { field: 'user_name', order: 'ASC' } },
+    { enabled: canManage && Boolean(record) },
+  );
+
+  if (!record || !canManage) return null;
+
+  const userId = record.user_id ? String(record.user_id) : null;
+  const member = (members ?? []).find((m) => String(m.user_id) === userId);
+  const memberId = member?.id ? String(member.id) : null;
+
+  return (
+    <Card sx={{ mb: 2 }}>
+      <CardContent>
+        <Typography variant="h6" gutterBottom>
+          Начисление
+        </Typography>
+        {isPending ? (
+          <CircularProgress size={20} />
+        ) : !memberId ? (
+          <Typography color="text.secondary">
+            Сотрудник не активен в организации — начисление недоступно.
+          </Typography>
+        ) : (
+          <Button variant="contained" startIcon={<PaidIcon />} onClick={() => setOpen(true)}>
+            Начислить / удержать
+          </Button>
+        )}
+        {open && memberId && userId && (
+          <AdjustmentFormDialog
+            lockedMember={{
+              id: memberId,
+              userId,
+              label: formatMemberNameFlat({ user_name: record.user_name, display_name: record.display_name }),
+            }}
+            lockedShift={{ id: String(record.id), label: `Смена от ${formatDateTime(record.started_at)}` }}
+            defaultOccurredAt={record.started_at ?? null}
+            editing={null}
+            onClose={() => setOpen(false)}
+            onDone={() => {
+              setOpen(false);
+              refresh();
+            }}
+          />
+        )}
+      </CardContent>
+    </Card>
   );
 };
 
@@ -450,7 +690,7 @@ const ShiftChecklists = () => {
   );
 };
 
-const SectionCard = ({ title, children }: { title: string; children: ReactNode }) => (
+export const SectionCard = ({ title, children }: { title: string; children: ReactNode }) => (
   <Card sx={{ mb: 2 }}>
     <CardContent>
       <Typography variant="h6" gutterBottom>
@@ -568,6 +808,14 @@ const ShiftPlanSection = () => {
           У смены нет графика — плановое время не рассчитывается, опоздание не показывается.
         </Typography>
       )}
+      {/* manual_time_entry §3.3/R5: PATCH .../schedule пересчитывает scheduled_* от
+          НЕИЗМЕННОГО started_at — ручная правка начала смены план сама не пересчитывает. */}
+      {hasSchedule && record.is_edited && (
+        <Typography variant="caption" color="warning.main" display="block" sx={{ mt: 1 }}>
+          Плановое время рассчитано от прежнего начала смены. Чтобы пересчитать — примените
+          график заново («Изменить график»).
+        </Typography>
+      )}
       {dialogOpen && (
         <ChangeScheduleDialog
           shiftId={String(record.id)}
@@ -583,16 +831,19 @@ const ShiftPlanSection = () => {
   );
 };
 
-// Деталь чужой орг-смены (read-only): шапка + паузы + чек-листы.
+// Деталь чужой орг-смены: шапка (+ ручные действия §3.1) + ручные правки (§3.2) + план +
+// штраф + начисление (§3.4) + паузы + чек-листы.
 export const OrgShiftShow = () => (
   <Show component="div" title="Смена сотрудника">
     <Box sx={{ pt: 2 }}>
       <SectionCard title="Смена">
         <ShiftHeader />
       </SectionCard>
+      <ManualEditsCard />
       <ShiftPlanSection />
       {/* Штраф за смену — пишущее действие owner/admin (super_admin не ведёт штрафы). */}
       <ShiftPenaltySection />
+      <ShiftAdjustmentAction />
       <SectionCard title="Паузы">
         <PausesBlock />
       </SectionCard>
