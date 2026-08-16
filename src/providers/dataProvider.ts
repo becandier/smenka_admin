@@ -574,31 +574,14 @@ export const dataProvider: DataProvider = {
       return { data: { ...(s ?? {}), id: s?.organization_id ?? id } };
     }
     if (resource === 'org-shifts') {
-      // деталь чужой орг-смены: GET /organizations/{org}/shifts/{shift_id}.
-      try {
-        return { data: await request(`${orgBase()}/shifts/${id}`) };
-      } catch (e: any) {
-        // manual_time_entry: этот эндпоинт на бэке безусловно фильтрует is_deleted=false —
-        // include_deleted есть только у списка (A5), не у единичного GET. Деталь удалённой
-        // смены при этом должна открываться (admin.md §1.3/§3: «клик открывает деталь, где
-        // доступно восстановление»), поэтому при SHIFT_NOT_FOUND ищем смену в списке с
-        // include_deleted=true — бэк отдаёт максимум 100 записей за страницу, сканируем
-        // ограниченное число страниц вместо неограниченного цикла (best-effort: смена,
-        // удалённая давно и «утонувшая» за пределами первых 1000 записей списка, здесь не
-        // найдётся — это расхождение с ТЗ описано в отчёте разработчика).
-        if (e?.body?.code !== 'SHIFT_NOT_FOUND') throw e;
-        const maxPages = 10;
-        for (let page = 0; page < maxPages; page += 1) {
-          const data = await request(
-            `${orgBase()}/shifts?include_deleted=true&limit=100&offset=${page * 100}`,
-          );
-          const items: any[] = data?.items ?? [];
-          const found = items.find((it) => String(it.id) === id);
-          if (found) return { data: found };
-          if (items.length < 100) break;
-        }
-        throw e;
-      }
+      // деталь чужой орг-смены: GET /organizations/{org}/shifts/{shift_id}?include_deleted=true.
+      // include_deleted=true шлём безусловно — для обычной (неудалённой) смены поведение не
+      // меняется, а для удалённой (открыта по клику из списка под фильтром «Показывать
+      // удалённые», admin.md §1.3/§3: «клик открывает деталь, где доступно восстановление»)
+      // без параметра бэк отдал бы 404 SHIFT_NOT_FOUND даже при реально существующей смене
+      // (manual_time_entry, A5 — эндпоинт списка include_deleted уже поддерживал, у детали
+      // параметр добавлен тем же контрактом).
+      return { data: await request(`${orgBase()}/shifts/${id}?include_deleted=true`) };
     }
     if (resource === 'checklist-templates') {
       // детальная схема с пунктами
