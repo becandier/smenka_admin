@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -41,6 +42,7 @@ import {
 import { localInputToUtcIso, utcIsoToLocalInput } from '../utils/dates';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
 import { MemberNameCell } from '../components/MemberNameCell';
+import { RestoreButton } from '../components/RestoreButton';
 
 // Penalty (admin-facing) — снимок суммы/причины на момент назначения (см. fines/admin.md).
 // display_name — member_display_name/admin.md: рядом с настоящим user_name, null если не задан.
@@ -60,6 +62,7 @@ export interface Penalty {
   created_by_user_id: string;
   created_at: string;
   updated_at: string;
+  is_deleted?: boolean;
 }
 
 interface PenaltyTemplate {
@@ -348,7 +351,8 @@ const PenaltyFormDialog = ({
 };
 
 // Секция «Штрафы» в карточке участника (members Edit). Список активных штрафов
-// (occurred_at DESC) + назначение/снятие/исправление. Доступ — org owner/admin.
+// (occurred_at DESC) + назначение/удаление/восстановление/исправление (unified_soft_delete:
+// «снять» → «Удалить», единая терминология с остальными ресурсами фичи). Доступ — org owner/admin.
 export const MemberPenaltiesSection = () => {
   const record = useRecordContext();
   const role = useMyOrgRole();
@@ -356,6 +360,7 @@ export const MemberPenaltiesSection = () => {
   const notify = useNotify();
   const [penalties, setPenalties] = useState<Penalty[] | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
   const [dialog, setDialog] = useState<{ open: boolean; editing: Penalty | null }>({
     open: false,
     editing: null,
@@ -374,14 +379,14 @@ export const MemberPenaltiesSection = () => {
       const res = await dataProvider.getList('penalties', {
         pagination: { page: 1, perPage: 100 },
         sort: { field: 'occurred_at', order: 'DESC' },
-        filter: { member_id: memberId },
+        filter: { member_id: memberId, include_deleted: showDeleted },
       });
       setPenalties(res.data as Penalty[]);
     } catch {
       setLoadError(true);
       setPenalties([]);
     }
-  }, [dataProvider, memberId]);
+  }, [dataProvider, memberId, showDeleted]);
 
   useEffect(() => {
     if (canView && memberId) void load();
@@ -398,15 +403,25 @@ export const MemberPenaltiesSection = () => {
   const handleDelete = async (p: Penalty): Promise<void> => {
     try {
       await dataProvider.delete('penalties', { id: p.id, previousData: p });
-      notify('Штраф снят', { type: 'success' });
+      notify('Штраф удалён', { type: 'success' });
     } catch (e: any) {
       if (e?.body?.code === 'PENALTY_NOT_FOUND') {
         notify('Штраф не найден', { type: 'warning' });
       } else {
-        notify(e?.message ?? 'Ошибка снятия штрафа', { type: 'error' });
+        notify(e?.message ?? 'Ошибка удаления штрафа', { type: 'error' });
       }
     }
     reloadAll();
+  };
+
+  const handleRestore = async (p: Penalty): Promise<void> => {
+    try {
+      await dataProvider.restorePenalty(p.id);
+      notify('Штраф восстановлен', { type: 'success' });
+    } catch (e: any) {
+      notify(e?.message ?? 'Не удалось восстановить штраф', { type: 'error' });
+    }
+    void load();
   };
 
   return (
@@ -423,6 +438,16 @@ export const MemberPenaltiesSection = () => {
             Назначить штраф
           </Button>
         )}
+        <FormControlLabel
+          control={
+            <Checkbox
+              size="small"
+              checked={showDeleted}
+              onChange={(e) => setShowDeleted(e.target.checked)}
+            />
+          }
+          label="Показывать удалённые"
+        />
       </Stack>
 
       {loadError && <Alert severity="error">Не удалось загрузить штрафы</Alert>}
@@ -441,12 +466,13 @@ export const MemberPenaltiesSection = () => {
               <TableCell align="right">Сумма</TableCell>
               <TableCell>Смена</TableCell>
               <TableCell>Комментарий</TableCell>
+              {showDeleted && <TableCell>Удалён</TableCell>}
               {canEdit && <TableCell align="right" />}
             </TableRow>
           </TableHead>
           <TableBody>
             {penalties.map((p) => (
-              <TableRow key={p.id}>
+              <TableRow key={p.id} sx={p.is_deleted ? { opacity: 0.55 } : undefined}>
                 <TableCell>{formatDateTime(p.occurred_at)}</TableCell>
                 <TableCell>{p.reason}</TableCell>
                 <TableCell align="right">{formatMoneyMinor(p.amount_minor)}</TableCell>
@@ -454,22 +480,29 @@ export const MemberPenaltiesSection = () => {
                   {p.shift_id ? <Chip size="small" variant="outlined" label="К смене" /> : '—'}
                 </TableCell>
                 <TableCell>{p.comment ?? '—'}</TableCell>
+                {showDeleted && <TableCell>{p.is_deleted ? 'Да' : 'Нет'}</TableCell>}
                 {canEdit && (
                   <TableCell align="right">
-                    <IconButton
-                      size="small"
-                      aria-label="Исправить"
-                      onClick={() => setDialog({ open: true, editing: p })}
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      aria-label="Снять штраф"
-                      onClick={() => setDeleting(p)}
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
+                    {p.is_deleted ? (
+                      <RestoreButton onRestore={() => handleRestore(p)} />
+                    ) : (
+                      <>
+                        <IconButton
+                          size="small"
+                          aria-label="Исправить"
+                          onClick={() => setDialog({ open: true, editing: p })}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          aria-label="Удалить штраф"
+                          onClick={() => setDeleting(p)}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </>
+                    )}
                   </TableCell>
                 )}
               </TableRow>
@@ -490,17 +523,17 @@ export const MemberPenaltiesSection = () => {
 
       {deleting && (
         <Dialog open onClose={() => setDeleting(null)} maxWidth="xs" fullWidth>
-          <DialogTitle>Снять штраф?</DialogTitle>
+          <DialogTitle>Удалить штраф?</DialogTitle>
           <DialogContent>
             <Typography>
               {formatMoneyMinor(deleting.amount_minor)} — {deleting.reason}. Штраф перестанет
-              учитываться в зарплате.
+              учитываться в зарплате; восстановить можно через «Показывать удалённые».
             </Typography>
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setDeleting(null)}>Отмена</Button>
             <Button color="error" variant="contained" onClick={() => void handleDelete(deleting)}>
-              Снять
+              Удалить
             </Button>
           </DialogActions>
         </Dialog>

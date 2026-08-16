@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type MouseEvent } from 'react';
 import { useParams, Link as RouterLink } from 'react-router-dom';
 import {
   List,
@@ -7,6 +7,7 @@ import {
   BooleanField,
   NumberField,
   DateField,
+  FunctionField,
   SelectField,
   Create,
   SimpleForm,
@@ -20,6 +21,8 @@ import {
   useGetList,
   useDataProvider,
   useNotify,
+  useRefresh,
+  type RaRecord,
 } from 'react-admin';
 import {
   Box,
@@ -29,6 +32,11 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   FormControlLabel,
   IconButton,
   Link,
@@ -55,6 +63,7 @@ import {
   PHOTO_REQUIREMENT_SHORT,
   PHOTO_SOURCE_CHOICES,
 } from '../utils/format';
+import { RestoreButton } from '../components/RestoreButton';
 
 const typeChoices = [
   { id: 'shift_start', name: 'Начало смены' },
@@ -64,17 +73,107 @@ const typeChoices = [
 const typeFilters = [
   <SearchInput key="q" source="q" alwaysOn />,
   <SelectInput key="type" source="type" label="Тип" choices={typeChoices} />,
+  <BooleanInput
+    key="include_deleted"
+    source="include_deleted"
+    label="Показывать удалённые"
+    alwaysOn
+  />,
 ];
+
+// Действия строки: «Удалить»/«Восстановить» (unified_soft_delete, ADR-003). Клик по строке
+// ведёт на редактирование (rowClick="edit") — stopPropagation, чтобы клик по кнопке/диалогу
+// не открывал форму.
+const ChecklistTemplateRowActions = ({ record }: { record: RaRecord }) => {
+  const dataProvider = useDataProvider();
+  const notify = useNotify();
+  const refresh = useRefresh();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const handleDelete = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await dataProvider.delete('checklist-templates', { id: record.id, previousData: record });
+      notify('Чек-лист удалён', { type: 'success' });
+      setConfirming(false);
+      refresh();
+    } catch (e: any) {
+      notify(e?.message ?? 'Не удалось удалить чек-лист', { type: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRestore = async (): Promise<void> => {
+    try {
+      await dataProvider.restoreChecklistTemplate(String(record.id));
+      notify('Чек-лист восстановлен', { type: 'success' });
+      refresh();
+    } catch (e: any) {
+      notify(e?.message ?? 'Не удалось восстановить чек-лист', { type: 'error' });
+    }
+  };
+
+  return (
+    <Stack direction="row" spacing={0.5} onClick={(e) => e.stopPropagation()}>
+      {record.is_deleted ? (
+        <RestoreButton onRestore={handleRestore} />
+      ) : (
+        <Button
+          size="small"
+          color="error"
+          startIcon={<DeleteIcon />}
+          onClick={(e: MouseEvent) => {
+            e.stopPropagation();
+            setConfirming(true);
+          }}
+        >
+          Удалить
+        </Button>
+      )}
+      {confirming && (
+        <Dialog open onClose={() => setConfirming(false)} maxWidth="xs" fullWidth>
+          <DialogTitle>Удалить чек-лист «{String(record.name ?? '')}»?</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              Он исчезнет из списка и не будет выдаваться в новых сменах. Уже созданные экземпляры в
+              сменах сохранятся.
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setConfirming(false)} disabled={busy}>
+              Отмена
+            </Button>
+            <Button
+              color="error"
+              variant="contained"
+              onClick={() => void handleDelete()}
+              disabled={busy}
+            >
+              Удалить
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
+    </Stack>
+  );
+};
 
 export const ChecklistTemplateList = () => (
   <List filters={typeFilters} sort={{ field: 'created_at', order: 'DESC' }} exporter={false}>
-    <Datagrid rowClick="edit">
+    <Datagrid rowClick="edit" bulkActionButtons={false}>
       <TextField source="name" label="Название" />
       <SelectField source="type" label="Тип" choices={typeChoices} />
       <BooleanField source="is_required" label="Обязательный" />
       <NumberField source="items_count" label="Пунктов" />
-      <BooleanField source="is_archived" label="Архив" />
+      <BooleanField source="is_deleted" label="Удалён" />
       <DateField source="created_at" label="Создан" showTime />
+      <FunctionField
+        label=""
+        render={(r: RaRecord) => <ChecklistTemplateRowActions record={r} />}
+        sortable={false}
+      />
     </Datagrid>
   </List>
 );

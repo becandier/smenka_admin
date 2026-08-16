@@ -59,9 +59,9 @@ import {
 const scheduleFilters = [
   <SearchInput key="q" source="q" alwaysOn />,
   <BooleanInput
-    key="include_archived"
-    source="include_archived"
-    label="Показывать архивные"
+    key="include_paused"
+    source="include_paused"
+    label="Показывать приостановленные"
     alwaysOn
   />,
 ];
@@ -116,7 +116,7 @@ export const WorkScheduleList = () => (
       <FunctionField label="Время" render={timeField} sortable={false} />
       <FunctionField label="Длительность" render={durationField} sortable={false} />
       <AudienceCell label="Кому" />
-      <BooleanField source="is_archived" label="Архив" />
+      <BooleanField source="is_paused" label="Приостановлен" />
     </Datagrid>
   </List>
 );
@@ -177,15 +177,15 @@ export const WorkScheduleCreate = () => (
 
 // ---- Экран редактирования (кастомный, по образцу checklistTemplates.tsx) ----
 
-// Метаданные графика: название/время/архив. Управляется локальным состоянием (не SimpleForm) —
-// та же архитектура, что TemplateMetaForm в checklistTemplates.tsx.
+// Метаданные графика: название/время/приостановка. Управляется локальным состоянием (не
+// SimpleForm) — та же архитектура, что TemplateMetaForm в checklistTemplates.tsx.
 const ScheduleMetaForm = ({ schedule, onSaved }: { schedule: any; onSaved: () => void }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const [name, setName] = useState<string>(schedule.name ?? '');
   const [startTime, setStartTime] = useState<string>(schedule.start_time ?? '');
   const [endTime, setEndTime] = useState<string>(schedule.end_time ?? '');
-  const [isArchived, setIsArchived] = useState<boolean>(Boolean(schedule.is_archived));
+  const [isPaused, setIsPaused] = useState<boolean>(Boolean(schedule.is_paused));
   const [saving, setSaving] = useState(false);
 
   const durationInfo = computeScheduleDuration(startTime, endTime);
@@ -197,7 +197,7 @@ const ScheduleMetaForm = ({ schedule, onSaved }: { schedule: any; onSaved: () =>
     try {
       await dataProvider.update('work-schedules', {
         id: schedule.id,
-        data: { name, start_time: startTime, end_time: endTime, is_archived: isArchived },
+        data: { name, start_time: startTime, end_time: endTime, is_paused: isPaused },
         previousData: schedule,
       });
       notify('График сохранён', { type: 'success' });
@@ -251,11 +251,12 @@ const ScheduleMetaForm = ({ schedule, onSaved }: { schedule: any; onSaved: () =>
             Изменение времени не затронет уже начатые и завершённые смены.
           </Alert>
           <FormControlLabel
-            control={
-              <Switch checked={isArchived} onChange={(e) => setIsArchived(e.target.checked)} />
-            }
-            label="В архиве"
+            control={<Switch checked={isPaused} onChange={(e) => setIsPaused(e.target.checked)} />}
+            label="Приостановлен"
           />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+            Не выдаётся при старте новых смен; уже начатые смены не затрагиваются.
+          </Typography>
           <Box>
             <Button
               variant="contained"
@@ -446,7 +447,7 @@ const PersonalOverrides = ({
   const { data: allSchedules } = useGetList('work-schedules', {
     pagination: { page: 1, perPage: 200 },
     sort: { field: 'name', order: 'ASC' },
-    filter: { include_archived: true },
+    filter: { include_paused: true },
   });
   const [busy, setBusy] = useState(false);
 
@@ -520,7 +521,7 @@ const PersonalOverrides = ({
   );
 };
 
-// Удаление графика: подтверждение с текстом из ТЗ + подсказка про архивацию как альтернативу.
+// Удаление графика: подтверждение с текстом из ТЗ + подсказка про приостановку как альтернативу.
 const ScheduleDeleteSection = ({ scheduleId }: { scheduleId: string }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
@@ -549,9 +550,9 @@ const ScheduleDeleteSection = ({ scheduleId }: { scheduleId: string }) => {
           Удаление
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          Если график когда-то использовался в сменах, вместо удаления рассмотрите архивацию
-          (переключатель «В архиве» выше) — архивный график не выдаётся при старте новых смен, но
-          остаётся доступным для правки и истории.
+          Если график когда-то использовался в сменах, вместо удаления график можно приостановить
+          (переключатель «Приостановлен» выше) — он не будет выдаваться при старте новых смен, но
+          останется доступным для правки и истории.
         </Typography>
         <Button color="error" startIcon={<DeleteIcon />} onClick={() => setOpen(true)}>
           Удалить график

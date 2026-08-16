@@ -11,21 +11,32 @@ import {
   SimpleForm,
   TopToolbar,
   CreateButton,
-  NullableBooleanInput,
+  BooleanInput,
   useDataProvider,
   useNotify,
   useRecordContext,
   useRefresh,
   type RaRecord,
 } from 'react-admin';
-import { Alert, Box, Button, Stack, Typography } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  Stack,
+  Typography,
+} from '@mui/material';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import ArchiveIcon from '@mui/icons-material/Archive';
-import UnarchiveIcon from '@mui/icons-material/Unarchive';
+import DeleteIcon from '@mui/icons-material/Delete';
 import AssignmentIndIcon from '@mui/icons-material/AssignmentInd';
 import InboxIcon from '@mui/icons-material/Inbox';
 import { useMyOrgRole } from '../../utils/useMyOrgRole';
 import { testErrorMessage } from '../../utils/format';
+import { RestoreButton } from '../../components/RestoreButton';
 import { TestTemplateFields } from './TemplateForm';
 import { getTestTemplateDefaultValues, validateTestTemplate } from './validation';
 import { ImportTestTemplateDialog } from './ImportDialog';
@@ -46,7 +57,7 @@ const useCanManage = (): boolean => {
   return role === 'owner' || role === 'admin';
 };
 
-// Баннер серверной ошибки создания/сохранения (TEST_TEMPLATE_INVALID/TEST_TEMPLATE_ARCHIVED
+// Баннер серверной ошибки создания/сохранения (TEST_TEMPLATE_INVALID/TEST_TEMPLATE_DELETED
 // и т.п.) — общий для Create и Edit форм, которые отличаются только текстом фолбэка.
 const ServerErrorAlert = ({ error }: { error: string | null }) => {
   if (!error) return null;
@@ -58,14 +69,11 @@ const ServerErrorAlert = ({ error }: { error: string | null }) => {
 };
 
 const testTemplateFilters = [
-  <NullableBooleanInput
-    key="archived"
-    source="archived"
-    label="Архив"
+  <BooleanInput
+    key="include_deleted"
+    source="include_deleted"
+    label="Показывать удалённые"
     alwaysOn
-    nullLabel="Все"
-    falseLabel="Активные"
-    trueLabel="Архивные"
   />,
 ];
 
@@ -114,9 +122,10 @@ const TestTemplateEmpty = () => {
 const thresholdField = (r: RaRecord): string => `${r.pass_threshold_percent}%`;
 
 // Действия строки: «Назначить» (открывает диалог, поднятый на уровень списка — см.
-// TestTemplateListInner: один <AssignTestDialog>, а не по экземпляру на каждую строку)
-// и «В архив»/«Из архива». Клик по строке уже ведёт на редактирование (rowClick="edit") —
-// stopPropagation, чтобы клик по кнопке не открывал форму.
+// TestTemplateListInner: один <AssignTestDialog>, а не по экземпляру на каждую строку) и
+// «Удалить»/«Восстановить» (unified_soft_delete, ADR-003 — единая терминология без слова
+// «архив»). Клик по строке уже ведёт на редактирование (rowClick="edit") — stopPropagation,
+// чтобы клик по кнопке не открывал форму.
 const RowActions = ({
   record,
   onAssign,
@@ -127,21 +136,31 @@ const RowActions = ({
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const refresh = useRefresh();
-  const [archiving, setArchiving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const toggleArchive = async (e: MouseEvent): Promise<void> => {
-    e.stopPropagation();
-    setArchiving(true);
+  const handleDelete = async (): Promise<void> => {
+    setBusy(true);
     try {
-      await dataProvider.archiveTestTemplate(String(record.id), !record.is_archived);
-      notify(record.is_archived ? 'Тест возвращён из архива' : 'Тест архивирован', {
-        type: 'success',
-      });
+      await dataProvider.delete('test-templates', { id: record.id, previousData: record });
+      notify('Тест удалён', { type: 'success' });
+      setConfirming(false);
       refresh();
     } catch (err) {
-      notify(testErrorMessage(err, 'Ошибка'), { type: 'error' });
+      notify(testErrorMessage(err, 'Не удалось удалить тест'), { type: 'error' });
     } finally {
-      setArchiving(false);
+      setBusy(false);
+    }
+  };
+
+  // Восстановление — без подтверждения (admin.md, «Тесты»).
+  const handleRestore = async (): Promise<void> => {
+    try {
+      await dataProvider.restoreTestTemplate(String(record.id));
+      notify('Тест восстановлен', { type: 'success' });
+      refresh();
+    } catch (err) {
+      notify(testErrorMessage(err, 'Не удалось восстановить тест'), { type: 'error' });
     }
   };
 
@@ -154,19 +173,49 @@ const RowActions = ({
           e.stopPropagation();
           onAssign(record);
         }}
-        disabled={Boolean(record.is_archived)}
+        disabled={Boolean(record.is_deleted)}
       >
         Назначить
       </Button>
-      <Button
-        size="small"
-        color={record.is_archived ? 'success' : 'warning'}
-        startIcon={record.is_archived ? <UnarchiveIcon /> : <ArchiveIcon />}
-        onClick={(e) => void toggleArchive(e)}
-        disabled={archiving}
-      >
-        {record.is_archived ? 'Из архива' : 'В архив'}
-      </Button>
+      {record.is_deleted ? (
+        <RestoreButton onRestore={handleRestore} />
+      ) : (
+        <Button
+          size="small"
+          color="error"
+          startIcon={<DeleteIcon />}
+          onClick={(e: MouseEvent) => {
+            e.stopPropagation();
+            setConfirming(true);
+          }}
+        >
+          Удалить
+        </Button>
+      )}
+      {confirming && (
+        <Dialog open onClose={() => setConfirming(false)} maxWidth="xs" fullWidth>
+          <DialogTitle>Удалить тест «{String(record.title ?? '')}»?</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              Он исчезнет из списка и его нельзя будет назначить. Уже назначенные тесты и результаты
+              сотрудников сохранятся.
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setConfirming(false)} disabled={busy}>
+              Отмена
+            </Button>
+            <Button
+              color="error"
+              variant="contained"
+              onClick={() => void handleDelete()}
+              disabled={busy}
+            >
+              Удалить
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
     </Stack>
   );
 };
@@ -178,7 +227,7 @@ const TestTemplateDatagrid = ({ onAssign }: { onAssign: (record: RaRecord) => vo
     <NumberField source="total_points" label="Баллов" sortable={false} />
     <NumberField source="max_attempts" label="Попыток" sortable={false} />
     <FunctionField label="Порог" render={thresholdField} sortable={false} />
-    <BooleanField source="is_archived" label="Архив" sortable={false} />
+    <BooleanField source="is_deleted" label="Удалён" sortable={false} />
     <FunctionField
       label=""
       render={(r: RaRecord) => <RowActions record={r} onAssign={onAssign} />}
@@ -225,15 +274,14 @@ export const TestTemplateList = () => {
   return <TestTemplateListInner />;
 };
 
-// Предупреждение в форме редактирования архивного шаблона: PATCH метаданных/вопросов
-// вернёт TEST_TEMPLATE_ARCHIVED (backend.md) — предупреждаем до попытки сохранить.
-const ArchivedNotice = () => {
+// Предупреждение в форме редактирования удалённого шаблона: PATCH метаданных/вопросов
+// вернёт TEST_TEMPLATE_DELETED (backend.md) — предупреждаем до попытки сохранить.
+const DeletedNotice = () => {
   const record = useRecordContext();
-  if (!record?.is_archived) return null;
+  if (!record?.is_deleted) return null;
   return (
     <Alert severity="warning" sx={{ mb: 2 }}>
-      Тест в архиве — редактирование недоступно, пока вы не вернёте его из архива (кнопка «Из
-      архива» в списке тестов).
+      Тест удалён — восстановите его, чтобы редактировать (кнопка «Восстановить» в списке тестов).
     </Alert>
   );
 };
@@ -271,7 +319,7 @@ const TestTemplateEditForm = () => {
       }}
     >
       <SimpleForm validate={validateTestTemplate}>
-        <ArchivedNotice />
+        <DeletedNotice />
         <ServerErrorAlert error={serverError} />
         <TestTemplateFields />
       </SimpleForm>
