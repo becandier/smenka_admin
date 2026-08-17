@@ -879,12 +879,15 @@ export const dataProvider: DataProvider = {
       // auto_finish_hours убран из контракта (work_schedules заменяет его авто-завершением по
       // графику); новые поля — auto_finish_by_schedule/require_schedule/late_tolerance_minutes/
       // overtime_request_days (work_schedules/backend.md, «organization_settings — изменения»).
+      // early_start_minutes — допуск на ранний старт смены (schedule_window_enforcement/
+      // backend.md, «organization_settings — новое поле»).
       for (const k of [
         'geo_check_enabled',
         'require_work_location',
         'auto_finish_by_schedule',
         'require_schedule',
         'late_tolerance_minutes',
+        'early_start_minutes',
         'overtime_request_days',
         'max_pause_minutes',
         'max_pauses_per_shift',

@@ -348,6 +348,13 @@ export const SettingsPage = () => {
               validate={[minValue(0), maxValue(120)]}
             />
             <NumberInput
+              source="early_start_minutes"
+              label="Разрешить начинать смену раньше графика, мин"
+              helperText="0–240. При 0 смену можно начать только после планового начала графика. Начать смену после окончания графика нельзя в любом случае."
+              defaultValue={0}
+              validate={[minValue(0), maxValue(240)]}
+            />
+            <NumberInput
               source="overtime_request_days"
               label="Срок подачи заявки на переработку, дней"
               helperText="1–90"
