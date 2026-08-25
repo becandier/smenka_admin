@@ -112,6 +112,8 @@ const deleteOnePath = (resource: string, id: string): string => {
       return `${orgBase()}/adjustments/${id}`;
     case 'test-templates':
       return `${orgBase()}/test-templates/${id}`;
+    case 'test-assignments':
+      return `${orgBase()}/test-assignments/${id}`;
     default:
       throw new Error(`Удаление не поддержано для ресурса: ${resource}`);
   }
@@ -559,10 +561,12 @@ export const dataProvider: DataProvider = {
     if (resource === 'test-assignments') {
       // Реестр результатов (employee_tests, «Результаты тестов»): фильтры
       // template_id/member_id/status, без sort/order в контракте → withSort:false.
+      // include_deleted (test_assignment_unassign/backend.md, «GET .../test-assignments»):
+      // по умолчанию скрывает назначения удалённых шаблонов, bool default false.
       return orgServerList(params, {
         path: 'test-assignments',
         defaultSort: 'created_at',
-        filterKeys: ['template_id', 'member_id', 'status'],
+        filterKeys: ['template_id', 'member_id', 'status', 'include_deleted'],
         withSort: false,
       });
     }
@@ -1123,6 +1127,19 @@ export const dataProvider: DataProvider = {
 
   deleteMany: async (resource, params) => {
     // members не поддерживают bulk-delete (нужен user_id, а не id записи) — отключено в UI.
+    if (resource === 'test-assignments') {
+      // Массовое снятие назначений (test_assignment_unassign/backend.md): «массовое снятие
+      // отдельным эндпоинтом не делаем — админка шлёт N запросов DELETE» — явно N
+      // последовательных вызовов (не Promise.all), чтобы не долбить БД параллельными
+      // каскадными удалениями (test_attempts/test_attempt_questions/options) по одной и той
+      // же организации одновременно.
+      const deletedIds: typeof params.ids = [];
+      for (const id of params.ids) {
+        await request(deleteOnePath(resource, String(id)), { method: 'DELETE' });
+        deletedIds.push(id);
+      }
+      return { data: deletedIds };
+    }
     await Promise.all(
       params.ids.map((id) => request(deleteOnePath(resource, String(id)), { method: 'DELETE' })),
     );
@@ -1424,6 +1441,15 @@ export const dataProvider: DataProvider = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  // Назначения одного теста (диалог управления назначениями — AssignDialog.tsx, блок «уже
+  // назначены»): GET .../test-templates/{id}/assignments → {items:[TestAssignmentOut]}
+  // (test_assignment_unassign/backend.md). В отличие от getList('test-assignments', ...) фильтр
+  // soft-delete шаблона здесь не применяется на бэке (шаблон выбран явно) — метод отдаёт
+  // список и для удалённого теста, диалог остаётся доступен на просмотр/снятие. Названо
+  // getTestTemplateAssignments (не getTemplateAssignments) — это имя уже занято одноимённым
+  // методом для checklist-templates выше.
+  getTestTemplateAssignments: (templateId: string): Promise<{ items: unknown[] }> =>
+    request(`${orgBase()}/test-templates/${templateId}/assignments`),
   // Деталь попытки для админа (реестр «Результаты тестов» → детали попытки):
   // GET .../test-attempts/{id} → TestAttemptReview.
   getTestAttempt: (attemptId: string) => request(`${orgBase()}/test-attempts/${attemptId}`),

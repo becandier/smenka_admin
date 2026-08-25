@@ -2,24 +2,33 @@ import { useMemo, useState } from 'react';
 import {
   List,
   Datagrid,
+  BooleanInput,
   FunctionField,
   SelectInput,
+  useDataProvider,
   useGetList,
   useListContext,
+  useNotify,
+  useRefresh,
   type RaRecord,
 } from 'react-admin';
-import { Box, Button, Chip, Typography } from '@mui/material';
+import { Box, Button, Chip, Stack, Typography } from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { useMyOrgRole } from '../../utils/useMyOrgRole';
 import { formatMemberNameFlat } from '../../utils/memberName';
 import {
   TEST_ASSIGNMENT_STATUS_CHOICES,
   TEST_ASSIGNMENT_STATUS_COLOR,
+  isTestAssignmentNotFoundError,
   testAssignmentStatusLabel,
+  testErrorMessage,
 } from '../../utils/format';
 import { AssignmentDetailDialog } from './AssignmentDetailDialog';
+import { UnassignConfirmDialog, UnassignRowButton } from './UnassignDialog';
 import {
   attemptsUsed,
   bestPercent,
+  bulkUnassignConfirmParts,
   dueAt,
   lastAttemptAt,
   memberDisplayName,
@@ -81,6 +90,14 @@ const testAssignmentFilters = [
     label="Статус"
     choices={TEST_ASSIGNMENT_STATUS_CHOICES}
   />,
+  // include_deleted (test_assignment_unassign/admin.md, «Показывать удалённые тесты»): по
+  // умолчанию реестр не показывает назначения удалённых шаблонов, как и список «Тесты».
+  <BooleanInput
+    key="include_deleted"
+    source="include_deleted"
+    label="Показывать удалённые тесты"
+    alwaysOn
+  />,
 ];
 
 const TestAssignmentsEmpty = () => {
@@ -110,11 +127,103 @@ const statusChip = (r: RaRecord) => {
   );
 };
 
-const TestAssignmentDatagrid = ({ onSelect }: { onSelect: (record: RaRecord) => void }) => {
+// Действия строки: «Детали» (как раньше) + «Снять» (test_assignment_unassign/admin.md) —
+// снятие безвозвратно удаляет назначение и результаты сотрудника по нему, подтверждение и
+// формулировки — в UnassignDialog.tsx (общие с блоком «уже назначены» AssignDialog.tsx).
+const RowActions = ({
+  record,
+  onSelect,
+  onUnassigned,
+}: {
+  record: RaRecord;
+  onSelect: (record: RaRecord) => void;
+  onUnassigned: () => void;
+}) => (
+  <Stack direction="row" spacing={0.5} onClick={(e) => e.stopPropagation()}>
+    <Button size="small" onClick={() => onSelect(record)}>
+      Детали
+    </Button>
+    <UnassignRowButton record={record} templateTitle={templateTitle(record)} onDone={onUnassigned} />
+  </Stack>
+);
+
+// Bulk-действие «Снять назначения» (admin.md, «Массовое снятие»): стандартный
+// BulkDeleteButton не подходит по тексту/подтверждению — свой, тем же путём, что и строковое
+// «Снять» (dataProvider.deleteMany('test-assignments', ...) → N последовательных DELETE,
+// см. providers/dataProvider.ts). Сводка в диалоге считается по уже загруженным строкам
+// текущей страницы (data из useListContext) — отдельного запроса не нужно.
+const TestAssignmentBulkActions = () => {
+  const { selectedIds, data, onUnselectItems } = useListContext();
+  const dataProvider = useDataProvider();
+  const notify = useNotify();
+  const refresh = useRefresh();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const withResults = useMemo(() => {
+    const selectedSet = new Set(selectedIds);
+    return (data ?? []).filter(
+      (r) => selectedSet.has(r.id) && Number(r.attempts_used ?? 0) > 0,
+    ).length;
+  }, [data, selectedIds]);
+
+  const parts = bulkUnassignConfirmParts(selectedIds.length, withResults);
+
+  const handleConfirm = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await dataProvider.deleteMany('test-assignments', { ids: selectedIds });
+      setConfirming(false);
+      notify(`Снято назначений: ${selectedIds.length}`, { type: 'success' });
+      onUnselectItems();
+      refresh();
+    } catch (err) {
+      notify(testErrorMessage(err, 'Не удалось снять назначения'), { type: 'error' });
+      if (isTestAssignmentNotFoundError(err)) {
+        setConfirming(false);
+        onUnselectItems();
+        refresh();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (selectedIds.length === 0) return null;
+
+  return (
+    <>
+      <Button
+        size="small"
+        color="error"
+        startIcon={<DeleteIcon />}
+        onClick={() => setConfirming(true)}
+      >
+        Снять назначения
+      </Button>
+      <UnassignConfirmDialog
+        open={confirming}
+        title={parts.title}
+        body={parts.body}
+        busy={busy}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void handleConfirm()}
+      />
+    </>
+  );
+};
+
+const TestAssignmentDatagrid = ({
+  onSelect,
+  onUnassigned,
+}: {
+  onSelect: (record: RaRecord) => void;
+  onUnassigned: () => void;
+}) => {
   const { isPending, data } = useListContext();
   if (!isPending && (data ?? []).length === 0) return <TestAssignmentsEmpty />;
   return (
-    <Datagrid bulkActionButtons={false} rowClick={false}>
+    <Datagrid bulkActionButtons={<TestAssignmentBulkActions />} rowClick={false}>
       <FunctionField label="Тест" render={templateTitle} />
       <FunctionField label="Сотрудник" render={memberDisplayName} />
       <FunctionField label="Статус" render={statusChip} />
@@ -125,9 +234,7 @@ const TestAssignmentDatagrid = ({ onSelect }: { onSelect: (record: RaRecord) => 
       <FunctionField
         label=""
         render={(r: RaRecord) => (
-          <Button size="small" onClick={() => onSelect(r)}>
-            Детали
-          </Button>
+          <RowActions record={r} onSelect={onSelect} onUnassigned={onUnassigned} />
         )}
       />
     </Datagrid>
@@ -136,6 +243,7 @@ const TestAssignmentDatagrid = ({ onSelect }: { onSelect: (record: RaRecord) => 
 
 const TestAssignmentListInner = () => {
   const [selected, setSelected] = useState<RaRecord | null>(null);
+  const refresh = useRefresh();
   return (
     <>
       <List
@@ -144,7 +252,7 @@ const TestAssignmentListInner = () => {
         exporter={false}
         empty={false}
       >
-        <TestAssignmentDatagrid onSelect={setSelected} />
+        <TestAssignmentDatagrid onSelect={setSelected} onUnassigned={refresh} />
       </List>
       {selected && (
         <AssignmentDetailDialog assignment={selected} onClose={() => setSelected(null)} />

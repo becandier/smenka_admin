@@ -322,11 +322,16 @@ export const textOrEmpty = (value: unknown): string => (typeof value === 'string
 // scheduleErrorMessage/checklistLocationErrorMessage. TEST_TEMPLATE_INVALID сюда намеренно
 // не включён: у него нет фиксированного текста (message описывает конкретный вопрос),
 // поэтому для него используется фолбэк — уже человекочитаемый error.message с бэка.
+// TEST_ASSIGNMENT_NOT_FOUND — текст завязан на снятие назначения (test_assignment_unassign/
+// admin.md, «Ошибки»): DELETE повторно на уже снятое назначение — единственный практический
+// источник этого кода в админке (карточка деталей не делает getOne по test-assignments).
+// TEST_ASSIGNMENT_HAS_ATTEMPTS сюда больше не входит: бэкенд этот код никогда не отдаёт
+// (test_assignment_unassign/backend.md, «убрать проверку attempts_used > 0») — DELETE снимает
+// назначение при любых attempts_used/статусе.
 const TEST_ERROR_MESSAGES: Record<string, string> = {
   TEST_TEMPLATE_NOT_FOUND: 'Тест не найден',
   TEST_TEMPLATE_DELETED: 'Тест удалён — восстановите его, чтобы редактировать',
-  TEST_ASSIGNMENT_NOT_FOUND: 'Назначение не найдено',
-  TEST_ASSIGNMENT_HAS_ATTEMPTS: 'У назначения уже есть сданные попытки — снять нельзя',
+  TEST_ASSIGNMENT_NOT_FOUND: 'Назначение уже снято',
   TEST_ATTEMPT_NOT_FOUND: 'Попытка не найдена',
   MEMBER_NOT_FOUND: 'Сотрудник не найден в организации',
 };
@@ -336,6 +341,30 @@ export const testErrorMessage = (error: unknown, fallback = 'Ошибка'): str
   if (code && TEST_ERROR_MESSAGES[code]) return TEST_ERROR_MESSAGES[code];
   if (error instanceof Error && error.message) return error.message;
   return fallback;
+};
+
+// Строка уже устарела (назначение снято кем-то ещё/в другой вкладке) — вызывающий код должен
+// освежить список так же, как после собственного успешного снятия (admin.md, «Ошибки»).
+export const isTestAssignmentNotFoundError = (error: unknown): boolean =>
+  error instanceof HttpError && error.body?.code === 'TEST_ASSIGNMENT_NOT_FOUND';
+
+// Русское склонение «N попытка/попытки/попыток» — текст подтверждения снятия назначения
+// с результатами (test_assignment_unassign/admin.md, «Диалог подтверждения»).
+export const pluralizeAttempts = (n: number): string => {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'попытка';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'попытки';
+  return 'попыток';
+};
+
+// Русское склонение «N назначение/назначения/назначений» — сводка массового снятия.
+export const pluralizeAssignments = (n: number): string => {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'назначение';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'назначения';
+  return 'назначений';
 };
 
 export const TEST_ASSIGNMENT_STATUS_LABELS: Record<string, string> = {
