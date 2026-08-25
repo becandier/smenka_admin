@@ -121,11 +121,14 @@ const TestTemplateEmpty = () => {
 
 const thresholdField = (r: RaRecord): string => `${r.pass_threshold_percent}%`;
 
-// Действия строки: «Назначить» (открывает диалог, поднятый на уровень списка — см.
-// TestTemplateListInner: один <AssignTestDialog>, а не по экземпляру на каждую строку) и
-// «Удалить»/«Восстановить» (unified_soft_delete, ADR-003 — единая терминология без слова
-// «архив»). Клик по строке уже ведёт на редактирование (rowClick="edit") — stopPropagation,
-// чтобы клик по кнопке не открывал форму.
+// Действия строки: «Назначить» (открывает диалог управления назначениями, поднятый на
+// уровень списка — см. TestTemplateListInner: один <AssignTestDialog>, а не по экземпляру на
+// каждую строку) и «Удалить»/«Восстановить» (unified_soft_delete, ADR-003 — единая
+// терминология без слова «архив»). «Назначить» больше не дизейблится для удалённого теста
+// (test_assignment_unassign/admin.md, «Изменение 3»): диалог должен открываться и для
+// удалённого теста — там «уже назначены» + «Снять» остаются доступны, а форма назначения
+// внутри диалога дизейблится по templateDeleted. Клик по строке уже ведёт на редактирование
+// (rowClick="edit") — stopPropagation, чтобы клик по кнопке не открывал форму.
 const RowActions = ({
   record,
   onAssign,
@@ -173,7 +176,6 @@ const RowActions = ({
           e.stopPropagation();
           onAssign(record);
         }}
-        disabled={Boolean(record.is_deleted)}
       >
         Назначить
       </Button>
@@ -238,8 +240,9 @@ const TestTemplateDatagrid = ({ onAssign }: { onAssign: (record: RaRecord) => vo
 
 // Один экземпляр AssignTestDialog на весь список (не по одному на строку — иначе каждая
 // видимая строка держала бы собственный useGetList('members', ...) диалога вхолостую).
+// Диалог больше не закрывается сам после назначения/снятия (admin.md, «Изменение 3») —
+// поэтому здесь ему не нужен onDone/refresh внешнего списка тестов, только onClose.
 const TestTemplateListInner = () => {
-  const refresh = useRefresh();
   const [assignTarget, setAssignTarget] = useState<RaRecord | null>(null);
 
   return (
@@ -257,12 +260,9 @@ const TestTemplateListInner = () => {
         <AssignTestDialog
           templateId={String(assignTarget.id)}
           templateTitle={String(assignTarget.title ?? '')}
+          templateDeleted={Boolean(assignTarget.is_deleted)}
           open
           onClose={() => setAssignTarget(null)}
-          onDone={() => {
-            setAssignTarget(null);
-            refresh();
-          }}
         />
       )}
     </>
