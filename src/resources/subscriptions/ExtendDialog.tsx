@@ -56,9 +56,14 @@ export const ExtendDialog = ({
     if (!Number.isInteger(months) || months < 1 || months > 24) {
       nextErrors.months = 'От 1 до 24 месяцев';
     }
-    const amountMinor = amountRub.trim() === '' ? null : parseRublesToMinor(amountRub);
+    // allowZero: бесплатное продление (промо, компенсация) — легитимный кейс, бэк принимает
+    // amount_minor >= 0. Без него это поле нельзя было обнулить: пустое значение подставляло
+    // полную цену тарифа, и в неизменяемый журнал платежей уходила сумма, которую фактически
+    // не платили.
+    const amountMinor =
+      amountRub.trim() === '' ? null : parseRublesToMinor(amountRub, { allowZero: true });
     if (amountRub.trim() !== '' && amountMinor === null) {
-      nextErrors.amount = 'Сумма больше нуля, не более 2 знаков';
+      nextErrors.amount = 'Сумма от 0, не более 2 знаков';
     }
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);

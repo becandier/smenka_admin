@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
 import { useDataProvider } from 'react-admin';
 import { Alert, Box, Card, CardContent, Grid, Skeleton, Typography } from '@mui/material';
 import { formatMoneyMinor, planCodeLabel } from '../../utils/format';
+import { useAsync } from '../../utils/useAsync';
 import type { SubscriptionsSummary } from '../../subscription/SubscriptionContext';
 
 // Сводка над списком (admin.md, «Сводка над списком»): плитки по статусу, разбивка по
@@ -9,23 +9,12 @@ import type { SubscriptionsSummary } from '../../subscription/SubscriptionContex
 // GET /admin/subscriptions/summary (backend.md п.8), ничего не хардкодится.
 export const SummaryTiles = () => {
   const dataProvider = useDataProvider();
-  const [summary, setSummary] = useState<SubscriptionsSummary | null>(null);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    dataProvider
-      .getSubscriptionsSummary()
-      .then((res: SubscriptionsSummary) => {
-        if (active) setSummary(res);
-      })
-      .catch(() => {
-        if (active) setError(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [dataProvider]);
+  // useAsync — общий одноразовый загрузчик с гашением гонки (utils/useAsync), тот же, что
+  // в LoginPage/platformSettings/orgShifts; здесь достаточно булева признака ошибки.
+  const { data: summary, error } = useAsync<SubscriptionsSummary>(
+    () => dataProvider.getSubscriptionsSummary(),
+    [dataProvider],
+  );
 
   if (error)
     return (

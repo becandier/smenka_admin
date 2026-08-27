@@ -220,6 +220,7 @@ const MemberCreateFields = ({ myRole }: { myRole: string | null }) => {
 export const MemberCreate = () => {
   const myRole = useMyOrgRole();
   const canManage = myRole === 'owner' || myRole === 'admin';
+  const isReadOnly = useIsReadOnly();
   const redirect = useRedirect();
   const { dialog, show } = useIssuedCredentials(() => redirect('list', 'members'));
 
@@ -227,6 +228,11 @@ export const MemberCreate = () => {
     return (
       <NoAccess text="Добавление сотрудников доступно владельцу и администратору организации." />
     );
+  }
+  // isReadOnly гейтит саму форму, не только CreateButton в MemberListActions — маршрут
+  // /members/create остаётся доступен по прямой ссылке независимо от того, откуда открыт.
+  if (isReadOnly) {
+    return <NoAccess text="Организация в режиме только для чтения — добавление недоступно." />;
   }
 
   return (

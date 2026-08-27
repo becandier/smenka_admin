@@ -75,11 +75,15 @@ export const formatMoneyMinor = (minor: number | null | undefined): string =>
 export const formatSignedMoneyMinor = (minor: number): string =>
   minor > 0 ? `+${formatMoneyMinor(minor)}` : formatMoneyMinor(minor);
 
-// Ввод суммы в рублях → копейки (целое > 0); максимум 2 знака после запятой.
-export const parseRublesToMinor = (raw: string): number | null => {
+// Ввод суммы в рублях → копейки; максимум 2 знака после запятой. По умолчанию — целое > 0
+// (зарплатные ставки, штрафы, начисления — везде ноль бессмыслен). `allowZero: true` — для
+// разовых мест, где 0 — валидное значение по контракту бэка (ExtendDialog: amount_minor >= 0,
+// бесплатное продление подписки).
+export const parseRublesToMinor = (raw: string, options?: { allowZero?: boolean }): number | null => {
   const normalized = raw.trim().replace(',', '.');
   if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null;
   const minor = Math.round(Number(normalized) * 100);
+  if (minor === 0) return options?.allowZero ? 0 : null;
   return minor > 0 ? minor : null;
 };
 
@@ -555,7 +559,10 @@ export const daysLeftLabel = (daysLeft: number | null | undefined): string => {
 // PLAN_FEATURE_UNAVAILABLE/SUBSCRIPTION_INACTIVE сюда намеренно не включены — их message с
 // бэка уже человекочитаем и точнее общего текста (называет конкретный лимит/фичу,
 // backend.md «PLAN_LIMIT_REACHED — message человекочитаемо называет лимит»), фолбэк на
-// error.message ниже отдаёт его как есть.
+// error.message ниже отдаёт его как есть. Ссылку на экран «Тариф» (admin.md, «error» —
+// вторая линия обороны после UI-гейтинга) для этих трёх кодов добавляет отдельный механизм —
+// dataProvider.request() репортит их в tariffErrorBus.ts, TariffErrorAlert.tsx показывает
+// персистентный алерт со ссылкой рядом со стандартным toast'ом.
 const TARIFF_ERROR_MESSAGES: Record<string, string> = {
   SUBSCRIPTION_NOT_FOUND: 'У организации нет подписки',
   PLAN_NOT_FOUND: 'Тариф не найден или неактивен',

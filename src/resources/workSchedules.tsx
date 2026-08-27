@@ -124,22 +124,29 @@ const WorkScheduleListActions = () => {
   );
 };
 
-export const WorkScheduleList = () => (
-  <List
-    filters={scheduleFilters}
-    sort={{ field: 'created_at', order: 'DESC' }}
-    exporter={false}
-    actions={<WorkScheduleListActions />}
-  >
-    <Datagrid rowClick="edit">
-      <TextField source="name" label="Название" />
-      <FunctionField label="Время" render={timeField} sortable={false} />
-      <FunctionField label="Длительность" render={durationField} sortable={false} />
-      <AudienceCell label="Кому" />
-      <BooleanField source="is_paused" label="Приостановлен" />
-    </Datagrid>
-  </List>
-);
+// bulkActionButtons не был задан вовсе — Datagrid рендерил дефолтный BulkDeleteButton
+// (canDelete=true, authProvider.canAccess не реализован). В read-only-организации это
+// реальные DELETE-запросы (бэк отклонит каждый 402, но незачем позволять их слать —
+// как и остальные мутации в этом файле, см. WorkScheduleListActions выше).
+export const WorkScheduleList = () => {
+  const isReadOnly = useIsReadOnly();
+  return (
+    <List
+      filters={scheduleFilters}
+      sort={{ field: 'created_at', order: 'DESC' }}
+      exporter={false}
+      actions={<WorkScheduleListActions />}
+    >
+      <Datagrid rowClick="edit" bulkActionButtons={isReadOnly ? false : undefined}>
+        <TextField source="name" label="Название" />
+        <FunctionField label="Время" render={timeField} sortable={false} />
+        <FunctionField label="Длительность" render={durationField} sortable={false} />
+        <AudienceCell label="Кому" />
+        <BooleanField source="is_paused" label="Приостановлен" />
+      </Datagrid>
+    </List>
+  );
+};
 
 // ---- Создание ----
 
