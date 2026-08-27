@@ -17,6 +17,7 @@ import type {
   SubscriptionEvent,
   SubscriptionsSummary,
 } from '../subscription/SubscriptionContext';
+import { reportTariffGateError } from '../subscription/tariffErrorBus';
 
 // Категории ресурсов:
 //  - PLATFORM_SERVER — серверная пагинация через /admin/* ({items,total,limit,offset}).
@@ -67,7 +68,13 @@ const request = async (path: string, options: RequestInit = {}): Promise<any> =>
         if (v?.field) body.errors[stripBodyPrefix(v.field)] = v.message;
       }
     }
-    throw new HttpError(err?.message ?? res.statusText ?? 'Ошибка запроса', res.status, body);
+    const message = err?.message ?? res.statusText ?? 'Ошибка запроса';
+    // Вторая линия обороны после UI-гейтинга (admin.md, «error»): тарифные 402 репортим в
+    // tariffErrorBus — dataProvider не React-компонент, useNotify() отсюда не вызвать.
+    // TariffErrorAlert в Layout подписан и покажет ссылку на «Тариф» рядом со стандартным
+    // toast'ом react-admin (который уже показывает этот же человекочитаемый текст с бэка).
+    reportTariffGateError(err?.code, message);
+    throw new HttpError(message, res.status, body);
   }
   return json ? json.data : null;
 };

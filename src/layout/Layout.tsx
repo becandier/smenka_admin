@@ -54,6 +54,7 @@ import { useMyOrgRole } from '../utils/useMyOrgRole';
 import type { Permissions } from '../providers/authProvider';
 import { SubscriptionProvider } from '../subscription/SubscriptionContext';
 import { SubscriptionBannerBar } from '../subscription/SubscriptionBanner';
+import { TariffErrorAlertBar } from '../subscription/TariffErrorAlert';
 
 // AppBar — фирменный синий (primary). Лок-ап слева у TitlePortal; на синем фоне —
 // версия -inverse (белая). Бренд-цвета берём из темы, не хардкодом.
@@ -511,6 +512,7 @@ export const Layout = ({ children }: { children: ReactNode }) => (
   <SubscriptionProvider>
     <RaLayout appBar={MyAppBar} menu={MyMenu}>
       <SubscriptionBannerBar />
+      <TariffErrorAlertBar />
       {children}
     </RaLayout>
   </SubscriptionProvider>

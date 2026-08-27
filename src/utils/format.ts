@@ -559,7 +559,10 @@ export const daysLeftLabel = (daysLeft: number | null | undefined): string => {
 // PLAN_FEATURE_UNAVAILABLE/SUBSCRIPTION_INACTIVE сюда намеренно не включены — их message с
 // бэка уже человекочитаем и точнее общего текста (называет конкретный лимит/фичу,
 // backend.md «PLAN_LIMIT_REACHED — message человекочитаемо называет лимит»), фолбэк на
-// error.message ниже отдаёт его как есть.
+// error.message ниже отдаёт его как есть. Ссылку на экран «Тариф» (admin.md, «error» —
+// вторая линия обороны после UI-гейтинга) для этих трёх кодов добавляет отдельный механизм —
+// dataProvider.request() репортит их в tariffErrorBus.ts, TariffErrorAlert.tsx показывает
+// персистентный алерт со ссылкой рядом со стандартным toast'ом.
 const TARIFF_ERROR_MESSAGES: Record<string, string> = {
   SUBSCRIPTION_NOT_FOUND: 'У организации нет подписки',
   PLAN_NOT_FOUND: 'Тариф не найден или неактивен',
