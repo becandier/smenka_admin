@@ -40,22 +40,44 @@ export const EditDialog = ({
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState(utcIsoToLocalInput(row.current_period_end));
   const [note, setNote] = useState(row.note ?? '');
+  const [errors, setErrors] = useState<{ trialEndsAt?: string; periodEnd?: string }>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const initialTrialEndsAt = utcIsoToLocalInput(row.trial_ends_at);
   const initialPeriodEnd = utcIsoToLocalInput(row.current_period_end);
 
+  const CANNOT_CLEAR_HINT =
+    'Бэк не отличает "очистить" от "не передано" (services/subscription.py) — null молча ' +
+    'игнорируется. Укажите дату или верните исходное значение.';
+
   const handleSubmit = async (): Promise<void> => {
+    // Бэк трактует `null` в PATCH как «поле не передано» (см. services/subscription.py:
+    // `if trial_ends_at is not None: …`) — явную очистку сервер отбрасывает молча, а UI до
+    // этой правки рапортовал «Подписка изменена» поверх фактического no-op. Раз очистить
+    // по-настоящему нельзя, честно останавливаем сабмит вместо того, чтобы врать об успехе.
+    const nextErrors: { trialEndsAt?: string; periodEnd?: string } = {};
+    if (trialEndsAt === '' && initialTrialEndsAt !== '') {
+      nextErrors.trialEndsAt = CANNOT_CLEAR_HINT;
+    }
+    if (periodEnd === '' && initialPeriodEnd !== '') {
+      nextErrors.periodEnd = CANNOT_CLEAR_HINT;
+    }
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      return;
+    }
+    setErrors({});
+
     const body: Record<string, unknown> = {};
     if (planCode !== '') body.plan_code = planCode;
     if (status !== '') body.status = status;
-    if (trialEndsAt !== initialTrialEndsAt) {
-      body.trial_ends_at = trialEndsAt === '' ? null : localInputToUtcIso(trialEndsAt);
+    if (trialEndsAt !== initialTrialEndsAt && trialEndsAt !== '') {
+      body.trial_ends_at = localInputToUtcIso(trialEndsAt);
     }
     if (periodStart !== '') body.current_period_start = localInputToUtcIso(periodStart);
-    if (periodEnd !== initialPeriodEnd) {
-      body.current_period_end = periodEnd === '' ? null : localInputToUtcIso(periodEnd);
+    if (periodEnd !== initialPeriodEnd && periodEnd !== '') {
+      body.current_period_end = localInputToUtcIso(periodEnd);
     }
     if (note !== (row.note ?? '')) body.note = note.trim();
 
@@ -111,7 +133,12 @@ export const EditDialog = ({
             label="Конец триала"
             InputLabelProps={{ shrink: true }}
             value={trialEndsAt}
-            onChange={(e) => setTrialEndsAt(e.target.value)}
+            onChange={(e) => {
+              setTrialEndsAt(e.target.value);
+              if (errors.trialEndsAt) setErrors((prev) => ({ ...prev, trialEndsAt: undefined }));
+            }}
+            error={Boolean(errors.trialEndsAt)}
+            helperText={errors.trialEndsAt}
           />
           <TextField
             type="datetime-local"
@@ -126,8 +153,12 @@ export const EditDialog = ({
             label="Конец периода"
             InputLabelProps={{ shrink: true }}
             value={periodEnd}
-            onChange={(e) => setPeriodEnd(e.target.value)}
-            helperText="Обязателен при статусе «Активна»"
+            onChange={(e) => {
+              setPeriodEnd(e.target.value);
+              if (errors.periodEnd) setErrors((prev) => ({ ...prev, periodEnd: undefined }));
+            }}
+            error={Boolean(errors.periodEnd)}
+            helperText={errors.periodEnd ?? 'Обязателен при статусе «Активна»'}
           />
           <TextField
             label="Заметка"
