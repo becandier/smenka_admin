@@ -201,6 +201,10 @@ export const TariffPage = () => {
   useEffect(() => {
     if (!orgId || !canView) return;
     let active = true;
+    // Сброс подписки предыдущей организации: без этого при смене orgId спиннер
+    // (`loading && !subscription`) гасится по старым данным, а неудачный запрос по новой
+    // организации оставляет на экране чужой тариф/цену/лимиты рядом с ошибкой.
+    setSubscription(null);
     setLoading(true);
     setError(null);
     Promise.all([dataProvider.getOrgSubscription(orgId), dataProvider.getPlans()])
@@ -273,7 +277,10 @@ export const TariffPage = () => {
               </Typography>
               <Typography sx={{ mt: 1 }}>
                 {subscription.status === 'active' || subscription.status === 'past_due'
-                  ? `Оплачено до ${formatDate(subscription.current_period_end)}`
+                  ? // current_period_end пуст по умолчанию у организаций, ни разу не плативших
+                    // (истёкший триал без оплаты) — тот же фолбэк на trial_ends_at, что и в
+                    // SubscriptionBanner.tsx, иначе строка врёт «Оплачено до —».
+                    `Оплачено до ${formatDate(subscription.current_period_end ?? subscription.trial_ends_at)}`
                   : subscription.status === 'trialing'
                     ? `Пробный период до ${formatDate(subscription.trial_ends_at)}`
                     : null}
