@@ -14,6 +14,11 @@ export const WEB_APP_URL = (import.meta.env.VITE_WEB_APP_URL ?? 'https://app.sme
 // сам функционал (компоненты/провайдеры) сохранён и включается сменой на true.
 export const OAUTH_LOGIN_ENABLED = false;
 
+// Контакт для оплаты тарифа (tariffs/admin.md, «Как оплатить»): эквайринга нет, оплата вне
+// сервиса, владелец подставляет значение при деплое. Пусто — блок «Как оплатить» на экране
+// «Тариф» не рендерится вовсе (заглушки вида «скоро» не ставим).
+export const SUPPORT_CONTACT = (import.meta.env.VITE_SUPPORT_CONTACT ?? '').trim();
+
 // Яндекс.Карты (карта-пикер на форме рабочих точек). Ключ задаётся при сборке Vite;
 // если он пуст — карта не подключается, форма работает в ручном режиме (ввод координат).
 const yandexMapsApiKey = (import.meta.env.VITE_YANDEX_MAPS_API_KEY ?? '').trim();

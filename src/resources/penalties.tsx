@@ -43,6 +43,8 @@ import { localInputToUtcIso, utcIsoToLocalInput } from '../utils/dates';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
 import { MemberNameCell } from '../components/MemberNameCell';
 import { RestoreButton } from '../components/RestoreButton';
+import { FeatureLockButton, LockedIconButton } from '../subscription/FeatureLock';
+import { useHasFeature, useIsReadOnly } from '../subscription/SubscriptionContext';
 
 // Penalty (admin-facing) — снимок суммы/причины на момент назначения (см. fines/admin.md).
 // display_name — member_display_name/admin.md: рядом с настоящим user_name, null если не задан.
@@ -358,6 +360,8 @@ export const MemberPenaltiesSection = () => {
   const role = useMyOrgRole();
   const dataProvider = useDataProvider();
   const notify = useNotify();
+  const isReadOnly = useIsReadOnly();
+  const hasFines = useHasFeature('fines');
   const [penalties, setPenalties] = useState<Penalty[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -429,14 +433,19 @@ export const MemberPenaltiesSection = () => {
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1.5 }} flexWrap="wrap">
         <Typography variant="h6">Штрафы</Typography>
         <MemberNameCell user_name={record.user_name} display_name={record.display_name} />
-        {canEdit && (
-          <Button
-            size="small"
-            startIcon={<AddIcon />}
-            onClick={() => setDialog({ open: true, editing: null })}
-          >
-            Назначить штраф
-          </Button>
+        {/* Read-only прячет кнопку целиком (создание — не из исключений read-only,
+            backend.md «Read-only режим»); на fines — замок с диалогом (admin.md, «Гейтинг
+            функций тарифа»), а не скрытие: это апсейл, а не запрет. */}
+        {canEdit && !isReadOnly && (
+          <FeatureLockButton locked={!hasFines} featureLabel="Штрафы">
+            <Button
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={() => setDialog({ open: true, editing: null })}
+            >
+              Назначить штраф
+            </Button>
+          </FeatureLockButton>
         )}
         <FormControlLabel
           control={
@@ -467,7 +476,7 @@ export const MemberPenaltiesSection = () => {
               <TableCell>Смена</TableCell>
               <TableCell>Комментарий</TableCell>
               {showDeleted && <TableCell>Удалён</TableCell>}
-              {canEdit && <TableCell align="right" />}
+              {canEdit && !isReadOnly && <TableCell align="right" />}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -481,19 +490,32 @@ export const MemberPenaltiesSection = () => {
                 </TableCell>
                 <TableCell>{p.comment ?? '—'}</TableCell>
                 {showDeleted && <TableCell>{p.is_deleted ? 'Да' : 'Нет'}</TableCell>}
-                {canEdit && (
+                {/* Read-only (backend.md «Read-only режим»): ни исправить, ни снять, ни
+                    восстановить штраф нельзя — прячем колонку целиком, а не по одной кнопке. */}
+                {canEdit && !isReadOnly && (
                   <TableCell align="right">
                     {p.is_deleted ? (
-                      <RestoreButton onRestore={() => handleRestore(p)} />
+                      // Восстановление гейтится fines (backend.md, «Энфорсмент фич»,
+                      // POST .../penalties/{id}/restore).
+                      <FeatureLockButton locked={!hasFines} featureLabel="Штрафы">
+                        <RestoreButton onRestore={() => handleRestore(p)} />
+                      </FeatureLockButton>
                     ) : (
                       <>
-                        <IconButton
-                          size="small"
-                          aria-label="Исправить"
-                          onClick={() => setDialog({ open: true, editing: p })}
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
+                        {/* Исправление (PATCH) гейтится fines; снятие (DELETE) — нет
+                            (backend.md, «Остаются доступными на Стандарте … DELETE шаблона/
+                            штрафа»): уже выписанный штраф можно снять даже без Премиума. */}
+                        {hasFines ? (
+                          <IconButton
+                            size="small"
+                            aria-label="Исправить"
+                            onClick={() => setDialog({ open: true, editing: p })}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        ) : (
+                          <LockedIconButton ariaLabel="Исправить" featureLabel="Штрафы" />
+                        )}
                         <IconButton
                           size="small"
                           aria-label="Удалить штраф"
@@ -548,6 +570,8 @@ export const MemberPenaltiesSection = () => {
 export const ShiftPenaltySection = () => {
   const record = useRecordContext();
   const role = useMyOrgRole();
+  const isReadOnly = useIsReadOnly();
+  const hasFines = useHasFeature('fines');
   const [open, setOpen] = useState(false);
   const canManage = role === 'owner' || role === 'admin';
 
@@ -580,15 +604,21 @@ export const ShiftPenaltySection = () => {
           <Typography color="text.secondary">
             Сотрудник не активен в организации — штраф недоступен.
           </Typography>
+        ) : isReadOnly ? (
+          <Typography color="text.secondary">
+            Организация в режиме только для чтения — оштрафовать нельзя.
+          </Typography>
         ) : (
-          <Button
-            variant="contained"
-            color="error"
-            startIcon={<MoneyOffIcon />}
-            onClick={() => setOpen(true)}
-          >
-            Оштрафовать за смену
-          </Button>
+          <FeatureLockButton locked={!hasFines} featureLabel="Штрафы">
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<MoneyOffIcon />}
+              onClick={() => setOpen(true)}
+            >
+              Оштрафовать за смену
+            </Button>
+          </FeatureLockButton>
         )}
         {open && memberId && shiftId && (
           <PenaltyFormDialog

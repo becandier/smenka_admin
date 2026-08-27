@@ -23,6 +23,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import { QRCodeCanvas } from 'qrcode.react';
 import { useCurrentOrg } from '../orgContext';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import type { Permissions } from '../providers/authProvider';
 import { WEB_APP_URL } from '../config';
 
@@ -50,6 +51,7 @@ export const InviteCodePage = () => {
   const { org } = useCurrentOrg();
   const { permissions } = usePermissions<Permissions>();
   const role = useMyOrgRole();
+  const isReadOnly = useIsReadOnly();
   const dataProvider = useDataProvider();
   const notify = useNotify();
 
@@ -292,14 +294,17 @@ export const InviteCodePage = () => {
                 </Tooltip>
               </Stack>
 
-              <Button
-                variant="outlined"
-                color="warning"
-                startIcon={<AutorenewIcon />}
-                onClick={() => setConfirmOpen(true)}
-              >
-                Сгенерировать новый
-              </Button>
+              {/* Read-only (backend.md «Read-only режим»): ротация кода — не из исключений. */}
+              {!isReadOnly && (
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  startIcon={<AutorenewIcon />}
+                  onClick={() => setConfirmOpen(true)}
+                >
+                  Сгенерировать новый
+                </Button>
+              )}
             </>
           )}
         </CardContent>

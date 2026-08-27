@@ -66,6 +66,7 @@ import { formatMemberNameFlat } from '../utils/memberName';
 import { useAsync } from '../utils/useAsync';
 import { useOrgTimezone } from '../utils/useOrgTimezone';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { isDayRangeInvalid, utcIsoToZonedParts } from '../utils/dates';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { MemberNameCell } from '../components/MemberNameCell';
@@ -250,7 +251,9 @@ const overtimeField = (r: RaRecord) => {
 const RestoreRowAction = ({ shift }: { shift: RaRecord }) => {
   const role = useMyOrgRole();
   const refresh = useRefresh();
-  if (!shift.is_deleted || (role !== 'owner' && role !== 'admin')) return null;
+  const isReadOnly = useIsReadOnly();
+  // Read-only (backend.md «Read-only режим»): восстановление смены — не из исключений.
+  if (!shift.is_deleted || (role !== 'owner' && role !== 'admin') || isReadOnly) return null;
   return <RestoreShiftButton shift={shift} onDone={refresh} size="small" />;
 };
 
@@ -310,8 +313,10 @@ const OrgShiftDatagrid = () => {
 const OrgShiftListActions = () => {
   const role = useMyOrgRole();
   const refresh = useRefresh();
+  const isReadOnly = useIsReadOnly();
   const [open, setOpen] = useState(false);
-  if (role !== 'owner' && role !== 'admin') return null;
+  // Read-only (backend.md «Read-only режим»): создание ручной смены — не из исключений.
+  if ((role !== 'owner' && role !== 'admin') || isReadOnly) return null;
   return (
     <TopToolbar>
       <Button startIcon={<AddIcon />} onClick={() => setOpen(true)}>
@@ -380,8 +385,13 @@ const ShiftManualActionsBar = () => {
   const role = useMyOrgRole();
   const refresh = useRefresh();
   const tz = useOrgTimezone();
+  const isReadOnly = useIsReadOnly();
   const [dialog, setDialog] = useState<ShiftDialogKind>(null);
-  if (!record || (role !== 'owner' && role !== 'admin')) return null;
+  // Read-only (backend.md «Read-only режим»): изменить/завершить/скопировать/удалить/
+  // восстановить смену вручную — не из исключений (в отличие от employee-эндпоинта
+  // POST /shifts/{id}/finish — здесь PATCH .../organizations/{org}/shifts/{id}, другой
+  // маршрут, под общее правило read-only).
+  if (!record || (role !== 'owner' && role !== 'admin') || isReadOnly) return null;
 
   const isOpenShift = record.status === 'active' || record.status === 'paused';
   const done = (): void => {
@@ -394,7 +404,9 @@ const ShiftManualActionsBar = () => {
   const buildCopyInitial = (): ManualShiftCreateInitial => {
     const startParts = utcIsoToZonedParts(record.started_at ?? null, tz);
     const finishParts = utcIsoToZonedParts(record.finished_at ?? null, tz);
-    const pauses = ((record.pauses ?? []) as { id?: string; started_at: string; finished_at: string | null }[])
+    const pauses = (
+      (record.pauses ?? []) as { id?: string; started_at: string; finished_at: string | null }[]
+    )
       .filter((p) => p.finished_at)
       .map((p) => ({
         key: String(p.id ?? Math.random()),
@@ -453,7 +465,11 @@ const ShiftManualActionsBar = () => {
         <ManualShiftDeleteDialog shift={record} onClose={() => setDialog(null)} onDone={done} />
       )}
       {dialog === 'copy' && (
-        <ManualShiftCreateDialog initial={buildCopyInitial()} onClose={() => setDialog(null)} onDone={done} />
+        <ManualShiftCreateDialog
+          initial={buildCopyInitial()}
+          onClose={() => setDialog(null)}
+          onDone={done}
+        />
       )}
     </Box>
   );
@@ -467,7 +483,9 @@ const ManualEditsCard = () => {
   return (
     <SectionCard title="Ручные правки">
       <Stack spacing={0.5}>
-        {record.is_manual && <Typography>Добавлена вручную: {record.created_by_name ?? '—'}</Typography>}
+        {record.is_manual && (
+          <Typography>Добавлена вручную: {record.created_by_name ?? '—'}</Typography>
+        )}
         {record.is_edited && (
           <Typography>
             Изменена: {record.edited_by_name ?? '—'}
@@ -523,9 +541,15 @@ const ShiftAdjustmentAction = () => {
             lockedMember={{
               id: memberId,
               userId,
-              label: formatMemberNameFlat({ user_name: record.user_name, display_name: record.display_name }),
+              label: formatMemberNameFlat({
+                user_name: record.user_name,
+                display_name: record.display_name,
+              }),
             }}
-            lockedShift={{ id: String(record.id), label: `Смена от ${formatDateTime(record.started_at)}` }}
+            lockedShift={{
+              id: String(record.id),
+              label: `Смена от ${formatDateTime(record.started_at)}`,
+            }}
             defaultOccurredAt={record.started_at ?? null}
             editing={null}
             onClose={() => setOpen(false)}
@@ -782,6 +806,7 @@ const ShiftPlanSection = () => {
   const record = useRecordContext();
   const refresh = useRefresh();
   const tz = useOrgTimezone();
+  const isReadOnly = useIsReadOnly();
   const [dialogOpen, setDialogOpen] = useState(false);
   if (!record) return null;
 
@@ -802,11 +827,14 @@ const ShiftPlanSection = () => {
         </InfoRow>
         <InfoRow label="Причина завершения">{finishReasonLabel(record.finish_reason)}</InfoRow>
       </Stack>
-      <Box sx={{ mt: 1.5 }}>
-        <Button size="small" startIcon={<EditCalendarIcon />} onClick={() => setDialogOpen(true)}>
-          Изменить график
-        </Button>
-      </Box>
+      {/* Read-only (backend.md «Read-only режим»): смена графика смены — не из исключений. */}
+      {!isReadOnly && (
+        <Box sx={{ mt: 1.5 }}>
+          <Button size="small" startIcon={<EditCalendarIcon />} onClick={() => setDialogOpen(true)}>
+            Изменить график
+          </Button>
+        </Box>
+      )}
       {!hasSchedule && (
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
           У смены нет графика — плановое время не рассчитывается, опоздание не показывается.
@@ -816,8 +844,8 @@ const ShiftPlanSection = () => {
           НЕИЗМЕННОГО started_at — ручная правка начала смены план сама не пересчитывает. */}
       {hasSchedule && record.is_edited && (
         <Typography variant="caption" color="warning.main" display="block" sx={{ mt: 1 }}>
-          Плановое время рассчитано от прежнего начала смены. Чтобы пересчитать — примените
-          график заново («Изменить график»).
+          Плановое время рассчитано от прежнего начала смены. Чтобы пересчитать — примените график
+          заново («Изменить график»).
         </Typography>
       )}
       {dialogOpen && (

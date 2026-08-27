@@ -56,6 +56,7 @@ import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { DateRangeAlert } from '../components/DateRangeAlert';
 import { MemberNameCell } from '../components/MemberNameCell';
 import { RestoreButton } from '../components/RestoreButton';
+import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { wideDatagridScrollSx } from '../theme';
 
 // Ручные начисления/удержания (manual_time_entry B1-B4, payroll_adjustments). Ресурс
@@ -339,12 +340,22 @@ export const AdjustmentFormDialog = ({
             />
           )}
 
-          <ToggleButtonGroup size="small" exclusive value={type} onChange={(_, v) => onTypeChange(v)}>
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={type}
+            onChange={(_, v) => onTypeChange(v)}
+          >
             <ToggleButton value="credit">Доплата (+)</ToggleButton>
             <ToggleButton value="debit">Удержание (−)</ToggleButton>
           </ToggleButtonGroup>
 
-          <ToggleButtonGroup size="small" exclusive value={mode} onChange={(_, v) => onModeChange(v)}>
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={mode}
+            onChange={(_, v) => onModeChange(v)}
+          >
             <ToggleButton value="amount">Сумма</ToggleButton>
             <ToggleButton value="hours" disabled={!hourlyRate}>
               Часы × ставка
@@ -470,6 +481,7 @@ const AdjustmentRowActions = ({ record }: { record: Adjustment }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const refresh = useRefresh();
+  const isReadOnly = useIsReadOnly();
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -497,6 +509,10 @@ const AdjustmentRowActions = ({ record }: { record: Adjustment }) => {
       notify(adjustmentErrorMessage(e, 'Не удалось восстановить начисление'), { type: 'error' });
     }
   };
+
+  // Read-only (backend.md «Read-only режим»): ручные начисления/удержания — не из
+  // списка исключений, ни исправить, ни удалить, ни восстановить нельзя.
+  if (isReadOnly) return null;
 
   if (record.is_deleted) return <RestoreButton onRestore={handleRestore} />;
 
@@ -612,7 +628,9 @@ const adjustmentFilters = [
 
 const AdjustmentListActions = () => {
   const refresh = useRefresh();
+  const isReadOnly = useIsReadOnly();
   const [open, setOpen] = useState(false);
+  if (isReadOnly) return <TopToolbar />;
   return (
     <TopToolbar>
       <Button startIcon={<AddIcon />} onClick={() => setOpen(true)}>

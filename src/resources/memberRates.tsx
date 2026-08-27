@@ -34,6 +34,7 @@ import {
 } from '../utils/format';
 import { localInputToUtcIso, utcIsoToLocalInput } from '../utils/dates';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useIsReadOnly } from '../subscription/SubscriptionContext';
 
 interface Rate {
   id: string;
@@ -214,6 +215,7 @@ const RateDialog = ({
 export const MemberRatesSection = () => {
   const record = useRecordContext();
   const role = useMyOrgRole();
+  const isReadOnly = useIsReadOnly();
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const refresh = useRefresh();
@@ -227,7 +229,8 @@ export const MemberRatesSection = () => {
 
   const memberId = record?.id ? String(record.id) : null;
   const canView = role === 'owner' || role === 'admin';
-  const canEdit = role === 'admin';
+  // Read-only (backend.md «Read-only режим»): ставки — не из исключений.
+  const canEdit = role === 'admin' && !isReadOnly;
 
   const loadRates = useCallback(async () => {
     if (!memberId) return;

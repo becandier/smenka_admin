@@ -15,6 +15,7 @@ import ScheduleIcon from '@mui/icons-material/Schedule';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import QuizIcon from '@mui/icons-material/Quiz';
 import PollIcon from '@mui/icons-material/Poll';
+import CreditCardIcon from '@mui/icons-material/CreditCard';
 import { dataProvider } from './providers/dataProvider';
 import { authProvider, type Permissions } from './providers/authProvider';
 import { i18nProvider } from './i18n';
@@ -50,6 +51,8 @@ import { SettingsPage } from './resources/settings';
 import { OrgStatsPage } from './resources/orgStats';
 import { PayrollPage } from './resources/payroll';
 import { InviteCodePage } from './resources/inviteCode';
+import { SubscriptionList } from './resources/subscriptions';
+import { TariffPage } from './resources/tariff';
 import { KnowledgePage } from './resources/knowledge/KnowledgePage';
 import { PlatformSettingsPage } from './resources/platformSettings';
 import { OAUTH_LOGIN_ENABLED } from './config';
@@ -86,6 +89,11 @@ export const App = () => (
               create={OrganizationCreate}
               icon={BusinessIcon}
             />
+          )}
+          {/* Реестр подписок (tariffs) — только super_admin, list-only: подписка появляется
+              вместе с организацией, отдельного create нет (admin.md, «Раздел «Подписки»»). */}
+          {permissions?.role === 'super_admin' && (
+            <Resource name="subscriptions" list={SubscriptionList} icon={CreditCardIcon} />
           )}
 
           {/* create — MemberCreate сам режет доступ до owner/admin (admin.md, «RBAC»);
@@ -172,6 +180,9 @@ export const App = () => (
           <CustomRoutes>
             <Route path="/invite-code" element={<InviteCodePage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            {/* Экран «Тариф» кабинета организации (tariffs) — owner/admin (+ super_admin
+                сквозным доступом, как остальные org-экраны). */}
+            <Route path="/tariff" element={<TariffPage />} />
             <Route path="/org-stats" element={<OrgStatsPage />} />
             <Route path="/payroll" element={<PayrollPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />

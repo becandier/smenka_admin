@@ -478,3 +478,106 @@ export const workLocationLabel = (
   const name = wl.name ?? '—';
   return wl.address ? `${name} · ${wl.address}` : name;
 };
+
+// --- Тарифы и подписки (tariffs) ---
+
+// Эффективный статус подписки (backend.md, «Эффективный статус — производная»): пять значений,
+// БД хранит только trialing/active/canceled, past_due/suspended вычисляются на бэке.
+export const SUBSCRIPTION_STATUS_LABELS: Record<string, string> = {
+  trialing: 'Пробный период',
+  active: 'Активна',
+  past_due: 'Просрочена',
+  suspended: 'Приостановлена',
+  canceled: 'Отменена',
+};
+
+export const subscriptionStatusLabel = (status: string | null | undefined): string =>
+  (status && SUBSCRIPTION_STATUS_LABELS[status]) || status || '—';
+
+// Цвета чипов статуса (admin.md, «Список»): trialing — info, active — success,
+// past_due — warning, suspended/canceled — error.
+export const SUBSCRIPTION_STATUS_COLOR: Record<
+  string,
+  'info' | 'success' | 'warning' | 'error' | 'default'
+> = {
+  trialing: 'info',
+  active: 'success',
+  past_due: 'warning',
+  suspended: 'error',
+  canceled: 'error',
+};
+
+export const SUBSCRIPTION_STATUS_CHOICES = Object.entries(SUBSCRIPTION_STATUS_LABELS).map(
+  ([id, name]) => ({ id, name }),
+);
+
+// Ручные статусы (для формы «Изменить», PATCH .../subscription: только trialing/active/canceled —
+// past_due/suspended нельзя проставить руками, это производные, backend.md п.5).
+export const SUBSCRIPTION_MANUAL_STATUS_CHOICES = ['trialing', 'active', 'canceled'].map((id) => ({
+  id,
+  name: SUBSCRIPTION_STATUS_LABELS[id],
+}));
+
+// code плана (справочник `plans`, backend.md): названия — фолбэк, если GET /plans почему-то
+// недоступен в конкретном месте экрана; там, где план приходит с бэка целиком — используем
+// его собственное поле name, а не эту карту.
+export const PLAN_CODE_LABELS: Record<string, string> = {
+  standard: 'Стандарт',
+  premium: 'Премиум',
+};
+
+export const planCodeLabel = (code: string | null | undefined): string =>
+  (code && PLAN_CODE_LABELS[code]) || code || '—';
+
+// Русское склонение «N день/дня/дней» — «осталось N дней» (admin.md, экран «Тариф» и реестр).
+export const pluralizeDays = (n: number): string => {
+  const abs = Math.abs(n);
+  const mod10 = abs % 10;
+  const mod100 = abs % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'день';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'дня';
+  return 'дней';
+};
+
+// «Осталось N дней» / «Просрочено на N дней» (days_left отрицательный в past_due,
+// null в suspended/canceled, backend.md п.2 «GET .../subscription»).
+export const daysLeftLabel = (daysLeft: number | null | undefined): string => {
+  if (daysLeft === null || daysLeft === undefined) return '—';
+  if (daysLeft < 0) {
+    const overdue = Math.abs(daysLeft);
+    return `Просрочено на ${overdue} ${pluralizeDays(overdue)}`;
+  }
+  return `Осталось ${daysLeft} ${pluralizeDays(daysLeft)}`;
+};
+
+// Код ошибки бэка (tariffs/backend.md «Новые коды ошибок») → понятный текст. Тот же приём,
+// что scheduleErrorMessage/checklistLocationErrorMessage. PLAN_LIMIT_REACHED/
+// PLAN_FEATURE_UNAVAILABLE/SUBSCRIPTION_INACTIVE сюда намеренно не включены — их message с
+// бэка уже человекочитаем и точнее общего текста (называет конкретный лимит/фичу,
+// backend.md «PLAN_LIMIT_REACHED — message человекочитаемо называет лимит»), фолбэк на
+// error.message ниже отдаёт его как есть.
+const TARIFF_ERROR_MESSAGES: Record<string, string> = {
+  SUBSCRIPTION_NOT_FOUND: 'У организации нет подписки',
+  PLAN_NOT_FOUND: 'Тариф не найден или неактивен',
+  ORG_NOT_FOUND: 'Организация не найдена',
+};
+
+// Тип события журнала подписки (subscription_events, backend.md «Новая таблица
+// subscription_events»): append-only, читается в диалоге «История».
+export const SUBSCRIPTION_EVENT_TYPE_LABELS: Record<string, string> = {
+  created: 'Создана',
+  extended: 'Продлена',
+  plan_changed: 'Смена тарифа',
+  status_changed: 'Смена статуса',
+  auto_suspended: 'Авто-приостановка',
+};
+
+export const subscriptionEventTypeLabel = (type: string | null | undefined): string =>
+  (type && SUBSCRIPTION_EVENT_TYPE_LABELS[type]) || type || '—';
+
+export const tariffErrorMessage = (error: unknown, fallback = 'Ошибка'): string => {
+  const code = error instanceof HttpError ? error.body?.code : undefined;
+  if (code && TARIFF_ERROR_MESSAGES[code]) return TARIFF_ERROR_MESSAGES[code];
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};

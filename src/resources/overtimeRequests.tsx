@@ -39,6 +39,7 @@ import { MemberNameCell } from '../components/MemberNameCell';
 import { DateRangeAlert } from '../components/DateRangeAlert';
 import { isDayRangeInvalid } from '../utils/dates';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useIsReadOnly } from '../subscription/SubscriptionContext';
 
 const overtimeFilters = [
   <SelectInput
@@ -187,8 +188,10 @@ const OvertimeEmpty = () => (
 // перестаёт показывать действия (admin.md: «После рассмотрения кнопки исчезают»).
 const RowActions = ({ record }: { record: RaRecord }) => {
   const refresh = useRefresh();
+  const isReadOnly = useIsReadOnly();
   const [dialog, setDialog] = useState<'approved' | 'rejected' | null>(null);
-  if (record.status !== 'pending') return null;
+  // Read-only (backend.md «Read-only режим»): рассмотрение заявки — не из исключений.
+  if (record.status !== 'pending' || isReadOnly) return null;
   return (
     <Stack direction="row" spacing={0.5}>
       <Button

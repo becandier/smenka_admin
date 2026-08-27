@@ -43,6 +43,8 @@ import ScheduleIcon from '@mui/icons-material/Schedule';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import QuizIcon from '@mui/icons-material/Quiz';
 import PollIcon from '@mui/icons-material/Poll';
+import CreditCardIcon from '@mui/icons-material/CreditCard';
+import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { OrgSwitcher } from '../components/OrgSwitcher';
@@ -50,6 +52,8 @@ import { OAUTH_LOGIN_ENABLED } from '../config';
 import { useCurrentOrg } from '../orgContext';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
 import type { Permissions } from '../providers/authProvider';
+import { SubscriptionProvider } from '../subscription/SubscriptionContext';
+import { SubscriptionBannerBar } from '../subscription/SubscriptionBanner';
 
 // AppBar — фирменный синий (primary). Лок-ап слева у TitlePortal; на синем фоне —
 // версия -inverse (белая). Бренд-цвета берём из темы, не хардкодом.
@@ -186,11 +190,7 @@ const SubMenu = ({ name, icon, open, onToggle, sidebarOpen, isActive, children }
           <Typography variant="inherit" noWrap sx={{ flexGrow: 1 }}>
             {name}
           </Typography>
-          {open ? (
-            <ExpandLessIcon fontSize="small" />
-          ) : (
-            <ExpandMoreIcon fontSize="small" />
-          )}
+          {open ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
         </>
       )}
     </MenuItem>
@@ -310,6 +310,7 @@ const MyMenu = () => {
           <Menu.DashboardItem />
           <Menu.Item to="/users" primaryText="Пользователи" leftIcon={<PeopleIcon />} />
           <Menu.Item to="/organizations" primaryText="Организации" leftIcon={<BusinessIcon />} />
+          <Menu.Item to="/subscriptions" primaryText="Подписки" leftIcon={<CreditCardIcon />} />
           {/* Настройки платформы — первый экран будущего раздела платформенных интеграций
               (сейчас только «Провайдеры входа», oauth_login). Скрыт за OAUTH_LOGIN_ENABLED:
               пока OAuth-вход выключен, раздел провайдеров входа в меню не показываем. */}
@@ -374,7 +375,12 @@ const MyMenu = () => {
               leftIcon={<GroupIcon />}
               sx={childItemIconSx}
             />
-            <Menu.Item to="/roles" primaryText="Роли" leftIcon={<BadgeIcon />} sx={childItemIconSx} />
+            <Menu.Item
+              to="/roles"
+              primaryText="Роли"
+              leftIcon={<BadgeIcon />}
+              sx={childItemIconSx}
+            />
           </SubMenu>
 
           {/* Чек-листы: реестр экземпляров (checklist_reports) и шаблоны. */}
@@ -483,6 +489,10 @@ const MyMenu = () => {
           <Menu.Item to="/work-locations" primaryText="Точки" leftIcon={<PlaceIcon />} />
           <Menu.Item to="/invite-code" primaryText="Инвайт-код" leftIcon={<VpnKeyIcon />} />
           <Menu.Item to="/settings" primaryText="Настройки" leftIcon={<SettingsIcon />} />
+          {/* Экран «Тариф» (tariffs/admin.md): текущий тариф, использование, сравнение
+              тарифов, «Как оплатить». Видимость — та же, что у остальных пунктов этой
+              секции (owner/admin своей org + super_admin сквозным доступом). */}
+          <Menu.Item to="/tariff" primaryText="Тариф" leftIcon={<WorkspacePremiumIcon />} />
           <Menu.Item to="/audit-logs" primaryText="Аудит" leftIcon={<HistoryIcon />} />
         </>
       )}
@@ -490,8 +500,18 @@ const MyMenu = () => {
   );
 };
 
+// SubscriptionProvider оборачивает весь Layout (AppBar/Menu/контент) — единственное место,
+// откуда одновременно доступны useCurrentOrg (снаружи, из OrgProvider) и useDataProvider/
+// usePermissions (react-admin, доступны только внутри <Admin>, где и рендерится Layout).
+// Баннер (tariffs/admin.md, «Глобальный баннер состояния») рендерится первой строкой
+// основного контента — react-admin's Layout не даёт отдельного именованного слота между
+// app bar и страницей без переопределения всей сетки; так баннер виден на каждой странице,
+// не мешая фиксированному AppBar.
 export const Layout = ({ children }: { children: ReactNode }) => (
-  <RaLayout appBar={MyAppBar} menu={MyMenu}>
-    {children}
-  </RaLayout>
+  <SubscriptionProvider>
+    <RaLayout appBar={MyAppBar} menu={MyMenu}>
+      <SubscriptionBannerBar />
+      {children}
+    </RaLayout>
+  </SubscriptionProvider>
 );

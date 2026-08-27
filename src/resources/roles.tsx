@@ -8,14 +8,36 @@ import {
   SimpleForm,
   TextInput,
   SearchInput,
+  TopToolbar,
+  CreateButton,
+  FilterButton,
   required,
 } from 'react-admin';
+import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
 
 const roleFilters = [<SearchInput key="q" source="q" alwaysOn />];
 
+// Read-only (backend.md «Read-only режим») прячет создание кастомной роли — не входит
+// в список исключений.
+const RoleListActions = () => {
+  const isReadOnly = useIsReadOnly();
+  return (
+    <TopToolbar>
+      <FilterButton />
+      {!isReadOnly && <CreateButton />}
+    </TopToolbar>
+  );
+};
+
 export const RoleList = () => (
-  <List filters={roleFilters} sort={{ field: 'created_at', order: 'DESC' }} exporter={false}>
-    <Datagrid rowClick="edit">
+  <List
+    filters={roleFilters}
+    sort={{ field: 'created_at', order: 'DESC' }}
+    exporter={false}
+    actions={<RoleListActions />}
+  >
+    <Datagrid rowClick="edit" bulkActionButtons={false}>
       <TextField source="name" label="Название" />
       <DateField source="created_at" label="Создана" showTime />
     </Datagrid>
@@ -24,7 +46,7 @@ export const RoleList = () => (
 
 export const RoleEdit = () => (
   <Edit mutationMode="pessimistic" redirect="list">
-    <SimpleForm>
+    <SimpleForm toolbar={<TariffAwareToolbar />}>
       <TextInput source="name" label="Название" validate={required()} />
     </SimpleForm>
   </Edit>

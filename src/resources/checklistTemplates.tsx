@@ -16,6 +16,8 @@ import {
   BooleanInput,
   SearchInput,
   Title,
+  TopToolbar,
+  CreateButton,
   required,
   useGetOne,
   useGetList,
@@ -64,6 +66,7 @@ import {
   PHOTO_SOURCE_CHOICES,
 } from '../utils/format';
 import { RestoreButton } from '../components/RestoreButton';
+import { useIsReadOnly } from '../subscription/SubscriptionContext';
 
 const typeChoices = [
   { id: 'shift_start', name: 'Начало смены' },
@@ -88,6 +91,7 @@ const ChecklistTemplateRowActions = ({ record }: { record: RaRecord }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const refresh = useRefresh();
+  const isReadOnly = useIsReadOnly();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -114,6 +118,10 @@ const ChecklistTemplateRowActions = ({ record }: { record: RaRecord }) => {
       notify(e?.message ?? 'Не удалось восстановить чек-лист', { type: 'error' });
     }
   };
+
+  // Read-only (backend.md «Read-only режим»): удаление/восстановление шаблона —
+  // не из исключений.
+  if (isReadOnly) return null;
 
   return (
     <Stack direction="row" spacing={0.5} onClick={(e) => e.stopPropagation()}>
@@ -160,8 +168,25 @@ const ChecklistTemplateRowActions = ({ record }: { record: RaRecord }) => {
   );
 };
 
+// Read-only (backend.md «Read-only режим») прячет создание шаблона — не входит
+// в список исключений.
+const ChecklistTemplateListActions = () => {
+  const isReadOnly = useIsReadOnly();
+  if (isReadOnly) return null;
+  return (
+    <TopToolbar>
+      <CreateButton />
+    </TopToolbar>
+  );
+};
+
 export const ChecklistTemplateList = () => (
-  <List filters={typeFilters} sort={{ field: 'created_at', order: 'DESC' }} exporter={false}>
+  <List
+    filters={typeFilters}
+    sort={{ field: 'created_at', order: 'DESC' }}
+    exporter={false}
+    actions={<ChecklistTemplateListActions />}
+  >
     <Datagrid rowClick="edit" bulkActionButtons={false}>
       <TextField source="name" label="Название" />
       <SelectField source="type" label="Тип" choices={typeChoices} />
@@ -193,6 +218,7 @@ export const ChecklistTemplateCreate = () => (
 const TemplateMetaForm = ({ template, onSaved }: { template: any; onSaved: () => void }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
+  const isReadOnly = useIsReadOnly();
   const [name, setName] = useState<string>(template.name ?? '');
   const [type, setType] = useState<string>(template.type ?? 'shift_start');
   const [isRequired, setIsRequired] = useState<boolean>(Boolean(template.is_required));
@@ -236,11 +262,15 @@ const TemplateMetaForm = ({ template, onSaved }: { template: any; onSaved: () =>
             }
             label="Обязательный"
           />
-          <Box>
-            <Button variant="contained" onClick={save} disabled={saving || !name.trim()}>
-              Сохранить
-            </Button>
-          </Box>
+          {/* Read-only (backend.md «Read-only режим»): правка метаданных шаблона —
+              не из исключений. */}
+          {!isReadOnly && (
+            <Box>
+              <Button variant="contained" onClick={save} disabled={saving || !name.trim()}>
+                Сохранить
+              </Button>
+            </Box>
+          )}
         </Stack>
       </CardContent>
     </Card>

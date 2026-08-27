@@ -15,6 +15,7 @@ import {
 import { Box, Button, Chip, Stack, Typography } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { useMyOrgRole } from '../../utils/useMyOrgRole';
+import { useIsReadOnly } from '../../subscription/SubscriptionContext';
 import { formatMemberNameFlat } from '../../utils/memberName';
 import {
   TEST_ASSIGNMENT_STATUS_CHOICES,
@@ -138,14 +139,25 @@ const RowActions = ({
   record: RaRecord;
   onSelect: (record: RaRecord) => void;
   onUnassigned: () => void;
-}) => (
-  <Stack direction="row" spacing={0.5} onClick={(e) => e.stopPropagation()}>
-    <Button size="small" onClick={() => onSelect(record)}>
-      Детали
-    </Button>
-    <UnassignRowButton record={record} templateTitle={templateTitle(record)} onDone={onUnassigned} />
-  </Stack>
-);
+}) => {
+  const isReadOnly = useIsReadOnly();
+  return (
+    <Stack direction="row" spacing={0.5} onClick={(e) => e.stopPropagation()}>
+      <Button size="small" onClick={() => onSelect(record)}>
+        Детали
+      </Button>
+      {/* Read-only (backend.md «Read-only режим»): снятие назначения — не из исключений,
+          «Детали» (просмотр) выше остаётся доступен всегда. */}
+      {!isReadOnly && (
+        <UnassignRowButton
+          record={record}
+          templateTitle={templateTitle(record)}
+          onDone={onUnassigned}
+        />
+      )}
+    </Stack>
+  );
+};
 
 // Bulk-действие «Снять назначения» (admin.md, «Массовое снятие»): стандартный
 // BulkDeleteButton не подходит по тексту/подтверждению — свой, тем же путём, что и строковое
@@ -162,9 +174,8 @@ const TestAssignmentBulkActions = () => {
 
   const withResults = useMemo(() => {
     const selectedSet = new Set(selectedIds);
-    return (data ?? []).filter(
-      (r) => selectedSet.has(r.id) && Number(r.attempts_used ?? 0) > 0,
-    ).length;
+    return (data ?? []).filter((r) => selectedSet.has(r.id) && Number(r.attempts_used ?? 0) > 0)
+      .length;
   }, [data, selectedIds]);
 
   const parts = bulkUnassignConfirmParts(selectedIds.length, withResults);
@@ -221,9 +232,13 @@ const TestAssignmentDatagrid = ({
   onUnassigned: () => void;
 }) => {
   const { isPending, data } = useListContext();
+  const isReadOnly = useIsReadOnly();
   if (!isPending && (data ?? []).length === 0) return <TestAssignmentsEmpty />;
   return (
-    <Datagrid bulkActionButtons={<TestAssignmentBulkActions />} rowClick={false}>
+    <Datagrid
+      bulkActionButtons={isReadOnly ? false : <TestAssignmentBulkActions />}
+      rowClick={false}
+    >
       <FunctionField label="Тест" render={templateTitle} />
       <FunctionField label="Сотрудник" render={memberDisplayName} />
       <FunctionField label="Статус" render={statusChip} />

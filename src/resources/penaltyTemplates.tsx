@@ -1,3 +1,4 @@
+import type { ReactElement, ReactNode } from 'react';
 import {
   List,
   Datagrid,
@@ -11,6 +12,8 @@ import {
   SimpleForm,
   TextInput,
   NumberInput,
+  TopToolbar,
+  CreateButton,
   DeleteWithConfirmButton,
   required,
   maxLength,
@@ -23,13 +26,16 @@ import { Box, Typography } from '@mui/material';
 import { formatMoneyMinor, parseRublesToMinor } from '../utils/format';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
 import { RestoreButton } from '../components/RestoreButton';
+import { FeatureLockButton, PremiumRequiredScreen } from '../subscription/FeatureLock';
+import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
+import { useHasFeature, useIsReadOnly } from '../subscription/SubscriptionContext';
 
 // Шаблоны штрафов ведут только org owner/admin. super_admin штрафы конкретной
 // организации не ведёт (ТЗ fines) — для него экран закрыт (не полагаемся только на 403 бэка).
-const NoAccess = () => (
+const NoAccess = ({ text }: { text?: ReactNode }) => (
   <Box sx={{ p: 3 }}>
     <Typography color="text.secondary">
-      Управление шаблонами штрафов доступно владельцу и администратору организации.
+      {text ?? 'Управление шаблонами штрафов доступно владельцу и администратору организации.'}
     </Typography>
   </Box>
 );
@@ -64,11 +70,18 @@ const penaltyTemplateFilters = [
 ];
 
 // «Удалить»/«Восстановить» (unified_soft_delete): удалённая строка получает «Восстановить»
-// вместо «Удалить» — повторный DELETE на уже удалённом шаблоне бэк отверг бы 404.
+// вместо «Удалить» — повторный DELETE на уже удалённом шаблоне бэк отверг бы 404. DELETE
+// самого шаблона фичей fines не гейтится (backend.md, «Остаются доступными на Стандарте:
+// … DELETE шаблона/штрафа»), а вот restore — гейтится (`POST .../restore`, «Энфорсмент
+// фич»), поэтому в замок берём только «Восстановить». Read-only прячет обе мутации целиком —
+// у read-only-организации нет ни удаления, ни восстановления шаблонов (backend.md, «Read-only
+// режим»: ни одно из исключений сюда не подходит).
 const PenaltyTemplateRowActions = ({ record }: { record: RaRecord }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const refresh = useRefresh();
+  const isReadOnly = useIsReadOnly();
+  const hasFines = useHasFeature('fines');
 
   const handleRestore = async (): Promise<void> => {
     try {
@@ -80,12 +93,35 @@ const PenaltyTemplateRowActions = ({ record }: { record: RaRecord }) => {
     }
   };
 
-  if (record.is_deleted) return <RestoreButton onRestore={handleRestore} />;
+  if (isReadOnly) return null;
+
+  if (record.is_deleted) {
+    return (
+      <FeatureLockButton locked={!hasFines} featureLabel="Штрафы">
+        <RestoreButton onRestore={handleRestore} />
+      </FeatureLockButton>
+    );
+  }
   return (
     <DeleteWithConfirmButton
       confirmTitle="Удалить шаблон штрафа?"
       confirmContent="Уже назначенные штрафы из него сохранятся (у них свой снимок суммы и причины); шаблон лишь исчезнет из списка выбора."
     />
+  );
+};
+
+// «Добавить шаблон» — гейтится и тарифом (fines, замок + диалог), и read-only (скрыт целиком,
+// admin.md «Read-only режим»: создание в скоупе организации не входит в список исключений).
+const PenaltyTemplateListActions = () => {
+  const isReadOnly = useIsReadOnly();
+  const hasFines = useHasFeature('fines');
+  if (isReadOnly) return null;
+  return (
+    <TopToolbar>
+      <FeatureLockButton locked={!hasFines} featureLabel="Штрафы" raIcon>
+        <CreateButton label="Добавить шаблон" />
+      </FeatureLockButton>
+    </TopToolbar>
   );
 };
 
@@ -97,6 +133,7 @@ export const PenaltyTemplateList = () => {
       filters={penaltyTemplateFilters}
       sort={{ field: 'created_at', order: 'DESC' }}
       exporter={false}
+      actions={<PenaltyTemplateListActions />}
     >
       <Datagrid rowClick="edit" bulkActionButtons={false}>
         <TextField source="reason" label="Причина" />
@@ -116,16 +153,28 @@ export const PenaltyTemplateList = () => {
 };
 
 // amount_rub — плоское поле рублей (dataProvider маппит из amount_minor и обратно).
-const TemplateForm = () => (
-  <SimpleForm>
+// toolbar — по умолчанию (Create, гейтится на уровне всего маршрута выше), либо
+// TariffAwareToolbar (Edit — see PenaltyTemplateEdit, PATCH тоже требует feature.fines).
+const TemplateForm = ({ toolbar }: { toolbar?: ReactElement }) => (
+  <SimpleForm toolbar={toolbar}>
     <TextInput source="reason" label="Причина" validate={reasonValidators} fullWidth />
     <NumberInput source="amount_rub" label="Сумма, ₽" validate={amountValidators} min={0} />
     <TextInput source="currency" label="Валюта" defaultValue="RUB" disabled />
   </SimpleForm>
 );
 
+// Create — гейтится на уровне всего маршрута: без feature.fines показываем заглушку
+// «доступно на Премиуме» вместо формы (admin.md, «Раздел «Штрафы» … на экране вместо
+// таблицы — заглушка»), а не задизейбленную кнопку Save внутри пустой формы.
 export const PenaltyTemplateCreate = () => {
-  if (!useCanManage()) return <NoAccess />;
+  const canManage = useCanManage();
+  const isReadOnly = useIsReadOnly();
+  const hasFines = useHasFeature('fines');
+  if (!canManage) return <NoAccess />;
+  if (isReadOnly) {
+    return <NoAccess text="Организация в режиме только для чтения — создание недоступно." />;
+  }
+  if (!hasFines) return <PremiumRequiredScreen featureLabel="Штрафы" />;
   return (
     <Create redirect="list">
       <TemplateForm />
@@ -133,11 +182,14 @@ export const PenaltyTemplateCreate = () => {
   );
 };
 
+// Edit — маршрут остаётся доступен (GET не гейтится, admin.md/backend.md), а Save —
+// через TariffAwareToolbar (read-only скрывает целиком, !fines — замок + диалог).
 export const PenaltyTemplateEdit = () => {
-  if (!useCanManage()) return <NoAccess />;
+  const canManage = useCanManage();
+  if (!canManage) return <NoAccess />;
   return (
     <Edit mutationMode="pessimistic" redirect="list">
-      <TemplateForm />
+      <TemplateForm toolbar={<TariffAwareToolbar feature="fines" featureLabel="Штрафы" />} />
     </Edit>
   );
 };

@@ -13,6 +13,8 @@ import {
   SimpleForm,
   TextInput,
   Title,
+  TopToolbar,
+  CreateButton,
   required,
   useGetOne,
   useGetList,
@@ -55,6 +57,7 @@ import {
   scheduleDurationHint,
   scheduleErrorMessage,
 } from '../utils/format';
+import { useIsReadOnly } from '../subscription/SubscriptionContext';
 
 const scheduleFilters = [
   <SearchInput key="q" source="q" alwaysOn />,
@@ -109,8 +112,25 @@ const AudienceCell = (props: { label?: string }) => {
   return <Typography variant="body2">{names}</Typography>;
 };
 
+// Read-only (backend.md «Read-only режим») прячет создание графика — не входит
+// в список исключений.
+const WorkScheduleListActions = () => {
+  const isReadOnly = useIsReadOnly();
+  if (isReadOnly) return null;
+  return (
+    <TopToolbar>
+      <CreateButton />
+    </TopToolbar>
+  );
+};
+
 export const WorkScheduleList = () => (
-  <List filters={scheduleFilters} sort={{ field: 'created_at', order: 'DESC' }} exporter={false}>
+  <List
+    filters={scheduleFilters}
+    sort={{ field: 'created_at', order: 'DESC' }}
+    exporter={false}
+    actions={<WorkScheduleListActions />}
+  >
     <Datagrid rowClick="edit">
       <TextField source="name" label="Название" />
       <FunctionField label="Время" render={timeField} sortable={false} />
@@ -182,6 +202,7 @@ export const WorkScheduleCreate = () => (
 const ScheduleMetaForm = ({ schedule, onSaved }: { schedule: any; onSaved: () => void }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
+  const isReadOnly = useIsReadOnly();
   const [name, setName] = useState<string>(schedule.name ?? '');
   const [startTime, setStartTime] = useState<string>(schedule.start_time ?? '');
   const [endTime, setEndTime] = useState<string>(schedule.end_time ?? '');
@@ -257,15 +278,17 @@ const ScheduleMetaForm = ({ schedule, onSaved }: { schedule: any; onSaved: () =>
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
             Не выдаётся при старте новых смен; уже начатые смены не затрагиваются.
           </Typography>
-          <Box>
-            <Button
-              variant="contained"
-              onClick={() => void save()}
-              disabled={saving || !name.trim() || !startTime || !endTime || timesEqual}
-            >
-              Сохранить
-            </Button>
-          </Box>
+          {!isReadOnly && (
+            <Box>
+              <Button
+                variant="contained"
+                onClick={() => void save()}
+                disabled={saving || !name.trim() || !startTime || !endTime || timesEqual}
+              >
+                Сохранить
+              </Button>
+            </Box>
+          )}
         </Stack>
       </CardContent>
     </Card>
@@ -526,6 +549,7 @@ const ScheduleDeleteSection = ({ scheduleId }: { scheduleId: string }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const redirect = useRedirect();
+  const isReadOnly = useIsReadOnly();
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -542,6 +566,9 @@ const ScheduleDeleteSection = ({ scheduleId }: { scheduleId: string }) => {
       setOpen(false);
     }
   };
+
+  // Read-only (backend.md «Read-only режим»): удаление графика не входит в список исключений.
+  if (isReadOnly) return null;
 
   return (
     <Card>
