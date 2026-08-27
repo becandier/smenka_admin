@@ -437,7 +437,11 @@ export const dataProvider: DataProvider = {
           // checklists — состояние чек-листов смены (none/all_completed/has_incomplete/
           // required_incomplete), см. checklist_reports/backend.md. only_late/work_schedule_id/
           // has_overtime — work_schedules/backend.md, «Фильтры в списке смен организации».
-          // only_manual/include_deleted — manual_time_entry (A5).
+          // only_manual/include_deleted — manual_time_entry (A5). geo_fallback —
+          // shift_geo_photo_fallback/backend.md: тернарный (true — только старт без гео,
+          // false — только обычные, отсутствие — без фильтра), поэтому его намеренно нет
+          // в списке вырезаемых `=== false` выше: здесь false — валидная выборка, а не
+          // «фильтр снят» (в UI это NullableBooleanInput, а не тумблер).
           filterKeys: [
             'user_id',
             'status',
@@ -449,6 +453,7 @@ export const dataProvider: DataProvider = {
             'has_overtime',
             'only_manual',
             'include_deleted',
+            'geo_fallback',
           ],
         },
       );

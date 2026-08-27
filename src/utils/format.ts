@@ -450,3 +450,31 @@ export const ADJUSTMENT_TYPE_CHOICES = [
 
 export const adjustmentTypeOf = (amountMinor: number): 'credit' | 'debit' =>
   amountMinor >= 0 ? 'credit' : 'debit';
+
+// --- Старт смены без геопроверки (shift_geo_photo_fallback) ---
+
+// Машинные коды гео-ошибок клиента (контракт мобилки ↔ бэка, shift_geo_photo_fallback/
+// backend.md): бэк хранит и отдаёт их как есть в ShiftResponse.geo_fallback_reason.
+// Набор фиксирован — держим единым словарём, чтобы коды не расползались строками по экранам.
+export const GEO_FALLBACK_REASON_LABELS: Record<string, string> = {
+  GEO_PERMISSION_DENIED: 'Доступ к геолокации отклонён',
+  GEO_PERMISSION_DENIED_FOREVER: 'Доступ к геолокации заблокирован (браузер/ОС)',
+  GEO_SERVICE_DISABLED: 'Служба геолокации на устройстве выключена',
+  GEO_UNAVAILABLE: 'Не удалось определить геопозицию',
+  GEO_UNSUPPORTED: 'Браузер не поддерживает геолокацию',
+  GEO_INSECURE_CONTEXT: 'Небезопасное соединение (не HTTPS)',
+};
+
+// Причина гео-сбоя → человекочитаемый текст. Неизвестный код (мобилка добавила новый раньше
+// админки) показываем как есть — так админ хотя бы видит факт и может его сообщить.
+export const geoFallbackReasonLabel = (reason: string | null | undefined): string =>
+  (reason && GEO_FALLBACK_REASON_LABELS[reason]) || reason || '—';
+
+// Точка смены: денормализованный work_location { name, address } | null (backend.md).
+export const workLocationLabel = (
+  wl: { name?: string | null; address?: string | null } | null | undefined,
+): string => {
+  if (!wl) return '—';
+  const name = wl.name ?? '—';
+  return wl.address ? `${name} · ${wl.address}` : name;
+};
