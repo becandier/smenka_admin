@@ -59,6 +59,7 @@ import {
   overtimeStatusLabel,
   scheduleErrorMessage,
   shiftStatusLabel,
+  workLocationLabel,
 } from '../utils/format';
 import { formatMemberNameFlat } from '../utils/memberName';
 import { useAsync } from '../utils/useAsync';
@@ -80,6 +81,7 @@ import {
   type ManualShiftCreateInitial,
 } from './manualShifts';
 import { AdjustmentFormDialog } from './adjustments';
+import { GeoFallbackChip, ShiftGeoFallbackSection } from './shiftGeoFallback';
 import { wideDatagridScrollSx } from '../theme';
 
 const statusChoices = [
@@ -138,6 +140,11 @@ const shiftFilters = [
     label="Переработка"
     choices={overtimeFilterChoices}
   />,
+  // shift_geo_photo_fallback: смены, стартовавшие по фото вместо координат. В отличие от
+  // остальных булевых тумблеров контракт понимает и `geo_fallback=false` («только обычные»),
+  // поэтому снятое состояние здесь — осмысленный фильтр, а не «фильтра нет» (фильтра нет,
+  // пока админ не добавил его в панель).
+  <BooleanInput key="geo_fallback" source="geo_fallback" label="Старт без гео" />,
   // manual_time_entry (A5): только ручные/правленые смены и/или показ удалённых.
   <BooleanInput key="only_manual" source="only_manual" label="Только ручные" />,
   <BooleanInput key="include_deleted" source="include_deleted" label="Показывать удалённые" />,
@@ -166,14 +173,9 @@ const roleField = (r: RaRecord) => memberRoleLabel(r.role);
 const statusField = (r: RaRecord) => shiftStatusLabel(r.status);
 const durationField = (r: RaRecord) => formatDuration(r.worked_seconds);
 // Точка смены: денормализованный work_location { name, address } | null (см. backend.md).
+// Полная подпись «название · адрес» — общий workLocationLabel из utils/format (её же
+// показывает карточка «Старт без геопроверки»).
 const workLocationName = (r: RaRecord) => r.work_location?.name ?? '—';
-const workLocationLabel = (
-  wl: { name?: string | null; address?: string | null } | null,
-): string => {
-  if (!wl) return '—';
-  const name = wl.name ?? '—';
-  return wl.address ? `${name} · ${wl.address}` : name;
-};
 // Сводка чек-листов смены (checklists_summary, checklist_reports/backend.md): считается на
 // лету, в отличие от has_incomplete_required_checklists (только на завершении, врёт для
 // активных/паузных смен — колонка на него больше не опирается).
@@ -273,6 +275,9 @@ const OrgShiftDatagrid = () => {
       {/* manual_time_entry §1.3: чипы «Ручная»/«Изменена»/«Удалена» — Tooltip с manual_note
           и кто правил. */}
       <FunctionField label="Пометки" render={ShiftManualChips} sortable={false} />
+      {/* shift_geo_photo_fallback: бейдж «Без гео» с причиной в tooltip; у обычных смен
+          колонка пустая. */}
+      <FunctionField label="Гео" render={GeoFallbackChip} sortable={false} />
       <DateField source="started_at" label="Начало" showTime />
       <DateField source="finished_at" label="Конец" showTime emptyText="—" />
       <FunctionField label="Отработано" render={durationField} />
@@ -831,8 +836,8 @@ const ShiftPlanSection = () => {
   );
 };
 
-// Деталь чужой орг-смены: шапка (+ ручные действия §3.1) + ручные правки (§3.2) + план +
-// штраф + начисление (§3.4) + паузы + чек-листы.
+// Деталь чужой орг-смены: шапка (+ ручные действия §3.1) + ручные правки (§3.2) + старт без
+// гео (shift_geo_photo_fallback) + план + штраф + начисление (§3.4) + паузы + чек-листы.
 export const OrgShiftShow = () => (
   <Show component="div" title="Смена сотрудника">
     <Box sx={{ pt: 2 }}>
@@ -840,6 +845,8 @@ export const OrgShiftShow = () => (
         <ShiftHeader />
       </SectionCard>
       <ManualEditsCard />
+      {/* shift_geo_photo_fallback: причина гео-сбоя + фото старта — только у fallback-смен. */}
+      <ShiftGeoFallbackSection />
       <ShiftPlanSection />
       {/* Штраф за смену — пишущее действие owner/admin (super_admin не ведёт штрафы). */}
       <ShiftPenaltySection />
