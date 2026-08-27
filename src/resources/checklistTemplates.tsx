@@ -352,10 +352,12 @@ const ItemsEditor = ({
   templateId,
   items,
   onChanged,
+  readOnly,
 }: {
   templateId: string;
   items: any[];
   onChanged: () => void;
+  readOnly: boolean;
 }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
@@ -438,14 +440,14 @@ const ItemsEditor = ({
                 <TableCell sx={{ width: 80 }}>
                   <IconButton
                     size="small"
-                    disabled={busy || index === 0}
+                    disabled={readOnly || busy || index === 0}
                     onClick={() => move(index, -1)}
                   >
                     <ArrowUpwardIcon fontSize="small" />
                   </IconButton>
                   <IconButton
                     size="small"
-                    disabled={busy || index === sorted.length - 1}
+                    disabled={readOnly || busy || index === sorted.length - 1}
                     onClick={() => move(index, 1)}
                   >
                     <ArrowDownwardIcon fontSize="small" />
@@ -508,23 +510,25 @@ const ItemsEditor = ({
                       </Button>
                     </>
                   ) : (
-                    <>
-                      <IconButton
-                        size="small"
-                        onClick={() => {
-                          setEditingId(it.id);
-                          setEditText(it.text ?? '');
-                          setEditRequired(Boolean(it.is_required));
-                          setEditPhotoReq(it.photo_requirement ?? 'none');
-                          setEditPhotoSource(it.photo_source ?? 'camera');
-                        }}
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                      <IconButton size="small" disabled={busy} onClick={() => remove(it.id)}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </>
+                    !readOnly && (
+                      <>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            setEditingId(it.id);
+                            setEditText(it.text ?? '');
+                            setEditRequired(Boolean(it.is_required));
+                            setEditPhotoReq(it.photo_requirement ?? 'none');
+                            setEditPhotoSource(it.photo_source ?? 'camera');
+                          }}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton size="small" disabled={busy} onClick={() => remove(it.id)}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </>
+                    )
                   )}
                 </TableCell>
               </TableRow>
@@ -532,38 +536,43 @@ const ItemsEditor = ({
           </TableBody>
         </Table>
 
-        <Stack
-          direction="row"
-          spacing={1}
-          alignItems="center"
-          flexWrap="wrap"
-          useFlexGap
-          sx={{ mt: 2 }}
-        >
-          <MuiTextField
-            size="small"
-            label="Новый пункт"
-            value={newText}
-            onChange={(e) => setNewText(e.target.value)}
-            sx={{ minWidth: 280 }}
-          />
-          <FormControlLabel
-            control={
-              <Checkbox checked={newRequired} onChange={(e) => setNewRequired(e.target.checked)} />
-            }
-            label="Обяз."
-          />
-          <PhotoFields
-            requirement={newPhotoReq}
-            source={newPhotoSource}
-            onRequirement={setNewPhotoReq}
-            onSource={setNewPhotoSource}
-            disabled={busy}
-          />
-          <Button startIcon={<AddIcon />} disabled={busy || !newText.trim()} onClick={add}>
-            Добавить
-          </Button>
-        </Stack>
+        {!readOnly && (
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            flexWrap="wrap"
+            useFlexGap
+            sx={{ mt: 2 }}
+          >
+            <MuiTextField
+              size="small"
+              label="Новый пункт"
+              value={newText}
+              onChange={(e) => setNewText(e.target.value)}
+              sx={{ minWidth: 280 }}
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={newRequired}
+                  onChange={(e) => setNewRequired(e.target.checked)}
+                />
+              }
+              label="Обяз."
+            />
+            <PhotoFields
+              requirement={newPhotoReq}
+              source={newPhotoSource}
+              onRequirement={setNewPhotoReq}
+              onSource={setNewPhotoSource}
+              disabled={busy}
+            />
+            <Button startIcon={<AddIcon />} disabled={busy || !newText.trim()} onClick={add}>
+              Добавить
+            </Button>
+          </Stack>
+        )}
       </CardContent>
     </Card>
   );
@@ -573,10 +582,12 @@ const RolesAssignment = ({
   templateId,
   roleIds,
   onChanged,
+  readOnly,
 }: {
   templateId: string;
   roleIds: string[];
   onChanged: () => void;
+  readOnly: boolean;
 }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
@@ -619,16 +630,22 @@ const RolesAssignment = ({
               <FormControlLabel
                 key={r.id}
                 control={
-                  <Checkbox checked={selected.includes(r.id)} onChange={() => toggle(r.id)} />
+                  <Checkbox
+                    checked={selected.includes(r.id)}
+                    onChange={() => toggle(r.id)}
+                    disabled={readOnly}
+                  />
                 }
                 label={r.name}
               />
             ))}
-            <Box sx={{ mt: 1 }}>
-              <Button variant="contained" disabled={busy} onClick={save}>
-                Сохранить роли
-              </Button>
-            </Box>
+            {!readOnly && (
+              <Box sx={{ mt: 1 }}>
+                <Button variant="contained" disabled={busy} onClick={save}>
+                  Сохранить роли
+                </Button>
+              </Box>
+            )}
           </Stack>
         )}
       </CardContent>
@@ -642,10 +659,12 @@ const LocationsAssignment = ({
   templateId,
   locationIds,
   onChanged,
+  readOnly,
 }: {
   templateId: string;
   locationIds: string[];
   onChanged: () => void;
+  readOnly: boolean;
 }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
@@ -699,16 +718,22 @@ const LocationsAssignment = ({
               <FormControlLabel
                 key={l.id}
                 control={
-                  <Checkbox checked={selected.includes(l.id)} onChange={() => toggle(l.id)} />
+                  <Checkbox
+                    checked={selected.includes(l.id)}
+                    onChange={() => toggle(l.id)}
+                    disabled={readOnly}
+                  />
                 }
                 label={l.name}
               />
             ))}
-            <Box sx={{ mt: 1 }}>
-              <Button variant="contained" disabled={busy} onClick={save}>
-                Сохранить точки
-              </Button>
-            </Box>
+            {!readOnly && (
+              <Box sx={{ mt: 1 }}>
+                <Button variant="contained" disabled={busy} onClick={save}>
+                  Сохранить точки
+                </Button>
+              </Box>
+            )}
           </Stack>
         )}
       </CardContent>
@@ -721,11 +746,13 @@ const PersonalOverrides = ({
   personalAdd,
   personalRemove,
   onChanged,
+  readOnly,
 }: {
   templateId: string;
   personalAdd: any[];
   personalRemove: any[];
   onChanged: () => void;
+  readOnly: boolean;
 }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
@@ -769,7 +796,7 @@ const PersonalOverrides = ({
                   <Select
                     size="small"
                     fullWidth
-                    disabled={busy}
+                    disabled={busy || readOnly}
                     value={current(m.user_id)}
                     onChange={(e) => change(m.user_id, e.target.value)}
                   >
@@ -790,6 +817,10 @@ const PersonalOverrides = ({
 export const ChecklistTemplateEdit = () => {
   const { id } = useParams();
   const dataProvider = useDataProvider();
+  // TemplateMetaForm уже гейтит свой Save (см. её собственный useIsReadOnly выше) — здесь тот
+  // же флаг для пунктов/назначений ролей/точек/личных переопределений ниже: их мутирующие
+  // контролы раньше не гейтились вовсе, хотя карточка «Шаблон» над ними уже была защищена.
+  const isReadOnly = useIsReadOnly();
   const { data: template, isLoading, refetch } = useGetOne('checklist-templates', { id: id ?? '' });
   const [assignments, setAssignments] = useState<any>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -826,22 +857,30 @@ export const ChecklistTemplateEdit = () => {
     <Box sx={{ p: 2, maxWidth: 800 }}>
       <Title title={`Чек-лист — ${template.name}`} />
       <TemplateMetaForm template={template} onSaved={onChanged} />
-      <ItemsEditor templateId={template.id} items={template.items ?? []} onChanged={onChanged} />
+      <ItemsEditor
+        templateId={template.id}
+        items={template.items ?? []}
+        onChanged={onChanged}
+        readOnly={isReadOnly}
+      />
       <RolesAssignment
         templateId={template.id}
         roleIds={assignments?.role_ids ?? []}
         onChanged={onChanged}
+        readOnly={isReadOnly}
       />
       <LocationsAssignment
         templateId={template.id}
         locationIds={assignments?.location_ids ?? []}
         onChanged={onChanged}
+        readOnly={isReadOnly}
       />
       <PersonalOverrides
         templateId={template.id}
         personalAdd={assignments?.personal_add ?? []}
         personalRemove={assignments?.personal_remove ?? []}
         onChanged={onChanged}
+        readOnly={isReadOnly}
       />
     </Box>
   );
