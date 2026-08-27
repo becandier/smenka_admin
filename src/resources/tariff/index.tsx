@@ -141,11 +141,18 @@ const PlanComparisonTable = ({ plans }: { plans: PlanRow[] }) => {
   );
 };
 
+// Полноценный email требует непустую локальную часть до «@» и домен с точкой после —
+// отличает реальный адрес от телеграм-хэндла вида «@smenka_support» (there's nothing
+// before the «@», просто includes('@') ловил и его как email — code-review finding).
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // Блок «Как оплатить» (admin.md): контакт из VITE_SUPPORT_CONTACT, без хардкода. Пусто —
-// блок не рендерится совсем (заглушки вида «скоро» не ставим).
+// блок не рендерится совсем (заглушки вида «скоро» не ставим). Владелец может подставить
+// email, ссылку (https://…) или произвольный текст (телеграм-хэндл, телефон) — рендерим
+// каждый по-своему, показывая как есть, только если распознали формат.
 const HowToPayCard = () => {
   if (SUPPORT_CONTACT === '') return null;
-  const isEmail = SUPPORT_CONTACT.includes('@') && !SUPPORT_CONTACT.startsWith('http');
+  const isEmail = EMAIL_PATTERN.test(SUPPORT_CONTACT);
   const isUrl = /^https?:\/\//.test(SUPPORT_CONTACT);
   return (
     <Card>

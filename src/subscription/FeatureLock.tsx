@@ -55,13 +55,23 @@ export const FeatureLockDialog = ({
 // у настоящего disabled-элемента браузер не диспатчит клик вовсе, поэтому обработчик вешаем
 // на span-обёртку — тот же приём, что рекомендует MUI для disabled + Tooltip). locked=false —
 // пропускает children как есть, без единого лишнего DOM-узла.
+//
+// raIcon — переданный children задаёт свою иконку через проп `icon` (react-admin'овские
+// CreateButton/SaveButton/EditButton/DeleteButton рендерят `icon` как children ДО текста
+// лейбла, а не как MUI-шный `startIcon`; см. их исходники в ra-ui-materialui — SaveButton.js:
+// `icon, ...rest` → `<StyledButton {...rest}>{icon}{label}</StyledButton>`). Подмена не тем
+// пропом не даёт ошибки типов (ButtonProps допускает оба), но рисует ДВЕ иконки: дефолтную
+// (через нетронутый `icon`) и нашу (через `startIcon`, спредящийся в `...rest`). Для обычных
+// MUI-кнопок и своих компонентов (RestoreButton) — по умолчанию startIcon, как раньше.
 export const FeatureLockButton = ({
   locked,
   featureLabel,
+  raIcon = false,
   children,
 }: {
   locked: boolean;
   featureLabel: string;
+  raIcon?: boolean;
   children: ReactElement;
 }) => {
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -80,7 +90,7 @@ export const FeatureLockButton = ({
         {/* span-обёртка — стандартный приём MUI Tooltip/клика поверх disabled-кнопки:
             у disabled-элемента события мыши не всплывают, слушатель вешаем на обёртку. */}
         <span onClick={handleWrapperClick} style={{ display: 'inline-flex' }}>
-          {cloneLocked(children)}
+          {cloneLocked(children, raIcon)}
         </span>
       </Tooltip>
       <FeatureLockDialog
@@ -137,12 +147,15 @@ export const PremiumRequiredScreen = ({ featureLabel }: { featureLabel: string }
   </Box>
 );
 
-// Дизейблит кнопку и подставляет иконку замка вместо исходного startIcon, не трогая
-// остальные пропы (label и т.п. остаются как есть — видно, ЧТО именно заблокировано).
+// Дизейблит кнопку и подставляет иконку замка вместо исходной (startIcon — обычные MUI/
+// собственные кнопки; icon — react-admin'овские, см. комментарий у FeatureLockButton), не
+// трогая остальные пропы (label и т.п. остаются как есть — видно, ЧТО именно заблокировано).
 // React.cloneElement — штатный способ подмешать пропы в переданный элемент, сохраняя
 // его настоящий тип/key/ref (ручной спред самого объекта элемента этого не гарантирует).
-const cloneLocked = (element: ReactElement): ReactElement =>
-  cloneElement(element as ReactElement<{ disabled?: boolean; startIcon?: ReactElement }>, {
-    disabled: true,
-    startIcon: <LockIcon fontSize="small" />,
-  });
+const cloneLocked = (element: ReactElement, raIcon: boolean): ReactElement =>
+  cloneElement(
+    element as ReactElement<{ disabled?: boolean; startIcon?: ReactElement; icon?: ReactElement }>,
+    raIcon
+      ? { disabled: true, icon: <LockIcon fontSize="small" /> }
+      : { disabled: true, startIcon: <LockIcon fontSize="small" /> },
+  );

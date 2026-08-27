@@ -118,7 +118,7 @@ const PenaltyTemplateListActions = () => {
   if (isReadOnly) return null;
   return (
     <TopToolbar>
-      <FeatureLockButton locked={!hasFines} featureLabel="Штрафы">
+      <FeatureLockButton locked={!hasFines} featureLabel="Штрафы" raIcon>
         <CreateButton label="Добавить шаблон" />
       </FeatureLockButton>
     </TopToolbar>

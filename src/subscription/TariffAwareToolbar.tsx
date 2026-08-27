@@ -28,7 +28,7 @@ export const TariffAwareToolbar = ({
   if (feature && !hasFeature) {
     return (
       <Toolbar>
-        <FeatureLockButton locked featureLabel={featureLabel ?? 'Эта функция'}>
+        <FeatureLockButton locked featureLabel={featureLabel ?? 'Эта функция'} raIcon>
           <SaveButton />
         </FeatureLockButton>
       </Toolbar>

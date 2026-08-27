@@ -429,11 +429,23 @@ export const dataProvider: DataProvider = {
     }
     if (resource === 'subscriptions') {
       // Реестр подписок супер-админа (tariffs/backend.md п.4): id ресурса = organization_id
-      // (бэк его не отдаёт как `id`). status — мультивыбор (repeated query param), sort —
-      // только current_period_end|organization_name (иначе бэк использует дефолт — ближайшее
-      // окончание сверху, тот же порядок, что мы и просим явно ниже).
+      // (бэк его не отдаёт как `id`). status — мультивыбор (repeated query param).
+      //
+      // sort — только current_period_end|organization_name пробрасываются как есть; ВАЖНО:
+      // явный `sort=current_period_end` на бэке (services/subscription.py, _registry_sort_key)
+      // сортирует по «сырому» current_period_end и уносит trialing-организации (у них это
+      // поле NULL — периода ещё не было) в конец списка независимо от того, насколько скоро
+      // заканчивается их триал. Дефолт бэка без параметра `sort` умнее: использует
+      // period_reference() — trial_ends_at для trialing, current_period_end для
+      // active/past_due — и даёт настоящее «ближайшее окончание сверху» (admin.md,
+      // «Дефолтная сортировка»). Поэтому начальная сортировка `<List>` (subscriptions/
+      // index.tsx) — синтетическое поле 'nearest_expiry', не совпадающее ни с одним из двух
+      // разрешённых бэком значений: sort/order в query не попадают, работает умный дефолт.
+      // Явный клик по колонке «Окончание периода» — это уже сознательный выбор пользователя
+      // сортировать по буквальному значению колонки (где у trialing действительно пусто),
+      // там current_period_end передаётся по имени как есть — так и должно быть.
       const filter = (params.filter ?? {}) as Record<string, unknown>;
-      const { field, order } = params.sort ?? { field: 'current_period_end', order: 'ASC' };
+      const { field, order } = params.sort ?? { field: 'nearest_expiry', order: 'ASC' };
       const query = new URLSearchParams();
       const statuses = Array.isArray(filter.status)
         ? (filter.status as unknown[])

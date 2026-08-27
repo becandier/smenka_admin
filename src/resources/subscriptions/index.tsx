@@ -58,13 +58,18 @@ const subscriptionFilters = [
 ];
 
 // «Сотрудники»/«Точки»: usage приходит в реестре, лимит — нет (backend.md п.4 отдаёт
-// только usage, без limits) — довычисляем join'ом по plan_code с витриной GET /plans,
-// «—» — если тариф безлимитный или ещё не загрузился.
+// только usage, без limits) — довычисляем join'ом по plan_code с витриной GET /plans.
+// Пока витрина не загрузилась, лимит НЕИЗВЕСТЕН, а не «безлимитный» — раньше оба случая
+// схлопывались в одинаковое «—», и Стандарт на секунду выглядел безлимитным
+// (code-review finding); явно различаем «грузится» (loading) и «действительно без лимита»
+// (найденный план с limit===null).
 const usageCell = (
   usage: number,
   planCode: string,
   limitOf: (code: string) => number | null | undefined,
+  plansLoading: boolean,
 ): string => {
+  if (plansLoading) return `${usage} / …`;
   const limit = limitOf(planCode);
   return limit === null || limit === undefined ? `${usage} / —` : `${usage} / ${limit}`;
 };
@@ -130,7 +135,7 @@ const SubscriptionListEmpty = () => (
 // сам такого prop не имеет (тот же приём, что AdjustmentDatagrid в adjustments.tsx).
 const SubscriptionDatagrid = () => {
   const { data, isPending } = useListContext();
-  const { plans } = usePlans();
+  const { plans, loading: plansLoading } = usePlans();
   const limitOf = (code: string): number | null | undefined =>
     plans.find((p) => p.code === code)?.limits.max_employees;
   const locationLimitOf = (code: string): number | null | undefined =>
@@ -153,7 +158,12 @@ const SubscriptionDatagrid = () => {
         label="Сотрудники"
         sortable={false}
         render={(r: RaRecord) =>
-          usageCell((r.usage as { employees: number }).employees, r.plan_code as string, limitOf)
+          usageCell(
+            (r.usage as { employees: number }).employees,
+            r.plan_code as string,
+            limitOf,
+            plansLoading,
+          )
         }
       />
       <FunctionField
@@ -164,6 +174,7 @@ const SubscriptionDatagrid = () => {
             (r.usage as { locations: number }).locations,
             r.plan_code as string,
             locationLimitOf,
+            plansLoading,
           )
         }
       />
@@ -178,12 +189,15 @@ const SubscriptionDatagrid = () => {
 };
 
 // Реестр подписок (admin.md, «Раздел «Подписки»»): list-only (подписка появляется вместе
-// с организацией, отдельного create нет), сортировка по умолчанию — ближайшее окончание
-// сверху (совпадает с дефолтом бэка при отсутствии `sort` в query, backend.md п.4).
+// с организацией, отдельного create нет). Дефолтный sort.field — синтетическое
+// 'nearest_expiry' (см. комментарий в dataProvider.ts, ветка resource==='subscriptions'):
+// не совпадает ни с одним столбцом, поэтому dataProvider не шлёт `sort` в query вовсе, и
+// работает умный дефолт бэка — ближайшее окончание сверху с учётом trialing (trial_ends_at),
+// а не только current_period_end (тот у trialing-организаций ещё не заполнен).
 export const SubscriptionList = () => (
   <List
     filters={subscriptionFilters}
-    sort={{ field: 'current_period_end', order: 'ASC' }}
+    sort={{ field: 'nearest_expiry', order: 'ASC' }}
     perPage={20}
     exporter={false}
     empty={false}
