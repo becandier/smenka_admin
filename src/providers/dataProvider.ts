@@ -10,6 +10,13 @@ import {
 import { parseRublesToMinor, textOrEmpty } from '../utils/format';
 import { normalizeDisplayName } from '../utils/memberName';
 import type { AccessState, FileUploadResult, ReorderInput } from '../resources/knowledge/types';
+import type {
+  AdminSubscriptionRow,
+  OrgSubscription,
+  PlanRow,
+  SubscriptionEvent,
+  SubscriptionsSummary,
+} from '../subscription/SubscriptionContext';
 
 // Категории ресурсов:
 //  - PLATFORM_SERVER — серверная пагинация через /admin/* ({items,total,limit,offset}).
@@ -419,6 +426,60 @@ export const dataProvider: DataProvider = {
       const path = resource === 'users' ? '/admin/users' : '/admin/organizations';
       const data = await request(`${path}?${buildQuery(params, { defaultSort: 'created_at' })}`);
       return { data: data?.items ?? [], total: data?.total ?? 0 };
+    }
+    if (resource === 'subscriptions') {
+      // Реестр подписок супер-админа (tariffs/backend.md п.4): id ресурса = organization_id
+      // (бэк его не отдаёт как `id`). status — мультивыбор (repeated query param), sort —
+      // только current_period_end|organization_name (иначе бэк использует дефолт — ближайшее
+      // окончание сверху, тот же порядок, что мы и просим явно ниже).
+      const filter = (params.filter ?? {}) as Record<string, unknown>;
+      const { field, order } = params.sort ?? { field: 'current_period_end', order: 'ASC' };
+      const query = new URLSearchParams();
+      const statuses = Array.isArray(filter.status)
+        ? (filter.status as unknown[])
+        : typeof filter.status === 'string' && filter.status !== ''
+          ? [filter.status]
+          : [];
+      for (const s of statuses) if (typeof s === 'string' && s !== '') query.append('status', s);
+      if (typeof filter.plan_code === 'string' && filter.plan_code !== '')
+        query.set('plan_code', filter.plan_code);
+      if (typeof filter.q === 'string' && filter.q !== '') query.set('q', filter.q);
+      if (field === 'current_period_end' || field === 'organization_name') {
+        query.set('sort', field);
+        query.set('order', order);
+      }
+      const mapRow = (r: Record<string, unknown>): AdminSubscriptionRow =>
+        ({ ...r, id: r.organization_id }) as AdminSubscriptionRow;
+
+      if (filter.expiring_soon === true) {
+        // Быстрый фильтр «Истекает в ближайшие 7 дней» (admin.md, «Список»): бэк не знает
+        // такого параметра (backend.md, «GET /admin/subscriptions» — только status/plan_code/
+        // q/limit/offset/sort; есть лишь счётчик expiring_in_7_days в /summary). Забираем
+        // одну максимальную страницу (лимит бэка — 100), отсортированную по ближайшему
+        // окончанию, и фильтруем на клиенте — тот же приём, что клиентский фильтр `type` у
+        // adjustments (см. AdjustmentDatagrid). Известное ограничение: организации за
+        // пределами первых 100 по этой сортировке в подборку не попадут.
+        query.set('limit', '100');
+        query.set('offset', '0');
+        const data = await request(`/admin/subscriptions?${query.toString()}`);
+        const items = ((data?.items ?? []) as Record<string, unknown>[])
+          .filter(
+            (r) =>
+              (r.status === 'trialing' || r.status === 'active') &&
+              typeof r.days_left === 'number' &&
+              r.days_left >= 0 &&
+              r.days_left <= 7,
+          )
+          .map(mapRow);
+        return clientPaginate(items, { ...params, filter: {} });
+      }
+
+      const { page, perPage } = params.pagination ?? { page: 1, perPage: 20 };
+      query.set('limit', String(perPage));
+      query.set('offset', String((page - 1) * perPage));
+      const data = await request(`/admin/subscriptions?${query.toString()}`);
+      const items = ((data?.items ?? []) as Record<string, unknown>[]).map(mapRow);
+      return { data: items, total: data?.total ?? 0 };
     }
     if (resource === 'org-shifts') {
       // only_late/only_manual/include_deleted — булевы тумблеры: снятое состояние (false) не
@@ -1153,6 +1214,53 @@ export const dataProvider: DataProvider = {
 
   // --- Кастомные методы (вызываются через useDataProvider) ---
   getPlatformStats: () => request('/admin/stats'),
+
+  // --- Тарифы и подписки (tariffs) ---
+  // Витрина тарифов (GET /plans, backend.md п.1) — доступно любому авторизованному.
+  getPlans: async (): Promise<PlanRow[]> => {
+    const data = await request('/plans');
+    return data?.items ?? [];
+  },
+  // Состояние подписки текущей организации (экран «Тариф», backend.md п.2):
+  // owner/admin/super_admin, не employee.
+  getOrgSubscription: (orgId: string): Promise<OrgSubscription> =>
+    request(`/organizations/${orgId}/subscription`),
+  // Сводка и MRR реестра супер-админа (backend.md п.8).
+  getSubscriptionsSummary: (): Promise<SubscriptionsSummary> =>
+    request('/admin/subscriptions/summary'),
+  // «Продлить» — основная кнопка супер-админа (backend.md п.6): период сдвигается от
+  // большей из двух дат, amount_minor по умолчанию — цена плана × months (считает бэк).
+  extendSubscription: (
+    orgId: string,
+    body: {
+      months: number;
+      plan_code: string | null;
+      amount_minor: number | null;
+      note: string | null;
+    },
+  ): Promise<OrgSubscription> =>
+    request(`/admin/organizations/${orgId}/subscription/extend`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  // «Изменить» — ручная правка для нестандартных ситуаций (backend.md п.5): только
+  // переданные поля применяются.
+  patchSubscription: (orgId: string, body: Record<string, unknown>): Promise<OrgSubscription> =>
+    request(`/admin/organizations/${orgId}/subscription`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  // «История» — журнал подписки, только чтение, новые сверху (backend.md п.7).
+  getSubscriptionEvents: (
+    orgId: string,
+    query: { limit?: number; offset?: number },
+  ): Promise<{ items: SubscriptionEvent[]; total: number; limit: number; offset: number }> => {
+    const search = new URLSearchParams();
+    if (query.limit) search.set('limit', String(query.limit));
+    if (query.offset) search.set('offset', String(query.offset));
+    const qs = search.toString();
+    return request(`/admin/organizations/${orgId}/subscription/events${qs ? `?${qs}` : ''}`);
+  },
   // Сброс пароля учётки, заведённой этой организацией (admin_created_accounts/backend.md,
   // «POST .../members/{user_id}/reset-password»): password undefined/null → сервер
   // сгенерирует; иначе — те же правила валидации, что при создании. Ответ содержит новый
