@@ -26,6 +26,8 @@ import {
   Typography,
 } from '@mui/material';
 import { useCurrentOrg } from '../orgContext';
+import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
 import { scheduleErrorMessage } from '../utils/format';
 import { DEFAULT_ORG_TIMEZONE, TIMEZONE_CHOICES } from '../utils/timezones';
@@ -100,6 +102,7 @@ const OrgNameCard = ({ org }: { org: CurrentOrg }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const refresh = useRefresh();
+  const isReadOnly = useIsReadOnly();
 
   const [name, setName] = useState(org.name);
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -167,13 +170,16 @@ const OrgNameCard = ({ org }: { org: CurrentOrg }) => {
             size="small"
             disabled={saving}
           />
-          <Button
-            variant="contained"
-            onClick={() => void handleSave()}
-            disabled={saving || unchanged}
-          >
-            {saving ? 'Сохранение…' : 'Сохранить'}
-          </Button>
+          {/* Read-only (backend.md «Read-only режим»): переименование — не из исключений. */}
+          {!isReadOnly && (
+            <Button
+              variant="contained"
+              onClick={() => void handleSave()}
+              disabled={saving || unchanged}
+            >
+              {saving ? 'Сохранение…' : 'Сохранить'}
+            </Button>
+          )}
         </Stack>
       </CardContent>
     </Card>
@@ -187,6 +193,7 @@ const OrgNameCard = ({ org }: { org: CurrentOrg }) => {
 const OrgTimezoneCard = ({ org }: { org: CurrentOrg }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
+  const isReadOnly = useIsReadOnly();
   const { data: orgDetail, isLoading } = useGetOne('organizations', { id: org.id });
   const [timezone, setTimezone] = useState<string>(DEFAULT_ORG_TIMEZONE);
   // Значение с сервера, зафиксированное один раз при загрузке — точка сравнения для «изменено ли».
@@ -242,13 +249,16 @@ const OrgTimezoneCard = ({ org }: { org: CurrentOrg }) => {
               </MenuItem>
             ))}
           </Select>
-          <Button
-            variant="contained"
-            onClick={() => void handleSave()}
-            disabled={saving || unchanged}
-          >
-            {saving ? 'Сохранение…' : 'Сохранить'}
-          </Button>
+          {/* Read-only (backend.md «Read-only режим»): смена таймзоны — не из исключений. */}
+          {!isReadOnly && (
+            <Button
+              variant="contained"
+              onClick={() => void handleSave()}
+              disabled={saving || unchanged}
+            >
+              {saving ? 'Сохранение…' : 'Сохранить'}
+            </Button>
+          )}
         </Stack>
       </CardContent>
     </Card>
@@ -316,7 +326,7 @@ export const SettingsPage = () => {
         redirect={false}
         title={`Настройки — ${org.name}`}
       >
-        <SimpleForm>
+        <SimpleForm toolbar={<TariffAwareToolbar />}>
           <SettingsSection
             title="Геопроверка и точки"
             description="Проверка местоположения сотрудника при старте смены."
