@@ -323,10 +323,25 @@ export const WorkLocationEdit = () => (
   </Edit>
 );
 
-export const WorkLocationCreate = () => (
-  <Create redirect="list">
-    <SimpleForm>
-      <LocationFields />
-    </SimpleForm>
-  </Create>
-);
+// isReadOnly гейтит саму форму, не только CreateButton в WorkLocationListActions —
+// маршрут /work-locations/create остаётся доступен по прямой ссылке независимо от того,
+// откуда открыт (кнопка в списке скрыта, но URL никто не защищает).
+export const WorkLocationCreate = () => {
+  const isReadOnly = useIsReadOnly();
+  if (isReadOnly) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Typography color="text.secondary">
+          Организация в режиме только для чтения — создание точки недоступно.
+        </Typography>
+      </Box>
+    );
+  }
+  return (
+    <Create redirect="list">
+      <SimpleForm>
+        <LocationFields />
+      </SimpleForm>
+    </Create>
+  );
+};
