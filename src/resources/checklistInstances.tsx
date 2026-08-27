@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
   List,
@@ -18,12 +18,13 @@ import {
 import { Box, Button, Card, CardContent, Chip, Stack, Tooltip, Typography } from '@mui/material';
 import PhotoCameraOutlinedIcon from '@mui/icons-material/PhotoCameraOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import { checklistReportStatusLabel, formatDateTime } from '../utils/format';
+import { checklistReportStatusLabel, formatDateTime, workLocationLabel } from '../utils/format';
 import { formatMemberNameFlat } from '../utils/memberName';
 import { isDayRangeInvalid } from '../utils/dates';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { MemberNameCell } from '../components/MemberNameCell';
 import { DateRangeAlert } from '../components/DateRangeAlert';
+import { InfoRow } from '../components/InfoRow';
 import { ChecklistItemPhotos } from '../components/ChecklistItemPhotos';
 import { useCurrentOrg } from '../orgContext';
 
@@ -146,14 +147,6 @@ const nameField = (r: RaRecord) => (
 
 const workLocationName = (r: RaRecord) => r.work_location?.name ?? '—';
 
-const workLocationLabel = (
-  wl: { name?: string | null; address?: string | null } | null,
-): string => {
-  if (!wl) return '—';
-  const name = wl.name ?? '—';
-  return wl.address ? `${name} · ${wl.address}` : name;
-};
-
 const requiredChip = (r: RaRecord) =>
   r.is_required ? <Chip size="small" label="Обязательный" /> : '—';
 
@@ -247,16 +240,6 @@ export const ChecklistInstanceList = () => (
     <DateRangeAlert />
     <ChecklistInstanceDatagrid />
   </List>
-);
-
-// Строка «подпись: значение» в шапке детали (тот же приём, что InfoRow в orgShifts.tsx).
-const InfoRow = ({ label, children }: { label: string; children: ReactNode }) => (
-  <Box sx={{ display: 'flex', gap: 1, alignItems: 'baseline' }}>
-    <Typography sx={{ minWidth: 160 }} color="text.secondary">
-      {label}
-    </Typography>
-    <Typography>{children}</Typography>
-  </Box>
 );
 
 const ChecklistInstanceHeader = () => {

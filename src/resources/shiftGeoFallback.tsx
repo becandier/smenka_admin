@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDataProvider, useRecordContext, type RaRecord } from 'react-admin';
 import {
   Box,
@@ -61,47 +61,51 @@ type PhotoState =
 // после повторной неудачи показываем заглушку с ручным повтором.
 const GeoFallbackPhoto = ({ fileId }: { fileId: string }) => {
   const dataProvider = useDataProvider();
-  const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<PhotoState>({ status: 'loading' });
   const [lightbox, setLightbox] = useState(false);
   const autoRefreshed = useRef(false);
+  // Номер запроса: ответ более раннего запроса не должен перетереть результат более позднего.
+  const requestId = useRef(0);
 
-  useEffect(() => {
-    let active = true;
+  // Запрос свежего presigned URL — из монтирования и из обработчиков ошибки/повтора
+  // (тот же приём, что refresh у PhotoThumb в ChecklistItemPhotos).
+  const load = useCallback(() => {
+    const id = ++requestId.current;
     setState({ status: 'loading' });
-    // Сбрасываем лайтбокс: после перезапроса URL диалог не должен распахнуться сам собой
-    // (картинка внутри него уже размонтирована вместе с веткой ready).
+    // Единственное место, где гасится лайтбокс: пока картинки нет, диалог всё равно
+    // размонтирован — и после успеха не должен распахнуться сам собой.
     setLightbox(false);
     dataProvider
       .getFile(fileId)
       .then((file: { url?: string | null } | null) => {
-        if (!active) return;
+        if (id !== requestId.current) return;
         if (file?.url) setState({ status: 'ready', url: file.url });
         else setState({ status: 'error', message: 'Не удалось загрузить фото' });
       })
       .catch((error: unknown) => {
-        if (active) setState({ status: 'error', message: fileErrorMessage(error) });
+        if (id === requestId.current)
+          setState({ status: 'error', message: fileErrorMessage(error) });
       });
-    return () => {
-      active = false;
-    };
-  }, [dataProvider, fileId, attempt]);
+  }, [dataProvider, fileId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   // Ошибка <img>: первая — молча перезапрашиваем свежий URL, вторая — заглушка.
   const handleImageError = (): void => {
     if (autoRefreshed.current) {
       setState({ status: 'error', message: 'Не удалось загрузить фото' });
-      setLightbox(false);
       return;
     }
     autoRefreshed.current = true;
-    setAttempt((n) => n + 1);
+    load();
   };
 
   // Ручной повтор снова разрешает один автоматический перезапрос.
   const retry = (): void => {
     autoRefreshed.current = false;
-    setAttempt((n) => n + 1);
+    load();
   };
 
   if (state.status === 'loading') {

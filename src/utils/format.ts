@@ -455,19 +455,8 @@ export const adjustmentTypeOf = (amountMinor: number): 'credit' | 'debit' =>
 
 // Машинные коды гео-ошибок клиента (контракт мобилки ↔ бэка, shift_geo_photo_fallback/
 // backend.md): бэк хранит и отдаёт их как есть в ShiftResponse.geo_fallback_reason.
-// Набор фиксирован — держим единым списком, чтобы строки кодов не расползались по экранам.
-export const GEO_FALLBACK_REASONS = [
-  'GEO_PERMISSION_DENIED',
-  'GEO_PERMISSION_DENIED_FOREVER',
-  'GEO_SERVICE_DISABLED',
-  'GEO_UNAVAILABLE',
-  'GEO_UNSUPPORTED',
-  'GEO_INSECURE_CONTEXT',
-] as const;
-
-export type GeoFallbackReason = (typeof GEO_FALLBACK_REASONS)[number];
-
-export const GEO_FALLBACK_REASON_LABELS: Record<GeoFallbackReason, string> = {
+// Набор фиксирован — держим единым словарём, чтобы коды не расползались строками по экранам.
+export const GEO_FALLBACK_REASON_LABELS: Record<string, string> = {
   GEO_PERMISSION_DENIED: 'Доступ к геолокации отклонён',
   GEO_PERMISSION_DENIED_FOREVER: 'Доступ к геолокации заблокирован (браузер/ОС)',
   GEO_SERVICE_DISABLED: 'Служба геолокации на устройстве выключена',
@@ -476,15 +465,10 @@ export const GEO_FALLBACK_REASON_LABELS: Record<GeoFallbackReason, string> = {
   GEO_INSECURE_CONTEXT: 'Небезопасное соединение (не HTTPS)',
 };
 
-const isGeoFallbackReason = (value: string): value is GeoFallbackReason =>
-  (GEO_FALLBACK_REASONS as readonly string[]).includes(value);
-
 // Причина гео-сбоя → человекочитаемый текст. Неизвестный код (мобилка добавила новый раньше
 // админки) показываем как есть — так админ хотя бы видит факт и может его сообщить.
-export const geoFallbackReasonLabel = (reason: string | null | undefined): string => {
-  if (!reason) return '—';
-  return isGeoFallbackReason(reason) ? GEO_FALLBACK_REASON_LABELS[reason] : reason;
-};
+export const geoFallbackReasonLabel = (reason: string | null | undefined): string =>
+  (reason && GEO_FALLBACK_REASON_LABELS[reason]) || reason || '—';
 
 // Точка смены: денормализованный work_location { name, address } | null (backend.md).
 export const workLocationLabel = (
