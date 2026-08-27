@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDataProvider, useRecordContext, type RaRecord } from 'react-admin';
 import {
   Box,
@@ -20,6 +20,7 @@ import BrokenImageOutlinedIcon from '@mui/icons-material/BrokenImageOutlined';
 import ReplayIcon from '@mui/icons-material/Replay';
 import { geoFallbackReasonLabel, workLocationLabel } from '../utils/format';
 import { fileErrorMessage } from '../utils/files';
+import { InfoRow } from '../components/InfoRow';
 
 // Старт смены по фото при недоступной геолокации (shift_geo_photo_fallback/admin.md).
 // ShiftResponse отдаёт три поля: geo_fallback (derived, всегда есть), geo_fallback_reason
@@ -31,18 +32,6 @@ const THUMB_SIZE = 180;
 // geo_fallback приходит всегда (derived на бэке); undefined — только у ответа старого билда.
 const isGeoFallback = (record: RaRecord | undefined): record is RaRecord =>
   record?.geo_fallback === true;
-
-// Строка «подпись: значение» — копия приватной InfoRow из orgShifts.tsx: импортировать её
-// оттуда нельзя (orgShifts импортирует этот модуль — вышел бы цикл), а вид карточек детали
-// смены должен совпадать.
-const InfoRow = ({ label, children }: { label: string; children: ReactNode }) => (
-  <Box sx={{ display: 'flex', gap: 1, alignItems: 'baseline' }}>
-    <Typography sx={{ minWidth: 160 }} color="text.secondary">
-      {label}
-    </Typography>
-    <Typography>{children}</Typography>
-  </Box>
-);
 
 // Компактный бейдж списка смен: только у смен со стартом без гео, обычные смены — пусто
 // (без визуального шума). Причина — в tooltip, чтобы не раздувать и без того широкую таблицу.
@@ -67,17 +56,22 @@ type PhotoState =
   | { status: 'error'; message: string };
 
 // Фото старта смены. Presigned URL живёт ограниченное время, поэтому не храним его в записи
-// смены, а запрашиваем GET /files/{file_id} при открытии карточки; протухшую ссылку
-// (ошибка <img>) чиним тем же повтором, что и сетевую ошибку.
+// смены, а запрашиваем GET /files/{file_id} при открытии карточки. Протухшую ссылку
+// (ошибка <img> — типично 403 от S3) один раз чиним автоматически, как в ChecklistItemPhotos;
+// после повторной неудачи показываем заглушку с ручным повтором.
 const GeoFallbackPhoto = ({ fileId }: { fileId: string }) => {
   const dataProvider = useDataProvider();
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<PhotoState>({ status: 'loading' });
   const [lightbox, setLightbox] = useState(false);
+  const autoRefreshed = useRef(false);
 
   useEffect(() => {
     let active = true;
     setState({ status: 'loading' });
+    // Сбрасываем лайтбокс: после перезапроса URL диалог не должен распахнуться сам собой
+    // (картинка внутри него уже размонтирована вместе с веткой ready).
+    setLightbox(false);
     dataProvider
       .getFile(fileId)
       .then((file: { url?: string | null } | null) => {
@@ -92,6 +86,23 @@ const GeoFallbackPhoto = ({ fileId }: { fileId: string }) => {
       active = false;
     };
   }, [dataProvider, fileId, attempt]);
+
+  // Ошибка <img>: первая — молча перезапрашиваем свежий URL, вторая — заглушка.
+  const handleImageError = (): void => {
+    if (autoRefreshed.current) {
+      setState({ status: 'error', message: 'Не удалось загрузить фото' });
+      setLightbox(false);
+      return;
+    }
+    autoRefreshed.current = true;
+    setAttempt((n) => n + 1);
+  };
+
+  // Ручной повтор снова разрешает один автоматический перезапрос.
+  const retry = (): void => {
+    autoRefreshed.current = false;
+    setAttempt((n) => n + 1);
+  };
 
   if (state.status === 'loading') {
     return (
@@ -129,7 +140,7 @@ const GeoFallbackPhoto = ({ fileId }: { fileId: string }) => {
       >
         <BrokenImageOutlinedIcon fontSize="small" />
         <Typography variant="caption">{state.message}</Typography>
-        <Button size="small" startIcon={<ReplayIcon />} onClick={() => setAttempt((n) => n + 1)}>
+        <Button size="small" startIcon={<ReplayIcon />} onClick={retry}>
           Повторить
         </Button>
       </Stack>
@@ -144,7 +155,7 @@ const GeoFallbackPhoto = ({ fileId }: { fileId: string }) => {
         alt="Фото старта смены"
         loading="lazy"
         onClick={() => setLightbox(true)}
-        onError={() => setState({ status: 'error', message: 'Не удалось загрузить фото' })}
+        onError={handleImageError}
         sx={{
           width: THUMB_SIZE,
           height: THUMB_SIZE,
@@ -166,6 +177,7 @@ const GeoFallbackPhoto = ({ fileId }: { fileId: string }) => {
             component="img"
             src={state.url}
             alt="Фото старта смены"
+            onError={handleImageError}
             sx={{ display: 'block', maxWidth: '90vw', maxHeight: '85vh', objectFit: 'contain' }}
           />
         </DialogContent>

@@ -28,7 +28,8 @@ import { useOrgTimezone } from '../utils/useOrgTimezone';
 
 // Ручные смены (manual_time_entry): диалоги создания/правки/завершения/удаления/восстановления
 // + чипы-пометки строки списка. Композиция карточек Show-страницы («Смена»/«Ручные правки») —
-// в resources/orgShifts.tsx (там же приватный SectionCard/InfoRow, дублировать их сюда незачем).
+// в resources/orgShifts.tsx (там же SectionCard, строка «подпись: значение» — общий
+// components/InfoRow; дублировать их сюда незачем).
 
 // --- Общие утилиты формы ---
 

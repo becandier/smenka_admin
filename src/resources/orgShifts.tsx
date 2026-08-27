@@ -9,6 +9,7 @@ import {
   SelectInput,
   BooleanInput,
   DateInput,
+  NullableBooleanInput,
   Show,
   TopToolbar,
   useListContext,
@@ -69,6 +70,7 @@ import { isDayRangeInvalid, utcIsoToZonedParts } from '../utils/dates';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { MemberNameCell } from '../components/MemberNameCell';
 import { DateRangeAlert } from '../components/DateRangeAlert';
+import { InfoRow } from '../components/InfoRow';
 import { ChecklistItemPhotos } from '../components/ChecklistItemPhotos';
 import { ShiftPenaltySection } from './penalties';
 import {
@@ -140,11 +142,18 @@ const shiftFilters = [
     label="Переработка"
     choices={overtimeFilterChoices}
   />,
-  // shift_geo_photo_fallback: смены, стартовавшие по фото вместо координат. В отличие от
-  // остальных булевых тумблеров контракт понимает и `geo_fallback=false` («только обычные»),
-  // поэтому снятое состояние здесь — осмысленный фильтр, а не «фильтра нет» (фильтра нет,
-  // пока админ не добавил его в панель).
-  <BooleanInput key="geo_fallback" source="geo_fallback" label="Старт без гео" />,
+  // shift_geo_photo_fallback: смены, стартовавшие по фото вместо координат. Tri-state (как
+  // «Обязательный» в реестре чек-листов, не голый BooleanInput): контракт понимает и
+  // geo_fallback=false («только обычные»), поэтому «без фильтра» и «только обычные» обязаны
+  // быть разными состояниями UI, а не одним снятым тумблером.
+  <NullableBooleanInput
+    key="geo_fallback"
+    source="geo_fallback"
+    label="Старт без гео"
+    nullLabel="Все"
+    falseLabel="Только обычные"
+    trueLabel="Только без гео"
+  />,
   // manual_time_entry (A5): только ручные/правленые смены и/или показ удалённых.
   <BooleanInput key="only_manual" source="only_manual" label="Только ручные" />,
   <BooleanInput key="include_deleted" source="include_deleted" label="Показывать удалённые" />,
@@ -335,16 +344,6 @@ export const OrgShiftList = () => (
     <DateRangeAlert />
     <OrgShiftDatagrid />
   </List>
-);
-
-// Строка «подпись: значение» в карточке детали.
-const InfoRow = ({ label, children }: { label: string; children: ReactNode }) => (
-  <Box sx={{ display: 'flex', gap: 1, alignItems: 'baseline' }}>
-    <Typography sx={{ minWidth: 160 }} color="text.secondary">
-      {label}
-    </Typography>
-    <Typography>{children}</Typography>
-  </Box>
 );
 
 // Шапка детали смены: данные сотрудника (nullable → «—») + тайминги.
