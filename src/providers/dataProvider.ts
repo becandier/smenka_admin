@@ -427,6 +427,18 @@ export const dataProvider: DataProvider = {
       const data = await request(`${path}?${buildQuery(params, { defaultSort: 'created_at' })}`);
       return { data: data?.items ?? [], total: data?.total ?? 0 };
     }
+    if (resource === 'plans') {
+      // Витрина тарифов (tariffs/backend.md п.1) как read-only ресурс react-admin: нужна
+      // в нескольких местах одного экрана (фильтр реестра, колонки лимитов, диалоги
+      // «Продлить»/«Изменить»), поэтому ходит через getList — react-query дедуплицирует
+      // одинаковые запросы и кэширует ответ (см. usePlans, staleTime), вместо N независимых
+      // GET /plans из каждого компонента. id строки = plan.code (у плана свой PK-код,
+      // отдельного id бэк не отдаёт). Список короткий и без пагинации на бэке — сортировку
+      // и нарезку отдаём clientPaginate, как другим ORG_CLIENT-ресурсам.
+      const data = await request('/plans');
+      const items: any[] = (data?.items ?? []).map((p: any) => ({ ...p, id: p.code }));
+      return clientPaginate(items, params);
+    }
     if (resource === 'subscriptions') {
       // Реестр подписок супер-админа (tariffs/backend.md п.4): id ресурса = organization_id
       // (бэк его не отдаёт как `id`). status — мультивыбор (repeated query param).
@@ -446,16 +458,22 @@ export const dataProvider: DataProvider = {
       // там current_period_end передаётся по имени как есть — так и должно быть.
       const filter = (params.filter ?? {}) as Record<string, unknown>;
       const { field, order } = params.sort ?? { field: 'nearest_expiry', order: 'ASC' };
-      const query = new URLSearchParams();
+      // limit/offset + одиночные фильтры — общим buildQuery (тот же, что у users/organizations
+      // с таким же конвертом {items,total,limit,offset}); withSort:false, потому что sort/order
+      // здесь условные (см. выше) и дописываются вручную ниже, как и мультизначный status.
+      const query = new URLSearchParams(
+        buildQuery(params, {
+          defaultSort: 'nearest_expiry',
+          filterKeys: ['plan_code', 'q'],
+          withSort: false,
+        }),
+      );
       const statuses = Array.isArray(filter.status)
         ? (filter.status as unknown[])
         : typeof filter.status === 'string' && filter.status !== ''
           ? [filter.status]
           : [];
       for (const s of statuses) if (typeof s === 'string' && s !== '') query.append('status', s);
-      if (typeof filter.plan_code === 'string' && filter.plan_code !== '')
-        query.set('plan_code', filter.plan_code);
-      if (typeof filter.q === 'string' && filter.q !== '') query.set('q', filter.q);
       if (field === 'current_period_end' || field === 'organization_name') {
         query.set('sort', field);
         query.set('order', order);
@@ -486,9 +504,7 @@ export const dataProvider: DataProvider = {
         return clientPaginate(items, { ...params, filter: {} });
       }
 
-      const { page, perPage } = params.pagination ?? { page: 1, perPage: 20 };
-      query.set('limit', String(perPage));
-      query.set('offset', String((page - 1) * perPage));
+      // limit/offset уже проставлены buildQuery выше.
       const data = await request(`/admin/subscriptions?${query.toString()}`);
       const items = ((data?.items ?? []) as Record<string, unknown>[]).map(mapRow);
       return { data: items, total: data?.total ?? 0 };
