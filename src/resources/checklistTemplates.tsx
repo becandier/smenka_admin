@@ -18,6 +18,7 @@ import {
   Title,
   TopToolbar,
   CreateButton,
+  FilterButton,
   required,
   useGetOne,
   useGetList,
@@ -169,13 +170,15 @@ const ChecklistTemplateRowActions = ({ record }: { record: RaRecord }) => {
 };
 
 // Read-only (backend.md «Read-only режим») прячет создание шаблона — не входит
-// в список исключений.
+// в список исключений. FilterButton остаётся всегда: до фичи «Тарифы» тулбар был
+// дефолтным (FilterButton+CreateButton), и фильтр «Тип» (не alwaysOn — см. typeFilters)
+// был доступен всем; просмотр/фильтрация не мутация и read-only её не гейтит.
 const ChecklistTemplateListActions = () => {
   const isReadOnly = useIsReadOnly();
-  if (isReadOnly) return null;
   return (
     <TopToolbar>
-      <CreateButton />
+      <FilterButton />
+      {!isReadOnly && <CreateButton />}
     </TopToolbar>
   );
 };
