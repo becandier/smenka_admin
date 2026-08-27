@@ -138,11 +138,18 @@ export const useSubscription = (): SubscriptionContextValue => useContext(Subscr
 // suspended/canceled. Любые операции super_admin — исключение (он и есть тот, кто
 // возвращает доступ, backend.md «Исключения», п.4) — платформенная роль обходит
 // read-only на бэке, поэтому UI не должен прятать от неё то, что реально работает.
+//
+// Пока подписка ещё грузится (loading), fail-closed, а не fail-open: subscription===null
+// в этом окне неотличим от «данные ещё не пришли», и fail-open на время загрузки рисовал
+// гейтированные кнопки приостановленной организации активными — клик в это окно уходил
+// в мутацию, которую бэк всё равно отклонит 402. Как только запрос действительно
+// провалился (сеть/5xx) — loading становится false, и работает штатный fail-open ниже.
 // eslint-disable-next-line react-refresh/only-export-components
 export const useIsReadOnly = (): boolean => {
-  const { subscription } = useSubscription();
+  const { subscription, loading } = useSubscription();
   const { permissions } = usePermissions<Permissions>();
   if (permissions?.role === 'super_admin') return false;
+  if (loading) return true;
   return subscription?.is_read_only ?? false;
 };
 
