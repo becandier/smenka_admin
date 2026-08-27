@@ -35,6 +35,8 @@ import {
   generateClientPassword,
 } from '../utils/credentials';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
 import { MemberRatesSection } from './memberRates';
 import { MemberPenaltiesSection } from './penalties';
 import { MemberNameCell } from '../components/MemberNameCell';
@@ -82,13 +84,16 @@ const emailField = (r: RaRecord) =>
   );
 
 // Тулбар списка: сохраняем стандартную кнопку фильтров (роль — не alwaysOn), «Добавить
-// сотрудника» — только owner/admin (admin.md, «Появляется штатная кнопка»).
+// сотрудника» — только owner/admin (admin.md, «Появляется штатная кнопка»). Read-only
+// (backend.md «Read-only режим») прячет создание сотрудника — не входит в исключения
+// (только DELETE/выход сотрудника исключён, см. TariffAwareToolbar в MemberEdit ниже).
 const MemberListActions = () => {
   const canManage = useCanManageMembers();
+  const isReadOnly = useIsReadOnly();
   return (
     <TopToolbar>
       <FilterButton />
-      {canManage && <CreateButton label="Добавить сотрудника" />}
+      {canManage && !isReadOnly && <CreateButton label="Добавить сотрудника" />}
     </TopToolbar>
   );
 };
@@ -305,11 +310,14 @@ const LoginInput = () => {
 const ResetPasswordSection = () => {
   const record = useRecordContext();
   const canManage = useCanManageMembers();
+  const isReadOnly = useIsReadOnly();
   const [dialogOpen, setDialogOpen] = useState(false);
   const { dialog, show } = useIssuedCredentials();
 
   const userId = record?.user_id ? String(record.user_id) : null;
-  if (!record || !canManage || record.password_managed !== true || !userId) return null;
+  if (!record || !canManage || isReadOnly || record.password_managed !== true || !userId) {
+    return null;
+  }
 
   return (
     <Box sx={{ px: 2, pb: 2 }}>
@@ -330,9 +338,12 @@ const ResetPasswordSection = () => {
   );
 };
 
+// toolbar={<TariffAwareToolbar/>} прячет только Save при read-only; DeleteButton ниже —
+// вне тулбара, намеренно НЕ гейтится: «выход/исключение сотрудника» — явное исключение
+// из read-only (backend.md «Read-only режим», п.3), уход из организации не блокируем.
 export const MemberEdit = () => (
   <Edit mutationMode="pessimistic" redirect="list">
-    <SimpleForm>
+    <SimpleForm toolbar={<TariffAwareToolbar />}>
       <TextInput source="user_name" label="Имя" disabled />
       <TextInput source="user_email" label="Email" disabled />
       <LoginInput />

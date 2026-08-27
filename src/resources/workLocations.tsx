@@ -14,6 +14,9 @@ import {
   Toolbar,
   SaveButton,
   DeleteWithConfirmButton,
+  TopToolbar,
+  CreateButton,
+  FilterButton,
   required,
   minValue,
   maxValue,
@@ -38,6 +41,7 @@ import {
 } from '@mui/material';
 import { LocationMapField } from '../components/LocationMapField';
 import { checklistLocationErrorMessage, pluralizeChecklists } from '../utils/format';
+import { useIsReadOnly } from '../subscription/SubscriptionContext';
 
 const locationFilters = [<SearchInput key="q" source="q" alwaysOn />];
 
@@ -121,8 +125,12 @@ const LocationDeleteWarning = () => {
 // к удаляемой точке, снова начнёт действовать на всех точках (backend.md, «Удаление точки»).
 // variant="row" — строка списка (после удаления остаёмся на месте, react-admin сам
 // инвалидирует кэш списка); variant="toolbar" — карточка точки (после удаления уводит в список).
+// Read-only (backend.md «Read-only режим»): удаление точки не входит в список исключений —
+// прячем кнопку целиком, в обоих вариантах.
 const WorkLocationDeleteButton = ({ variant }: { variant: 'row' | 'toolbar' }) => {
   const notify = useNotify();
+  const isReadOnly = useIsReadOnly();
+  if (isReadOnly) return null;
   return (
     <DeleteWithConfirmButton
       redirect={variant === 'toolbar' ? 'list' : false}
@@ -137,12 +145,16 @@ const WorkLocationDeleteButton = ({ variant }: { variant: 'row' | 'toolbar' }) =
   );
 };
 
-const LocationEditToolbar = () => (
-  <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
-    <SaveButton />
-    <WorkLocationDeleteButton variant="toolbar" />
-  </Toolbar>
-);
+const LocationEditToolbar = () => {
+  const isReadOnly = useIsReadOnly();
+  if (isReadOnly) return null;
+  return (
+    <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
+      <SaveButton />
+      <WorkLocationDeleteButton variant="toolbar" />
+    </Toolbar>
+  );
+};
 
 // Секция «Чек-листы точки» на карточке точки — обратный срез к секции «Точки» на карточке
 // шаблона (checklistTemplates.tsx): обе стороны пишут в одну и ту же связь (backend.md, §3/4).
@@ -273,8 +285,23 @@ const LocationChecklistsSection = () => {
   );
 };
 
+const WorkLocationListActions = () => {
+  const isReadOnly = useIsReadOnly();
+  return (
+    <TopToolbar>
+      <FilterButton />
+      {!isReadOnly && <CreateButton />}
+    </TopToolbar>
+  );
+};
+
 export const WorkLocationList = () => (
-  <List filters={locationFilters} sort={{ field: 'created_at', order: 'DESC' }} exporter={false}>
+  <List
+    filters={locationFilters}
+    sort={{ field: 'created_at', order: 'DESC' }}
+    exporter={false}
+    actions={<WorkLocationListActions />}
+  >
     <Datagrid rowClick="edit" bulkActionButtons={false}>
       <TextField source="name" label="Название" />
       <TextField source="address" label="Адрес" />
