@@ -37,6 +37,9 @@ import InboxIcon from '@mui/icons-material/Inbox';
 import { useMyOrgRole } from '../../utils/useMyOrgRole';
 import { testErrorMessage } from '../../utils/format';
 import { RestoreButton } from '../../components/RestoreButton';
+import { FeatureLockButton } from '../../subscription/FeatureLock';
+import { TariffAwareToolbar } from '../../subscription/TariffAwareToolbar';
+import { useHasFeature, useIsReadOnly } from '../../subscription/SubscriptionContext';
 import { TestTemplateFields } from './TemplateForm';
 import { getTestTemplateDefaultValues, validateTestTemplate } from './validation';
 import { ImportTestTemplateDialog } from './ImportDialog';
@@ -78,14 +81,22 @@ const testTemplateFilters = [
 ];
 
 // Тулбар списка: «Импорт из JSON» рядом со стандартной кнопкой «Создать» (admin.md,
-// «Кнопка «Импорт из JSON» (в тулбаре создания)»).
+// «Кнопка «Импорт из JSON» (в тулбаре создания)»). Гейтинг: read-only прячет весь тулбар
+// (создание — не из исключений read-only), test_import=false — «Импорт из JSON» под
+// замком с диалогом «Доступно на Премиуме» (ручное создание теста работает как обычно —
+// «Создать тест» замком не накрывается, admin.md «Гейтинг функций тарифа»).
 const TestTemplateListActions = () => {
   const [importOpen, setImportOpen] = useState(false);
+  const isReadOnly = useIsReadOnly();
+  const hasImport = useHasFeature('test_import');
+  if (isReadOnly) return null;
   return (
     <TopToolbar>
-      <Button size="small" startIcon={<UploadFileIcon />} onClick={() => setImportOpen(true)}>
-        Импорт из JSON
-      </Button>
+      <FeatureLockButton locked={!hasImport} featureLabel="Импорт теста из JSON">
+        <Button size="small" startIcon={<UploadFileIcon />} onClick={() => setImportOpen(true)}>
+          Импорт из JSON
+        </Button>
+      </FeatureLockButton>
       <CreateButton label="Создать тест" />
       <ImportTestTemplateDialog open={importOpen} onClose={() => setImportOpen(false)} />
     </TopToolbar>
@@ -96,24 +107,31 @@ const TestTemplateListActions = () => {
 // ТОЛЬКО `empty`, полностью скрывая actions-тулбар (см. ListView.js — shouldRenderEmptyPage
 // заменяет renderList() целиком). Поэтому «Импорт из JSON» и «Создать тест» продублированы
 // здесь — иначе именно на пустом списке (первый тест в организации) кнопки пропадают.
+// Тот же гейтинг, что и в TestTemplateListActions.
 const TestTemplateEmpty = () => {
   const [importOpen, setImportOpen] = useState(false);
+  const isReadOnly = useIsReadOnly();
+  const hasImport = useHasFeature('test_import');
   return (
     <Box sx={{ textAlign: 'center', mt: 8, mb: 4 }}>
       <InboxIcon sx={{ width: '6em', height: '6em', color: 'text.disabled' }} />
       <Typography variant="h6" color="text.secondary" sx={{ mt: 2, mb: 3 }}>
         Тестов пока нет
       </Typography>
-      <Stack direction="row" spacing={2} justifyContent="center">
-        <Button
-          variant="outlined"
-          startIcon={<UploadFileIcon />}
-          onClick={() => setImportOpen(true)}
-        >
-          Импорт из JSON
-        </Button>
-        <CreateButton label="Создать тест" variant="contained" />
-      </Stack>
+      {!isReadOnly && (
+        <Stack direction="row" spacing={2} justifyContent="center">
+          <FeatureLockButton locked={!hasImport} featureLabel="Импорт теста из JSON">
+            <Button
+              variant="outlined"
+              startIcon={<UploadFileIcon />}
+              onClick={() => setImportOpen(true)}
+            >
+              Импорт из JSON
+            </Button>
+          </FeatureLockButton>
+          <CreateButton label="Создать тест" variant="contained" />
+        </Stack>
+      )}
       <ImportTestTemplateDialog open={importOpen} onClose={() => setImportOpen(false)} />
     </Box>
   );
@@ -139,6 +157,7 @@ const RowActions = ({
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const refresh = useRefresh();
+  const isReadOnly = useIsReadOnly();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -166,6 +185,12 @@ const RowActions = ({
       notify(testErrorMessage(err, 'Не удалось восстановить тест'), { type: 'error' });
     }
   };
+
+  // Read-only (backend.md «Read-only режим»): назначение/удаление/восстановление —
+  // мутации в скоупе организации, ни одна не входит в список исключений. Просмотр уже
+  // назначенных тестов остаётся доступен отдельно, в реестре «Результаты тестов»
+  // (test-assignments) — он read-only и read-only-режимом не гейтится.
+  if (isReadOnly) return null;
 
   return (
     <Stack direction="row" spacing={0.5} onClick={(e) => e.stopPropagation()}>
@@ -295,7 +320,11 @@ const TestTemplateCreateForm = () => {
         onError: (e: unknown) => setServerError(testErrorMessage(e, 'Не удалось создать тест')),
       }}
     >
-      <SimpleForm validate={validateTestTemplate} defaultValues={getTestTemplateDefaultValues()}>
+      <SimpleForm
+        validate={validateTestTemplate}
+        defaultValues={getTestTemplateDefaultValues()}
+        toolbar={<TariffAwareToolbar />}
+      >
         <ServerErrorAlert error={serverError} />
         <TestTemplateFields />
       </SimpleForm>
@@ -318,7 +347,7 @@ const TestTemplateEditForm = () => {
         onError: (e: unknown) => setServerError(testErrorMessage(e, 'Не удалось сохранить тест')),
       }}
     >
-      <SimpleForm validate={validateTestTemplate}>
+      <SimpleForm validate={validateTestTemplate} toolbar={<TariffAwareToolbar />}>
         <DeletedNotice />
         <ServerErrorAlert error={serverError} />
         <TestTemplateFields />
