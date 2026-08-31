@@ -1,4 +1,5 @@
 import { HttpError } from 'react-admin';
+import type { PaymentKind, PaymentStatus } from '../subscription/billingTypes';
 
 // Форматирование рабочего времени из секунд в «Чч Ммин».
 export const formatDuration = (seconds: number | null | undefined): string => {
@@ -79,7 +80,10 @@ export const formatSignedMoneyMinor = (minor: number): string =>
 // (зарплатные ставки, штрафы, начисления — везде ноль бессмыслен). `allowZero: true` — для
 // разовых мест, где 0 — валидное значение по контракту бэка (ExtendDialog: amount_minor >= 0,
 // бесплатное продление подписки).
-export const parseRublesToMinor = (raw: string, options?: { allowZero?: boolean }): number | null => {
+export const parseRublesToMinor = (
+  raw: string,
+  options?: { allowZero?: boolean },
+): number | null => {
   const normalized = raw.trim().replace(',', '.');
   if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null;
   const minor = Math.round(Number(normalized) * 100);
@@ -585,6 +589,76 @@ export const subscriptionEventTypeLabel = (type: string | null | undefined): str
 export const tariffErrorMessage = (error: unknown, fallback = 'Ошибка'): string => {
   const code = error instanceof HttpError ? error.body?.code : undefined;
   if (code && TARIFF_ERROR_MESSAGES[code]) return TARIFF_ERROR_MESSAGES[code];
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
+
+// --- Онлайн-оплата подписки через ЮKassa (online_payments) ---
+
+// Русское склонение «N месяц/месяца/месяцев» — период продления (admin.md, «Блок «Продление»»).
+export const pluralizeMonths = (n: number): string => {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'месяц';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'месяца';
+  return 'месяцев';
+};
+
+export const monthsLabel = (n: number): string => `${n} ${pluralizeMonths(n)}`;
+
+export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
+  pending: 'В обработке',
+  succeeded: 'Оплачен',
+  canceled: 'Отменён',
+  refunded: 'Возврат',
+};
+
+export const paymentStatusLabel = (status: string | null | undefined): string =>
+  (status && PAYMENT_STATUS_LABELS[status as PaymentStatus]) || status || '—';
+
+export const PAYMENT_STATUS_COLOR: Record<
+  string,
+  'info' | 'success' | 'warning' | 'error' | 'default'
+> = {
+  pending: 'warning',
+  succeeded: 'success',
+  canceled: 'default',
+  refunded: 'info',
+};
+
+export const PAYMENT_STATUS_CHOICES = Object.entries(PAYMENT_STATUS_LABELS).map(([id, name]) => ({
+  id,
+  name,
+}));
+
+// «Назначение» платежа для истории/реестра (admin.md, «История платежей»): «Премиум, 6 мес»
+// для продления, «Апгрейд до Премиума» для доплаты — months у апгрейда означает число
+// доплаченных месяцев (backend.md «payments.months»), а не срок продления, поэтому в
+// назначении не участвует.
+export const paymentPurposeLabel = (payment: {
+  kind: PaymentKind;
+  plan_name: string;
+  months: number | null;
+}): string =>
+  payment.kind === 'upgrade'
+    ? `Апгрейд до ${payment.plan_name}`
+    : `${payment.plan_name}, ${payment.months ?? '—'} мес`;
+
+// Код ошибки бэка (online_payments/backend.md «Новые коды ошибок» + переиспользуемые из
+// tariffs) → понятный текст. Тот же приём, что tariffErrorMessage; переиспользует его карту
+// (SUBSCRIPTION_NOT_FOUND/PLAN_NOT_FOUND/ORG_NOT_FOUND всплывают и на checkout).
+const BILLING_ERROR_MESSAGES: Record<string, string> = {
+  ...TARIFF_ERROR_MESSAGES,
+  BILLING_DISABLED: 'Онлайн-оплата сейчас недоступна',
+  PAYMENT_PROVIDER_ERROR: 'Платёжный провайдер недоступен, попробуйте ещё раз чуть позже',
+  PAYMENT_NOT_FOUND: 'Платёж не найден',
+  UPGRADE_NOT_APPLICABLE: 'Апгрейд сейчас недоступен',
+  PAYMENT_AMOUNT_LIMIT: 'Сумма превышает лимит одного платежа — обратитесь в поддержку',
+};
+
+export const billingErrorMessage = (error: unknown, fallback = 'Ошибка'): string => {
+  const code = error instanceof HttpError ? error.body?.code : undefined;
+  if (code && BILLING_ERROR_MESSAGES[code]) return BILLING_ERROR_MESSAGES[code];
   if (error instanceof Error && error.message) return error.message;
   return fallback;
 };

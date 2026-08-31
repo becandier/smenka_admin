@@ -18,6 +18,15 @@ import type {
   SubscriptionsSummary,
 } from '../subscription/SubscriptionContext';
 import { reportTariffGateError } from '../subscription/tariffErrorBus';
+import type {
+  AdminPaymentsTotals,
+  BillingCheckoutRequest,
+  BillingCheckoutResult,
+  BillingConfig,
+  BillingOptions,
+  PaymentListResult,
+  PaymentRow,
+} from '../subscription/billingTypes';
 
 // Категории ресурсов:
 //  - PLATFORM_SERVER — серверная пагинация через /admin/* ({items,total,limit,offset}).
@@ -515,6 +524,42 @@ export const dataProvider: DataProvider = {
       const data = await request(`/admin/subscriptions?${query.toString()}`);
       const items = ((data?.items ?? []) as Record<string, unknown>[]).map(mapRow);
       return { data: items, total: data?.total ?? 0 };
+    }
+    if (resource === 'payments') {
+      // Реестр «Платежи» платформы (online_payments/backend.md п.7, admin.md «Дорожка 2») —
+      // super_admin, read-only. `hide_test` (UI-тумблер «скрыть тестовые», включён по
+      // умолчанию через filterDefaultValues) — параметр запроса, не поле записи: включён →
+      // шлём `is_test=false` (только реальные платежи); выключен → is_test вовсе не шлём
+      // (показать все, включая тестовые) — контракт не знает отдельного «только тестовые».
+      // date_from/date_to — календарный день → UTC-границы, тот же toUtcDayRangeFilter, что
+      // у аудита/смен (date_filters).
+      const filter = toUtcDayRangeFilter((params.filter ?? {}) as Record<string, unknown>);
+      const { page, perPage } = params.pagination ?? { page: 1, perPage: 20 };
+      const query = new URLSearchParams({
+        limit: String(perPage),
+        offset: String((page - 1) * perPage),
+      });
+      if (typeof filter.status === 'string' && filter.status !== '')
+        query.set('status', filter.status);
+      if (typeof filter.organization_id === 'string' && filter.organization_id !== '')
+        query.set('organization_id', filter.organization_id);
+      if (typeof filter.date_from === 'string' && filter.date_from !== '')
+        query.set('date_from', filter.date_from);
+      if (typeof filter.date_to === 'string' && filter.date_to !== '')
+        query.set('date_to', filter.date_to);
+      if (filter.hide_test !== false) query.set('is_test', 'false');
+      const data = await request(`/admin/payments?${query.toString()}`);
+      // items умышленно без явной аннотации AdminPaymentRow[]: getList — generic-метод
+      // DataProvider (<RecordType>), конкретный тип здесь конфликтует с выводом типа для
+      // произвольного RecordType на вызывающей стороне (та же причина, почему остальные
+      // ветки getList не типизируют `items` явно). AdminPaymentRow используется только
+      // там, где вызывающий код уже знает конкретный тип (PaymentList/useListContext).
+      const items = data?.items ?? [];
+      const totals: AdminPaymentsTotals = data?.totals ?? { succeeded_amount_minor: 0, count: 0 };
+      // totals «плывёт» в meta ListContext'а (react-admin прокидывает getList-результат.meta
+      // насквозь в useListContext().meta) — читает PaymentsTotals рядом с Datagrid, всегда
+      // в паре с текущим фильтром/страницей одного и того же запроса, без второго сетевого вызова.
+      return { data: items, total: data?.total ?? 0, meta: { totals } };
     }
     if (resource === 'org-shifts') {
       // only_late/only_manual/include_deleted — булевы тумблеры: снятое состояние (false) не
@@ -1296,6 +1341,44 @@ export const dataProvider: DataProvider = {
     const qs = search.toString();
     return request(`/admin/organizations/${orgId}/subscription/events${qs ? `?${qs}` : ''}`);
   },
+
+  // --- Онлайн-оплата подписки (online_payments) ---
+  // Состояние платёжного модуля (backend.md п.1) — authenticated, без секретов. `enabled`
+  // гейтит рендер всех платёжных блоков «Тарифа», `mode` рисует бейдж тестового режима.
+  getBillingConfig: (): Promise<BillingConfig> => request('/billing/config'),
+  // Витрина «что и почём можно оплатить» (backend.md п.2) — org_owner/org_admin. Все суммы,
+  // проценты скидок и признак «рекомендовано» (по discount_percent) — с сервера, ничего не
+  // пересчитывается на клиенте (admin.md «Приёмка»).
+  getBillingOptions: (orgId: string): Promise<BillingOptions> =>
+    request(`/organizations/${orgId}/billing/options`),
+  // Создать платёж (backend.md п.3): пересчёт суммы — на сервере, клиент шлёт только
+  // намерение (kind/plan_code/months). Редирект на confirmation_url делает вызывающий код.
+  createBillingCheckout: (
+    orgId: string,
+    body: BillingCheckoutRequest,
+  ): Promise<BillingCheckoutResult> =>
+    request(`/organizations/${orgId}/billing/checkout`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  // Статус одного платежа (backend.md п.5) — используется поллингом после возврата с оплаты
+  // (`?payment={id}`, admin.md «Возврат с оплаты»). Пока pending и прошло >10с с создания,
+  // сервер сам сверяется с провайдером и может применить платёж прямо в этом ответе —
+  // клиенту достаточно просто опрашивать эту ручку.
+  getBillingPayment: (orgId: string, paymentId: string): Promise<PaymentRow> =>
+    request(`/organizations/${orgId}/billing/payments/${paymentId}`),
+  // История платежей организации (backend.md п.6), пагинация серверная, новые сверху.
+  getBillingPayments: (
+    orgId: string,
+    query: { limit?: number; offset?: number },
+  ): Promise<PaymentListResult> => {
+    const search = new URLSearchParams();
+    if (query.limit) search.set('limit', String(query.limit));
+    if (query.offset) search.set('offset', String(query.offset));
+    const qs = search.toString();
+    return request(`/organizations/${orgId}/billing/payments${qs ? `?${qs}` : ''}`);
+  },
+
   // Сброс пароля учётки, заведённой этой организацией (admin_created_accounts/backend.md,
   // «POST .../members/{user_id}/reset-password»): password undefined/null → сервер
   // сгенерирует; иначе — те же правила валидации, что при создании. Ответ содержит новый
