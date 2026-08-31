@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Title, useDataProvider, usePermissions } from 'react-admin';
+import { useCallback, useEffect, useState } from 'react';
+import { Title, useDataProvider, useNotify, usePermissions } from 'react-admin';
 import {
   Alert,
   Box,
@@ -23,15 +23,27 @@ import { useCurrentOrg } from '../../orgContext';
 import { useMyOrgRole } from '../../utils/useMyOrgRole';
 import type { Permissions } from '../../providers/authProvider';
 import type { OrgSubscription, PlanRow } from '../../subscription/SubscriptionContext';
+import type {
+  BillingCheckoutRequest,
+  BillingConfig,
+  BillingOptions,
+  PaymentRow,
+} from '../../subscription/billingTypes';
 import {
+  billingErrorMessage,
   daysLeftLabel,
   formatDate,
   formatMoneyMinor,
+  paymentPurposeLabel,
   planCodeLabel,
   subscriptionStatusLabel,
   tariffErrorMessage,
   SUBSCRIPTION_STATUS_COLOR,
 } from '../../utils/format';
+import { BillingExtendCards, BillingUpgradeCard } from './BillingSection';
+import { PaymentHistoryTable } from './PaymentHistoryTable';
+import { PaymentReturnBanner } from './PaymentReturnBanner';
+import { usePaymentReturn } from './usePaymentReturn';
 
 // Прогресс использования лимита (сотрудники/точки, admin.md «Использование»): линейный
 // прогресс, при null-лимите — «без ограничений» без полосы; при usage>=limit — полоса
@@ -197,6 +209,22 @@ export const TariffPage = () => {
   const [loading, setLoading] = useState(false);
 
   const orgId = org?.id ?? null;
+  // Оплатить продление/апгрейд может только фактический owner/admin организации — backend.md
+  // фиксирует авторизацию всех billing/*-эндпоинтов буквально как «org_owner / org_admin»,
+  // без сквозного доступа super_admin (в отличие от GET .../subscription, где он явно есть).
+  // Расхождение с таблицей RBAC admin.md («История платежей организации» — да у super_admin)
+  // разобрано в STATUS.md, «Открытые вопросы к аналитику»: super_admin получает то же самое
+  // через реестр «Платежи» с фильтром по организации.
+  const canPay = role === 'owner' || role === 'admin';
+
+  const [billingConfig, setBillingConfig] = useState<BillingConfig | null>(null);
+  const [billingOptions, setBillingOptions] = useState<BillingOptions | null>(null);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
+  const notify = useNotify();
 
   useEffect(() => {
     if (!orgId || !canView) return;
@@ -225,6 +253,122 @@ export const TariffPage = () => {
     };
   }, [orgId, canView, dataProvider]);
 
+  // Состояние платёжного модуля (backend.md п.1, «GET /billing/config»): authenticated,
+  // доступно и super_admin (бейдж тестового режима «показывается всем, кто видит экран»,
+  // admin.md) — гейтится только canView, не canPay.
+  useEffect(() => {
+    if (!canView) return undefined;
+    let active = true;
+    dataProvider
+      .getBillingConfig()
+      .then((cfg: BillingConfig) => {
+        if (active) setBillingConfig(cfg);
+      })
+      .catch(() => {
+        // Fail-open по духу остального экрана (admin.md, «Состояния»): без конфигурации
+        // платёжные блоки просто не показываются, информационная часть экрана не ломается.
+        if (active) setBillingConfig(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [canView, dataProvider]);
+
+  const billingEnabled = billingConfig?.enabled ?? false;
+
+  // Витрина «что и почём» (backend.md п.2) — только когда её реально можно показать: org
+  // выбрана, роль позволяет платить, фича включена. Вынесена в useCallback — переиспользуется
+  // и стартовым эффектом ниже, и обработчиком успешной оплаты (сумма/апгрейд могли измениться).
+  const loadBillingOptions = useCallback(async (): Promise<void> => {
+    if (!orgId || !canPay || !billingEnabled) {
+      setBillingOptions(null);
+      return;
+    }
+    setBillingLoading(true);
+    setBillingError(null);
+    try {
+      const opts = await dataProvider.getBillingOptions(orgId);
+      setBillingOptions(opts);
+    } catch (e) {
+      setBillingError(billingErrorMessage(e, 'Не удалось загрузить варианты оплаты'));
+    } finally {
+      setBillingLoading(false);
+    }
+  }, [orgId, canPay, billingEnabled, dataProvider]);
+
+  useEffect(() => {
+    void loadBillingOptions();
+  }, [loadBillingOptions]);
+
+  // Возврат с оплаты (admin.md, «Возврат с оплаты» — поллинг 2с/60с, четыре исхода):
+  // canPay-гейт здесь же — у billing/payments/{id} та же авторизация org_owner/org_admin
+  // (backend.md п.5), стрелять запросом от лица super_admin/employee бессмысленно.
+  const handlePaymentSucceeded = useCallback(
+    (payment: PaymentRow) => {
+      if (!orgId) return;
+      void (async () => {
+        try {
+          const sub = await dataProvider.getOrgSubscription(orgId);
+          setSubscription(sub);
+          notify(
+            sub.current_period_end
+              ? `Оплата прошла, тариф продлён до ${formatDate(sub.current_period_end)}`
+              : 'Оплата прошла, тариф продлён',
+            { type: 'success' },
+          );
+        } catch {
+          // Платёж уже применён на бэке (иначе onSucceeded не сработал бы) — сбой здесь
+          // только у обновления самой карточки, не у факта продления. Используем уже
+          // известные из поллинга поля платежа, раз свежую подписку подтянуть не удалось.
+          notify(
+            `Оплата прошла: ${paymentPurposeLabel(payment)}. Обновите страницу, чтобы увидеть новый срок`,
+            { type: 'success' },
+          );
+        }
+        void loadBillingOptions();
+        setHistoryRefreshToken((t) => t + 1);
+      })();
+    },
+    [orgId, dataProvider, notify, loadBillingOptions],
+  );
+
+  const paymentReturn = usePaymentReturn(canPay ? orgId : null, handlePaymentSucceeded);
+
+  // Создать платёж и увести браузер на confirmation_url (admin.md: «Никаких платёжных форм…
+  // на нашей стороне» — редирект, а не встроенный виджет). checkoutBusy не сбрасывается при
+  // успехе намеренно: страница в этот момент уже уходит на ЮKassa.
+  const handleCheckout = useCallback(
+    (body: BillingCheckoutRequest) => {
+      if (!orgId) return;
+      setCheckoutBusy(true);
+      setCheckoutError(null);
+      void (async () => {
+        try {
+          const result = await dataProvider.createBillingCheckout(orgId, body);
+          window.location.href = result.confirmation_url;
+        } catch (e) {
+          setCheckoutError(billingErrorMessage(e, 'Не удалось создать платёж'));
+          setCheckoutBusy(false);
+        }
+      })();
+    },
+    [orgId, dataProvider],
+  );
+
+  // «Повторить» на canceled-баннере (admin.md, «Возврат с оплаты», исход 3) — те же
+  // параметры, что были в отменённом платеже (последний опрошенный PaymentRow).
+  const handleRetryCheckout = useCallback(() => {
+    const last = paymentReturn.payment;
+    if (!last) return;
+    handleCheckout(
+      last.kind === 'upgrade'
+        ? { kind: 'upgrade', plan_code: last.plan_code }
+        : { kind: 'extend', plan_code: last.plan_code, months: last.months ?? 1 },
+    );
+  }, [paymentReturn.payment, handleCheckout]);
+
+  const showPaymentBlocks = canPay && billingEnabled;
+
   if (!org) {
     return (
       <Box sx={{ p: 3 }}>
@@ -251,6 +395,15 @@ export const TariffPage = () => {
       <Typography variant="h5" sx={{ mb: 2 }}>
         Тариф
       </Typography>
+
+      {/* Бейдж тестового режима (admin.md, «Бейдж тестового режима»): «показывается всем,
+          кто видит экран» — гейт по canView (уже пройден выше), не по canPay, иначе
+          super_admin не увидел бы предупреждение над недоступным ему блоком продления. */}
+      {billingEnabled && billingConfig?.mode === 'test' && (
+        <Alert severity="warning" variant="filled" sx={{ mb: 2 }}>
+          Тестовый режим оплаты — платежи ненастоящие
+        </Alert>
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -306,6 +459,46 @@ export const TariffPage = () => {
             </CardContent>
           </Card>
 
+          {/* Онлайн-оплата (online_payments/admin.md): «Появляется под карточкой текущего
+              тарифа» — продление, апгрейд, возврат с оплаты и история сразу под карточкой
+              выше, до «Использования»/«Что входит в тариф». Только owner/admin при включённой
+              фиче (backend.md, «GET /billing/config», «Блокировка при выключенной фиче»). */}
+          {showPaymentBlocks && (
+            <>
+              <PaymentReturnBanner state={paymentReturn} onRetryCheckout={handleRetryCheckout} />
+
+              {billingError && (
+                <Alert severity="error" sx={{ mb: -1 }}>
+                  {billingError}
+                </Alert>
+              )}
+              {billingLoading && !billingOptions && <CircularProgress size={24} />}
+
+              {billingOptions && (
+                <>
+                  <BillingExtendCards
+                    options={billingOptions}
+                    disabled={checkoutBusy || paymentReturn.blocksNewCheckout}
+                    onSelect={(planCode, months) =>
+                      handleCheckout({ kind: 'extend', plan_code: planCode, months })
+                    }
+                  />
+                  <BillingUpgradeCard
+                    options={billingOptions}
+                    disabled={checkoutBusy || paymentReturn.blocksNewCheckout}
+                    onSelect={(planCode) =>
+                      handleCheckout({ kind: 'upgrade', plan_code: planCode })
+                    }
+                  />
+                </>
+              )}
+
+              {checkoutError && <Alert severity="error">{checkoutError}</Alert>}
+
+              {orgId && <PaymentHistoryTable orgId={orgId} refreshToken={historyRefreshToken} />}
+            </>
+          )}
+
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
@@ -336,7 +529,10 @@ export const TariffPage = () => {
             </CardContent>
           </Card>
 
-          <HowToPayCard />
+          {/* «Как оплатить» (контакт вне сервиса) теряет смысл, когда для этой организации
+              уже работает онлайн-оплата — иначе рядом с рабочими кнопками «Оплатить» висел бы
+              текст «Онлайн-оплаты пока нет», который стал неверным именно этой фичей. */}
+          {!showPaymentBlocks && <HowToPayCard />}
         </Stack>
       )}
     </Box>

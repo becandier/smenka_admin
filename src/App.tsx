@@ -16,6 +16,7 @@ import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import QuizIcon from '@mui/icons-material/Quiz';
 import PollIcon from '@mui/icons-material/Poll';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
+import PaymentsIcon from '@mui/icons-material/Payments';
 import { dataProvider } from './providers/dataProvider';
 import { authProvider, type Permissions } from './providers/authProvider';
 import { i18nProvider } from './i18n';
@@ -52,6 +53,7 @@ import { OrgStatsPage } from './resources/orgStats';
 import { PayrollPage } from './resources/payroll';
 import { InviteCodePage } from './resources/inviteCode';
 import { SubscriptionList } from './resources/subscriptions';
+import { PaymentList } from './resources/payments';
 import { TariffPage } from './resources/tariff';
 import { KnowledgePage } from './resources/knowledge/KnowledgePage';
 import { PlatformSettingsPage } from './resources/platformSettings';
@@ -94,6 +96,11 @@ export const App = () => (
               вместе с организацией, отдельного create нет (admin.md, «Раздел «Подписки»»). */}
           {permissions?.role === 'super_admin' && (
             <Resource name="subscriptions" list={SubscriptionList} icon={CreditCardIcon} />
+          )}
+          {/* Реестр «Платежи» (online_payments/admin.md, «Дорожка 2») — только super_admin,
+              list-only: платежи не создаются/не редактируются из админки. */}
+          {permissions?.role === 'super_admin' && (
+            <Resource name="payments" list={PaymentList} icon={PaymentsIcon} />
           )}
 
           {/* create — MemberCreate сам режет доступ до owner/admin (admin.md, «RBAC»);
