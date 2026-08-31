@@ -44,6 +44,7 @@ import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import QuizIcon from '@mui/icons-material/Quiz';
 import PollIcon from '@mui/icons-material/Poll';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
+import PaymentsIcon from '@mui/icons-material/Payments';
 import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -312,6 +313,9 @@ const MyMenu = () => {
           <Menu.Item to="/users" primaryText="Пользователи" leftIcon={<PeopleIcon />} />
           <Menu.Item to="/organizations" primaryText="Организации" leftIcon={<BusinessIcon />} />
           <Menu.Item to="/subscriptions" primaryText="Подписки" leftIcon={<CreditCardIcon />} />
+          {/* Реестр «Платежи» (online_payments/admin.md, «Дорожка 2») — рядом с «Подписками»,
+              как в ТЗ («Новый ресурс в меню … рядом с «Подписками»»). */}
+          <Menu.Item to="/payments" primaryText="Платежи" leftIcon={<PaymentsIcon />} />
           {/* Настройки платформы — первый экран будущего раздела платформенных интеграций
               (сейчас только «Провайдеры входа», oauth_login). Скрыт за OAUTH_LOGIN_ENABLED:
               пока OAuth-вход выключен, раздел провайдеров входа в меню не показываем. */}
