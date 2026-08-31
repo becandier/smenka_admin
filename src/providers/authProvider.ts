@@ -135,8 +135,11 @@ export const authProvider: AuthProvider = {
     let data: any;
     try {
       if (!('oauthProvider' in params)) {
-        // react-admin шлёт username/password; маппим username → email.
-        data = await post('/auth/login', { email: params.username, password: params.password });
+        // react-admin шлёт username/password; бэк принимает ровно одно из полей email/login,
+        // причём login — это «логин или email» (см. schemas/auth.py). Отправляем введённое
+        // значение как login, поле email не шлём вовсе — иначе логин сотрудника (не email)
+        // падает на бэковой валидации email-формата.
+        data = await post('/auth/login', { login: params.username, password: params.password });
       } else if (params.oauthProvider === 'google') {
         data = await post('/auth/oauth/google', { id_token: params.idToken, client_type: 'web' });
       } else {

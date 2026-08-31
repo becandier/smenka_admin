@@ -4,6 +4,15 @@ import russianMessages from 'ra-language-russian';
 // Базовый русский словарь react-admin + наши имена ресурсов (ед. |||| мн.).
 const messages = {
   ...russianMessages,
+  ra: {
+    ...russianMessages.ra,
+    auth: {
+      ...russianMessages.ra.auth,
+      // Бэк принимает в это поле и логин, и email (см. authProvider.login) — стандартная
+      // подпись react-admin «Имя пользователя» этого не отражает, уточняем.
+      username: 'Логин или email',
+    },
+  },
   resources: {
     users: { name: 'Пользователь |||| Пользователи' },
     organizations: { name: 'Организация |||| Организации' },
