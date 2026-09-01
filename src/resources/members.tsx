@@ -163,14 +163,11 @@ const GeneratePasswordButton = () => {
   );
 };
 
-// Выбор системной роли при создании: admin — только owner (admin.md, «RBAC»); у admin
-// организации селектор ограничен employee (зеркалит существующее ограничение update_member_role).
-const roleChoicesFor = (myRole: string | null) =>
-  myRole === 'owner' ? MEMBER_ROLE_CHOICES : MEMBER_ROLE_CHOICES.filter((c) => c.id === 'employee');
-
-// myRole приходит пропом из MemberCreate (единственное чтение useMyOrgRole в этом поддереве —
-// там же вычисляется canManage, второй независимый вызов хука в самом поле избыточен).
-const MemberCreateFields = ({ myRole }: { myRole: string | null }) => {
+// Выбор системной роли при создании: обе роли (employee/admin) доступны и owner, и admin
+// организации (admin_grants_admin_role/admin.md, «RBAC») — бэк снял прежнее ограничение
+// update_member_role на назначение admin только владельцем. defaultValue="employee" ниже
+// оставляет повышение осознанным выбором, а не случайным дефолтом.
+const MemberCreateFields = () => {
   return (
     <>
       <TextInput source="name" label="Имя" validate={required()} fullWidth />
@@ -194,7 +191,7 @@ const MemberCreateFields = ({ myRole }: { myRole: string | null }) => {
       <SelectInput
         source="role"
         label="Системная роль"
-        choices={roleChoicesFor(myRole)}
+        choices={MEMBER_ROLE_CHOICES}
         defaultValue="employee"
         validate={required()}
       />
@@ -246,7 +243,7 @@ export const MemberCreate = () => {
         }}
       >
         <SimpleForm validate={validateMemberCreate}>
-          <MemberCreateFields myRole={myRole} />
+          <MemberCreateFields />
         </SimpleForm>
       </Create>
       {dialog}
