@@ -4,7 +4,6 @@ import {
   TextField,
   EmailField,
   BooleanField,
-  DateField,
   NumberField,
   Edit,
   Show,
@@ -14,7 +13,9 @@ import {
   TextInput,
   SearchInput,
   SelectField,
+  FunctionField,
 } from 'react-admin';
+import { DeviceTimeText } from '../components/TimeText';
 
 const roleChoices = [
   { id: 'user', name: 'Пользователь' },
@@ -47,7 +48,10 @@ export const UserList = () => (
       <TextField source="name" label="Имя" sortable={false} />
       <BooleanField source="is_verified" label="Подтверждён" sortable={false} />
       <SelectField source="role" label="Роль" choices={roleChoices} sortable={false} />
-      <DateField source="created_at" label="Создан" showTime />
+      <FunctionField
+        label="Создан"
+        render={(record) => <DeviceTimeText value={record.created_at} />}
+      />
     </Datagrid>
   </List>
 );
@@ -74,7 +78,10 @@ export const UserShow = () => (
       <NumberField source="owned_organizations_count" label="Организаций (владелец)" />
       <NumberField source="member_organizations_count" label="Организаций (участник)" />
       <NumberField source="shifts_count" label="Смен всего" />
-      <DateField source="created_at" label="Зарегистрирован" showTime />
+      <FunctionField
+        label="Зарегистрирован"
+        render={(record) => <DeviceTimeText value={record.created_at} />}
+      />
     </SimpleShowLayout>
   </Show>
 );

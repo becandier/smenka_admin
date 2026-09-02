@@ -3,7 +3,6 @@ import {
   AutocompleteInput,
   BooleanInput,
   Datagrid,
-  DateField,
   DateInput,
   FunctionField,
   List,
@@ -16,6 +15,7 @@ import {
 import { Chip, Link as MuiLink, Stack, Typography } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { DateRangeAlert } from '../../components/DateRangeAlert';
+import { DeviceTimeText } from '../../components/TimeText';
 import {
   PAYMENT_STATUS_CHOICES,
   PAYMENT_STATUS_COLOR,
@@ -126,7 +126,11 @@ const PaymentDatagrid = () => {
     // Read-only реестр (admin.md: «Список только для чтения: платежи не создаются и не
     // редактируются из админки») — без bulk-действий и rowClick-мутаций.
     <Datagrid rowClick={false} bulkActionButtons={false} rowSx={paymentRowSx}>
-      <DateField source="created_at" label="Дата" showTime sortable={false} />
+      <FunctionField
+        label="Дата"
+        render={(record: RaRecord) => <DeviceTimeText value={record.created_at} />}
+        sortable={false}
+      />
       <TextField source="organization_name" label="Организация" sortable={false} />
       <FunctionField
         label="Назначение"

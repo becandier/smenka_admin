@@ -34,7 +34,6 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import MoneyOffIcon from '@mui/icons-material/MoneyOff';
 import {
-  formatDateTime,
   formatMoneyMinor,
   parseRublesToMinor,
   shiftStatusLabel,
@@ -45,6 +44,9 @@ import { MemberNameCell } from '../components/MemberNameCell';
 import { RestoreButton } from '../components/RestoreButton';
 import { FeatureLockButton, LockedIconButton } from '../subscription/FeatureLock';
 import { useHasFeature, useIsReadOnly } from '../subscription/SubscriptionContext';
+import { OrganizationTimeText } from '../components/TimeText';
+import { organizationTime, formatDateTime } from '../utils/time';
+import { useOrgTimezone } from '../utils/useOrgTimezone';
 
 // Penalty (admin-facing) — снимок суммы/причины на момент назначения (см. fines/admin.md).
 // display_name — member_display_name/admin.md: рядом с настоящим user_name, null если не задан.
@@ -64,6 +66,7 @@ export interface Penalty {
   created_by_user_id: string;
   created_at: string;
   updated_at: string;
+  organization_timezone?: string | null;
   is_deleted?: boolean;
 }
 
@@ -106,6 +109,7 @@ const PenaltyFormDialog = ({
 }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
+  const organizationTimezone = useOrgTimezone();
 
   const [source, setSource] = useState<AmountSource>(editing?.template_id ? 'template' : 'custom');
   const [templateId, setTemplateId] = useState<string>(editing?.template_id ?? '');
@@ -138,7 +142,10 @@ const PenaltyFormDialog = ({
 
   const shiftOptions: ShiftOption[] = (shifts ?? []).map((s) => ({
     id: String(s.id),
-    label: `${formatDateTime(s.started_at)} · ${shiftStatusLabel(s.status)}`,
+    label: `${formatDateTime(
+      s.started_at,
+      organizationTime(s.organization_timezone ?? organizationTimezone),
+    )} · ${shiftStatusLabel(s.status)}`,
   }));
 
   const applyTemplate = (id: string): void => {
@@ -482,7 +489,9 @@ export const MemberPenaltiesSection = () => {
           <TableBody>
             {penalties.map((p) => (
               <TableRow key={p.id} sx={p.is_deleted ? { opacity: 0.55 } : undefined}>
-                <TableCell>{formatDateTime(p.occurred_at)}</TableCell>
+                <TableCell>
+                  <OrganizationTimeText value={p.occurred_at} timeZone={p.organization_timezone} />
+                </TableCell>
                 <TableCell>{p.reason}</TableCell>
                 <TableCell align="right">{formatMoneyMinor(p.amount_minor)}</TableCell>
                 <TableCell>
@@ -572,6 +581,7 @@ export const ShiftPenaltySection = () => {
   const role = useMyOrgRole();
   const isReadOnly = useIsReadOnly();
   const hasFines = useHasFeature('fines');
+  const organizationTimezone = useOrgTimezone();
   const [open, setOpen] = useState(false);
   const canManage = role === 'owner' || role === 'admin';
 
@@ -587,7 +597,10 @@ export const ShiftPenaltySection = () => {
   const shiftId = record.id ? String(record.id) : null;
   const member = (members ?? []).find((m) => String(m.user_id) === userId);
   const memberId = member?.id ? String(member.id) : null;
-  const lockedLabel = `Смена от ${formatDateTime(record.started_at)}`;
+  const lockedLabel = `Смена от ${formatDateTime(
+    record.started_at,
+    organizationTime(record.organization_timezone ?? organizationTimezone),
+  )}`;
 
   return (
     <Card sx={{ mb: 2 }}>

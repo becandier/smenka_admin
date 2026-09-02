@@ -1,7 +1,6 @@
 import {
   List,
   Datagrid,
-  DateField,
   TextField,
   FunctionField,
   SelectInput,
@@ -15,6 +14,7 @@ import { AUDIT_ACTION_CHOICES, auditActionLabel, auditResourceLabel } from '../u
 import { isDayRangeInvalid } from '../utils/dates';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { DateRangeAlert } from '../components/DateRangeAlert';
+import { DeviceTimeText } from '../components/TimeText';
 
 // summary — jsonb произвольной формы: объектом считаем только не-null, не-массив.
 const asObject = (value: unknown): Record<string, unknown> | null =>
@@ -130,7 +130,10 @@ const AuditDatagrid = () => {
   return (
     // Read-only: без bulk-действий, без rowClick-мутаций; детали — в раскрытии строки.
     <Datagrid bulkActionButtons={false} rowClick={false} expand={<AuditExpand />}>
-      <DateField source="created_at" label="Когда" showTime />
+      <FunctionField
+        label="Когда"
+        render={(record: RaRecord) => <DeviceTimeText value={record.created_at} />}
+      />
       <FunctionField label="Инициатор" render={actorField} />
       <FunctionField label="Действие" render={actionField} />
       <FunctionField label="Объект" render={resourceTypeField} />

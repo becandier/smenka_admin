@@ -49,6 +49,28 @@ export default defineConfig(
     files: ['**/*.js'],
     extends: [tseslint.configs.disableTypeChecked],
   },
+  // Временные API timestamp форматируются только через src/utils/time.ts. Исключения:
+  // dates.ts — низкоуровневая конвертация wall-time формы в UTC; format.ts/files.ts —
+  // числовая локализация денег/размера файла, не Date; time.ts — единственная точка Intl.
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/utils/time.ts', 'src/utils/dates.ts', 'src/utils/format.ts', 'src/utils/files.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.property.name='toLocaleString'], CallExpression[callee.property.name='toLocaleDateString'], CallExpression[callee.property.name='toLocaleTimeString']",
+          message: 'Для отображения времени используйте src/utils/time.ts с явным TimeContext.',
+        },
+        {
+          selector:
+            "NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",
+          message: 'Formatter времени создаётся только в src/utils/time.ts.',
+        },
+      ],
+    },
+  },
   // Отключает стилистические правила, конфликтующие с Prettier. Держать последним.
   prettier,
 );

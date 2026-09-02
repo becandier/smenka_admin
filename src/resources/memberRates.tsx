@@ -27,7 +27,6 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import {
   RATE_TYPE_CHOICES,
   RATE_TYPE_LABELS,
-  formatDateTime,
   formatRateBadge,
   formatRubles,
   parseRublesToMinor,
@@ -35,6 +34,7 @@ import {
 import { localInputToUtcIso, utcIsoToLocalInput } from '../utils/dates';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { OrganizationTimeText } from '../components/TimeText';
 
 interface Rate {
   id: string;
@@ -320,7 +320,7 @@ export const MemberRatesSection = () => {
               return (
                 <TableRow key={rate.id} sx={isCurrent ? { bgcolor: 'action.selected' } : undefined}>
                   <TableCell>
-                    {formatDateTime(rate.effective_from)}
+                    <OrganizationTimeText value={rate.effective_from} />
                     {isCurrent && (
                       <Chip size="small" color="success" label="Действует" sx={{ ml: 1 }} />
                     )}
@@ -328,7 +328,9 @@ export const MemberRatesSection = () => {
                   <TableCell>{formatRubles(rate.rate_amount_minor)} ₽</TableCell>
                   <TableCell>{RATE_TYPE_LABELS[rate.rate_type] ?? rate.rate_type}</TableCell>
                   <TableCell>{rate.note ?? '—'}</TableCell>
-                  <TableCell>{formatDateTime(rate.created_at)}</TableCell>
+                  <TableCell>
+                    <OrganizationTimeText value={rate.created_at} />
+                  </TableCell>
                   {canEdit && (
                     <TableCell align="right">
                       <IconButton
@@ -370,7 +372,8 @@ export const MemberRatesSection = () => {
             <Typography>
               {formatRubles(deleting.rate_amount_minor)} ₽ (
               {RATE_TYPE_LABELS[deleting.rate_type] ?? deleting.rate_type}), действует с{' '}
-              {formatDateTime(deleting.effective_from)}. Действующая ставка для затронутых периодов
+              <OrganizationTimeText value={deleting.effective_from} />. Действующая ставка для
+              затронутых периодов
               может измениться.
             </Typography>
           </DialogContent>

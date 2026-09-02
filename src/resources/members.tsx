@@ -3,7 +3,6 @@ import {
   List,
   Datagrid,
   TextField,
-  DateField,
   Edit,
   Create,
   FunctionField,
@@ -40,6 +39,7 @@ import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
 import { MemberRatesSection } from './memberRates';
 import { MemberPenaltiesSection } from './penalties';
 import { MemberNameCell } from '../components/MemberNameCell';
+import { OrganizationTimeText } from '../components/TimeText';
 import { ResetPasswordDialog, useIssuedCredentials } from './memberCredentials';
 
 // Управление сотрудниками (кнопка «Добавить», смена пароля, правка логина) — только
@@ -112,7 +112,10 @@ export const MemberList = () => (
       <SelectField source="role" label="Системная роль" choices={MEMBER_ROLE_CHOICES} />
       <TextField source="custom_role.name" label="Кастомная роль" emptyText="—" />
       <FunctionField label="Ставка" render={rateField} />
-      <DateField source="joined_at" label="Присоединился" showTime />
+      <FunctionField
+        label="Присоединился"
+        render={(record: RaRecord) => <OrganizationTimeText value={record.joined_at} />}
+      />
     </Datagrid>
   </List>
 );

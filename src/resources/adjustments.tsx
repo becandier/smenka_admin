@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import {
   List,
   Datagrid,
-  DateField,
   TextField,
   BooleanInput,
   FunctionField,
@@ -41,7 +40,6 @@ import {
   ADJUSTMENT_TYPE_CHOICES,
   adjustmentErrorMessage,
   adjustmentTypeOf,
-  formatDateTime,
   formatMoneyMinor,
   formatRubles,
   formatSignedMoneyMinor,
@@ -58,6 +56,8 @@ import { MemberNameCell } from '../components/MemberNameCell';
 import { RestoreButton } from '../components/RestoreButton';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { wideDatagridScrollSx } from '../theme';
+import { OrganizationTimeText } from '../components/TimeText';
+import { formatDateTime, organizationTime } from '../utils/time';
 
 // Ручные начисления/удержания (manual_time_entry B1-B4, payroll_adjustments). Ресурс
 // «Начисления» (`/adjustments`) — owner/admin своей org; super_admin сквозным доступом не видит
@@ -80,6 +80,7 @@ export interface Adjustment {
   created_by_name: string;
   created_at: string;
   is_deleted?: boolean;
+  organization_timezone?: string | null;
 }
 
 interface CurrentRate {
@@ -190,7 +191,10 @@ export const AdjustmentFormDialog = ({
   );
   const shiftOptions = (memberShifts ?? []).map((s) => ({
     id: String(s.id),
-    label: `${formatDateTime(s.started_at)} · ${shiftStatusLabel(s.status)}`,
+    label: `${formatDateTime(
+      s.started_at,
+      organizationTime(s.organization_timezone ?? tz),
+    )} · ${shiftStatusLabel(s.status)}`,
   }));
 
   const hoursNum = (() => {
@@ -599,7 +603,17 @@ const AdjustmentDatagrid = () => {
         <FunctionField label="Сотрудник" render={nameField} sortable={false} />
         <FunctionField label="Сумма" render={amountField} sortable={false} />
         <TextField source="reason" label="Основание" sortable={false} />
-        <DateField source="occurred_at" label="Дата" sortable={false} />
+        <FunctionField
+          label="Дата"
+          render={(record: RaRecord) => (
+            <OrganizationTimeText
+              value={record.occurred_at}
+              timeZone={record.organization_timezone}
+              kind="date"
+            />
+          )}
+          sortable={false}
+        />
         <FunctionField label="Смена" render={shiftLinkField} sortable={false} />
         <TextField source="created_by_name" label="Кто создал" sortable={false} />
         <TextField source="comment" label="Комментарий" emptyText="—" sortable={false} />
@@ -654,6 +668,7 @@ const AdjustmentListActions = () => {
 // (как штрафы/зарплата, R8 backend.md).
 export const AdjustmentList = () => {
   const role = useMyOrgRole();
+  const timeZone = useOrgTimezone();
   if (role !== 'owner' && role !== 'admin') {
     return (
       <Box sx={{ p: 3 }}>
@@ -664,6 +679,7 @@ export const AdjustmentList = () => {
   return (
     <List
       filters={adjustmentFilters}
+      filter={{ __organization_timezone: timeZone }}
       sort={{ field: 'occurred_at', order: 'DESC' }}
       exporter={false}
       empty={false}

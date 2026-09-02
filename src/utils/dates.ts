@@ -1,24 +1,17 @@
+import { deviceTime, utcBoundsForCalendarDay } from './time';
+
 // Конвертация выбранного календарного дня (YYYY-MM-DD, локаль пользователя) в UTC
 // ISO8601 по контракту date_filters: date_from = начало дня, date_to = конец дня
 // (23:59:59.999) в локали; бэк границы не округляет, обе границы включительны.
 
-const parseDay = (day: string): Date | null => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
-  if (!match) return null;
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-};
-
 export const localDayStartToUtcIso = (day: string): string | undefined => {
-  const date = parseDay(day);
-  if (!date) return undefined;
-  return date.toISOString();
+  const { from } = utcBoundsForCalendarDay(day, deviceTime());
+  return from === '' ? undefined : from;
 };
 
 export const localDayEndToUtcIso = (day: string): string | undefined => {
-  const date = parseDay(day);
-  if (!date) return undefined;
-  date.setHours(23, 59, 59, 999);
-  return date.toISOString();
+  const { to } = utcBoundsForCalendarDay(day, deviceTime());
+  return to === '' ? undefined : to;
 };
 
 // Диапазон невалиден, только если заданы ОБА дня и from > to; открытый диапазон

@@ -28,7 +28,6 @@ import {
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
 import {
-  formatDateTime,
   formatDuration,
   OVERTIME_STATUS_CHOICES,
   overtimeStatusLabel,
@@ -40,6 +39,8 @@ import { DateRangeAlert } from '../components/DateRangeAlert';
 import { isDayRangeInvalid } from '../utils/dates';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { OrganizationTimeText } from '../components/TimeText';
+import { useOrgTimezone } from '../utils/useOrgTimezone';
 
 const overtimeFilters = [
   <SelectInput
@@ -140,13 +141,24 @@ const employeeField = (r: RaRecord) => (
 );
 const shiftField = (r: RaRecord) => {
   const shift = r.shift ?? {};
-  const period =
-    shift.started_at && shift.finished_at
-      ? `${formatDateTime(shift.started_at)} – ${formatDateTime(shift.finished_at)}`
-      : '—';
+  const hasPeriod = Boolean(shift.started_at && shift.finished_at);
   return (
     <Stack spacing={0}>
-      <Typography variant="body2">{period}</Typography>
+      <Typography variant="body2">
+        {hasPeriod ? (
+          <>
+            <OrganizationTimeText
+              value={shift.started_at}
+              timeZone={shift.organization_timezone ?? r.organization_timezone}
+            />
+            {' – '}
+            <OrganizationTimeText
+              value={shift.finished_at}
+              timeZone={shift.organization_timezone ?? r.organization_timezone}
+            />
+          </>
+        ) : '—'}
+      </Typography>
       {shift.work_location_name && (
         <Typography variant="caption" color="text.secondary">
           {shift.work_location_name}
@@ -161,7 +173,15 @@ const planField = (r: RaRecord) => {
   return (
     <Stack spacing={0}>
       <Typography variant="body2">
-        {formatDateTime(shift.scheduled_start_at)} – {formatDateTime(shift.scheduled_end_at)}
+        <OrganizationTimeText
+          value={shift.scheduled_start_at}
+          timeZone={shift.organization_timezone ?? r.organization_timezone}
+        />
+        {' – '}
+        <OrganizationTimeText
+          value={shift.scheduled_end_at}
+          timeZone={shift.organization_timezone ?? r.organization_timezone}
+        />
       </Typography>
       {shift.schedule_name && (
         <Typography variant="caption" color="text.secondary">
@@ -262,10 +282,12 @@ const NoAccess = () => (
 // открывается на pending; серверная пагинация/фильтры. Согласование/отклонение — по строке.
 export const OvertimeRequestList = () => {
   const role = useMyOrgRole();
+  const timeZone = useOrgTimezone();
   if (role !== 'owner' && role !== 'admin') return <NoAccess />;
   return (
     <List
       filters={overtimeFilters}
+      filter={{ __organization_timezone: timeZone }}
       filterDefaultValues={{ status: 'pending' }}
       sort={{ field: 'created_at', order: 'DESC' }}
       exporter={false}

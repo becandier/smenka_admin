@@ -3,7 +3,8 @@ import { useDataProvider } from 'react-admin';
 import { Box, Dialog, DialogContent, IconButton, Link, Stack, Typography } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import BrokenImageOutlinedIcon from '@mui/icons-material/BrokenImageOutlined';
-import { formatDateTime, photoCaptureLabel } from '../utils/format';
+import { photoCaptureLabel } from '../utils/format';
+import { OrganizationTimeText } from './TimeText';
 
 // Фото пункта-экземпляра чек-листа (см. checklist_photos/admin.md). Все поля сверх id/file_id
 // — optional: presigned url может прийти null (деградация storage), метаданные геолокации
@@ -143,9 +144,11 @@ const PhotoThumb = ({
 export const ChecklistItemPhotos = ({
   photos,
   photoSource,
+  timeZone,
 }: {
   photos: ChecklistPhoto[];
   photoSource?: string | null;
+  timeZone?: string | null;
 }) => {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
@@ -161,7 +164,7 @@ export const ChecklistItemPhotos = ({
           <Stack key={photo.id} spacing={0.25} sx={{ width: THUMB_SIZE }}>
             <PhotoThumb photo={photo} onOpen={setLightboxUrl} />
             <Typography variant="caption" color="text.secondary">
-              {captureLabel}: {formatDateTime(photo.captured_at)}
+              {captureLabel}: <OrganizationTimeText value={photo.captured_at} timeZone={timeZone} />
             </Typography>
             <PhotoCoords latitude={photo.latitude} longitude={photo.longitude} />
           </Stack>

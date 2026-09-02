@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   BooleanInput,
   Datagrid,
-  DateField,
   FunctionField,
   List,
   SearchInput,
@@ -23,6 +22,7 @@ import {
   subscriptionStatusLabel,
 } from '../../utils/format';
 import { SummaryTiles } from './SummaryTiles';
+import { DeviceTimeText } from '../../components/TimeText';
 import { ExtendDialog } from './ExtendDialog';
 import { EditDialog } from './EditDialog';
 import { HistoryDialog } from './HistoryDialog';
@@ -148,7 +148,10 @@ const SubscriptionDatagrid = () => {
       <TextField source="organization_name" label="Организация" />
       <TextField source="plan_name" label="Тариф" sortable={false} />
       <FunctionField label="Статус" render={statusChip} sortable={false} />
-      <DateField source="current_period_end" label="Окончание периода" showTime emptyText="—" />
+      <FunctionField
+        label="Окончание периода"
+        render={(record: RaRecord) => <DeviceTimeText value={record.current_period_end} />}
+      />
       <FunctionField
         label="Осталось"
         sortable={false}

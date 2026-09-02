@@ -17,6 +17,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import { useMyOrgRole } from '../../utils/useMyOrgRole';
 import { useIsReadOnly } from '../../subscription/SubscriptionContext';
 import { formatMemberNameFlat } from '../../utils/memberName';
+import { useOrgTimezone } from '../../utils/useOrgTimezone';
 import {
   TEST_ASSIGNMENT_STATUS_CHOICES,
   TEST_ASSIGNMENT_STATUS_COLOR,
@@ -227,9 +228,11 @@ const TestAssignmentBulkActions = () => {
 const TestAssignmentDatagrid = ({
   onSelect,
   onUnassigned,
+  timeZone,
 }: {
   onSelect: (record: RaRecord) => void;
   onUnassigned: () => void;
+  timeZone: string;
 }) => {
   const { isPending, data } = useListContext();
   const isReadOnly = useIsReadOnly();
@@ -244,8 +247,11 @@ const TestAssignmentDatagrid = ({
       <FunctionField label="Статус" render={statusChip} />
       <FunctionField label="Лучший %" render={bestPercent} />
       <FunctionField label="Попыток" render={attemptsUsed} />
-      <FunctionField label="Дедлайн" render={dueAt} />
-      <FunctionField label="Последняя сдача" render={lastAttemptAt} />
+      <FunctionField label="Дедлайн" render={(record: RaRecord) => dueAt(record, timeZone)} />
+      <FunctionField
+        label="Последняя сдача"
+        render={(record: RaRecord) => lastAttemptAt(record, timeZone)}
+      />
       <FunctionField
         label=""
         render={(r: RaRecord) => (
@@ -259,6 +265,7 @@ const TestAssignmentDatagrid = ({
 const TestAssignmentListInner = () => {
   const [selected, setSelected] = useState<RaRecord | null>(null);
   const refresh = useRefresh();
+  const timeZone = useOrgTimezone();
   return (
     <>
       <List
@@ -267,10 +274,14 @@ const TestAssignmentListInner = () => {
         exporter={false}
         empty={false}
       >
-        <TestAssignmentDatagrid onSelect={setSelected} onUnassigned={refresh} />
+        <TestAssignmentDatagrid onSelect={setSelected} onUnassigned={refresh} timeZone={timeZone} />
       </List>
       {selected && (
-        <AssignmentDetailDialog assignment={selected} onClose={() => setSelected(null)} />
+        <AssignmentDetailDialog
+          assignment={selected}
+          timeZone={timeZone}
+          onClose={() => setSelected(null)}
+        />
       )}
     </>
   );

@@ -4,7 +4,7 @@ import {
   Datagrid,
   TextField,
   NumberField,
-  DateField,
+  FunctionField,
   Edit,
   Create,
   SimpleForm,
@@ -25,6 +25,7 @@ import {
   useNotify,
   useRecordContext,
   useRedirect,
+  type RaRecord,
 } from 'react-admin';
 import {
   Alert,
@@ -42,6 +43,7 @@ import {
 import { LocationMapField } from '../components/LocationMapField';
 import { checklistLocationErrorMessage, pluralizeChecklists } from '../utils/format';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { OrganizationTimeText } from '../components/TimeText';
 
 const locationFilters = [<SearchInput key="q" source="q" alwaysOn />];
 
@@ -308,7 +310,10 @@ export const WorkLocationList = () => (
       <NumberField source="latitude" label="Широта" options={{ maximumFractionDigits: 6 }} />
       <NumberField source="longitude" label="Долгота" options={{ maximumFractionDigits: 6 }} />
       <NumberField source="radius_meters" label="Радиус, м" />
-      <DateField source="created_at" label="Создана" showTime />
+      <FunctionField
+        label="Создана"
+        render={(record: RaRecord) => <OrganizationTimeText value={record.created_at} />}
+      />
       <WorkLocationDeleteButton variant="row" />
     </Datagrid>
   </List>

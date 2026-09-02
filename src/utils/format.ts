@@ -1,5 +1,11 @@
 import { HttpError } from 'react-admin';
 import type { PaymentKind, PaymentStatus } from '../subscription/billingTypes';
+import {
+  deviceTime,
+  formatDate as formatDateInContext,
+  formatDateTime as formatDateTimeInContext,
+  organizationTime,
+} from './time';
 
 // Форматирование рабочего времени из секунд в «Чч Ммин».
 export const formatDuration = (seconds: number | null | undefined): string => {
@@ -15,9 +21,7 @@ export const formatDuration = (seconds: number | null | undefined): string => {
 
 // Дата-время ISO → локальная строка ru-RU (для вложенных полей вне DateField).
 export const formatDateTime = (value: string | null | undefined): string => {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('ru-RU');
+  return formatDateTimeInContext(value, deviceTime());
 };
 
 export const MEMBER_ROLE_LABELS: Record<string, string> = {
@@ -52,9 +56,7 @@ export const shiftStatusLabel = (status: string | null | undefined): string =>
 
 // Дата без времени: ISO → «01.03.2026».
 export const formatDate = (value: string | null | undefined): string => {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('ru-RU');
+  return formatDateInContext(value, deviceTime());
 };
 
 // --- Деньги (payroll): хранение в копейках, отображение в рублях ---
@@ -308,14 +310,7 @@ export const finishReasonLabel = (reason: string | null | undefined): string =>
 // Дата-время ISO → строка в конкретной IANA-таймзоне (плановое окно смены — «по этому времени
 // считаются графики», admin.md §3). Фолбэк на локальную таймзону браузера при некорректной зоне.
 export const formatDateTimeInTz = (value: string | null | undefined, tz: string): string => {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  try {
-    return date.toLocaleString('ru-RU', { timeZone: tz });
-  } catch {
-    return date.toLocaleString('ru-RU');
-  }
+  return formatDateTimeInContext(value, organizationTime(tz));
 };
 
 // --- Тестирование сотрудников (employee_tests) ---
