@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useFormContext, useWatch } from 'react-hook-form';
 import {
   List,
   Datagrid,
@@ -42,10 +43,55 @@ import {
 } from '@mui/material';
 import { LocationMapField } from '../components/LocationMapField';
 import { checklistLocationErrorMessage, pluralizeChecklists } from '../utils/format';
+import { findIntersectingLocations, type WorkLocationGeo } from '../utils/geo';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { OrganizationTimeText } from '../components/TimeText';
 
 const locationFilters = [<SearchInput key="q" source="q" alwaysOn />];
+
+// Предупреждение о пересечении зон (admin.md, shift_start_location_choice): расчёт — на клиенте
+// по уже загруженному списку точек организации (work-locations — ORG_CLIENT-ресурс,
+// dataProvider грузит его целиком, см. providers/dataProvider.ts). Не блокирует сохранение —
+// это подсказка, а не запрет. При Edit исключаем саму редактируемую точку (иначе она всегда
+// «пересекалась» бы сама с собой — findIntersectingLocations, geo.ts).
+const LocationIntersectionWarning = () => {
+  const record = useRecordContext<any>();
+  const { control } = useFormContext();
+  const [latitude, longitude, radiusMeters] = useWatch({
+    control,
+    name: ['latitude', 'longitude', 'radius_meters'],
+  });
+  const { data: locations } = useGetList('work-locations', {
+    pagination: { page: 1, perPage: 500 },
+    sort: { field: 'name', order: 'ASC' },
+  });
+
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  const radius = Number(radiusMeters);
+  const hasCandidate = Number.isFinite(lat) && Number.isFinite(lng) && Number.isFinite(radius) && radius > 0;
+
+  if (!hasCandidate || !locations) return null;
+
+  const excludeId = record?.id ? String(record.id) : null;
+  const intersecting = findIntersectingLocations(
+    { latitude: lat, longitude: lng, radius_meters: radius },
+    locations as WorkLocationGeo[],
+    excludeId,
+  );
+
+  if (intersecting.length === 0) return null;
+
+  const names = intersecting.map((l) => `«${l.name}»`).join(', ');
+  const noun = intersecting.length === 1 ? 'точкой' : 'точками';
+
+  return (
+    <Alert severity="warning" sx={{ width: '100%' }}>
+      Зона пересекается с {noun} {names}. Сотрудник в зоне пересечения сам выберет, где начать
+      смену.
+    </Alert>
+  );
+};
 
 const LocationFields = () => (
   <>
@@ -68,6 +114,7 @@ const LocationFields = () => (
       defaultValue={100}
       validate={[required(), minValue(10), maxValue(10000)]}
     />
+    <LocationIntersectionWarning />
     <TextInput
       source="address"
       label="Адрес"
