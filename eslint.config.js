@@ -49,14 +49,16 @@ export default defineConfig(
     files: ['**/*.js'],
     extends: [tseslint.configs.disableTypeChecked],
   },
-  // Временные API timestamp форматируются только через src/utils/time.ts. Исключение —
-  // format.ts/files.ts: там toLocaleString используется только для чисел (деньги/размер
-  // файла), не для Date, поэтому набор селектора отдельный от запрета на Intl.DateTimeFormat
-  // ниже. dates.ts после миграции на time.ts больше не форматирует и не строит Intl напрямую,
-  // поэтому в исключениях не перечислен — новый вызов там тоже будет отловлен.
+  // Временные API timestamp форматируются только через src/utils/time.ts. Оба запрета —
+  // toLocaleString-семейство и Intl.DateTimeFormat (с `new` и без) — живут в ОДНОМ объекте
+  // rules['no-restricted-syntax']: во flat config два разных объекта конфигурации, матчащие
+  // один и тот же файл и задающие одноимённое правило, не складываются, а полностью замещают
+  // друг друга — более поздний объект стирает более ранний. dates.ts после миграции на
+  // time.ts больше не форматирует и не строит Intl напрямую, поэтому в исключениях не
+  // перечислен — новый вызов там тоже будет отловлен.
   {
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/utils/time.ts', 'src/utils/format.ts', 'src/utils/files.ts'],
+    ignores: ['src/utils/time.ts'],
     rules: {
       'no-restricted-syntax': [
         'error',
@@ -65,14 +67,22 @@ export default defineConfig(
             "CallExpression[callee.property.name='toLocaleString'], CallExpression[callee.property.name='toLocaleDateString'], CallExpression[callee.property.name='toLocaleTimeString']",
           message: 'Для отображения времени используйте src/utils/time.ts с явным TimeContext.',
         },
+        {
+          selector:
+            "NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat'], CallExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",
+          message: 'Formatter времени создаётся только в src/utils/time.ts.',
+        },
       ],
     },
   },
-  // Intl.DateTimeFormat — единственная точка построения формата времени, только в time.ts.
-  // Запрещаем и `new Intl.DateTimeFormat(...)`, и вызов без `new` (конструктор вызываемый).
+  // format.ts/files.ts: toLocaleString там используется только для чисел (деньги/размер
+  // файла), не для Date, поэтому для них запрет toLocaleString-семейства снимается —
+  // но не запрет на Intl.DateTimeFormat, который остаётся эксклюзивом time.ts. Этот объект
+  // идёт ПОСЛЕ общего и матчит только эти два файла, поэтому для них его rules полностью
+  // замещают общие (тот же принцип «последний матчащий объект побеждает»), оставляя только
+  // селектор Intl.DateTimeFormat.
   {
-    files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/utils/time.ts'],
+    files: ['src/utils/format.ts', 'src/utils/files.ts'],
     rules: {
       'no-restricted-syntax': [
         'error',
