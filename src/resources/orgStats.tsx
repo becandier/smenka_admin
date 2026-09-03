@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Title, useDataProvider, useNotify } from 'react-admin';
 import {
   Alert,
@@ -27,14 +27,14 @@ import {
 import { chartPalette } from '../brand';
 import { useCurrentOrg } from '../orgContext';
 import { DateRangeFields } from '../components/DateRangeFields';
-import { formatDateTime, formatDuration } from '../utils/format';
+import { formatDuration } from '../utils/format';
 import { formatMemberNameFlat } from '../utils/memberName';
 import {
   INVALID_RANGE_MESSAGE,
   isDayRangeInvalid,
-  localDayEndToUtcIso,
-  localDayStartToUtcIso,
 } from '../utils/dates';
+import { formatDateTime, organizationTime, utcBoundsForCalendarDay } from '../utils/time';
+import { useOrgTimezone } from '../utils/useOrgTimezone';
 import type { OrgStatsQuery } from '../providers/dataProvider';
 
 interface EmployeeStat {
@@ -75,6 +75,8 @@ export const OrgStatsPage = () => {
   const { org } = useCurrentOrg();
   const dataProvider = useDataProvider();
   const notify = useNotify();
+  const timeZone = useOrgTimezone();
+  const timeContext = useMemo(() => organizationTime(timeZone), [timeZone]);
   const [mode, setMode] = useState<WindowMode>('preset');
   const [period, setPeriod] = useState(DEFAULT_PERIOD);
   const [dateFrom, setDateFrom] = useState('');
@@ -101,8 +103,9 @@ export const OrgStatsPage = () => {
       mode === 'preset'
         ? { period }
         : {
-            date_from: dateFrom === '' ? undefined : localDayStartToUtcIso(dateFrom),
-            date_to: dateTo === '' ? undefined : localDayEndToUtcIso(dateTo),
+            date_from:
+              dateFrom === '' ? undefined : utcBoundsForCalendarDay(dateFrom, timeContext).from,
+            date_to: dateTo === '' ? undefined : utcBoundsForCalendarDay(dateTo, timeContext).to,
           };
     let active = true;
     setLoading(true);
@@ -135,7 +138,18 @@ export const OrgStatsPage = () => {
     return () => {
       active = false;
     };
-  }, [org, mode, period, dateFrom, dateTo, rangeEmpty, rangeInvalid, dataProvider, notify]);
+  }, [
+    org,
+    mode,
+    period,
+    dateFrom,
+    dateTo,
+    rangeEmpty,
+    rangeInvalid,
+    dataProvider,
+    notify,
+    timeContext,
+  ]);
 
   if (!org) {
     return (
@@ -212,7 +226,8 @@ export const OrgStatsPage = () => {
           диапазон и для пресета, и для кастома (при period=null UI не падает). */}
       {hasRange && stats && (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Показано за период: {formatDateTime(stats.range_from)} — {formatDateTime(stats.range_to)}
+          Показано за период: {formatDateTime(stats.range_from, timeContext)} —{' '}
+          {formatDateTime(stats.range_to, timeContext)}
         </Typography>
       )}
 

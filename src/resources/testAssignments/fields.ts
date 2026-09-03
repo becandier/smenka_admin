@@ -1,6 +1,6 @@
 import type { RaRecord } from 'react-admin';
 import { pluralizeAssignments, pluralizeAttempts } from '../../utils/format';
-import { formatDateTime, organizationTime } from '../../utils/time';
+import { formatDateTime, resolveOrganizationTime } from '../../utils/time';
 
 // Читатели полей TestAssignmentOut (backend.md) — общие для колонок реестра
 // (testAssignments/index.tsx, FunctionField) и карточки деталей назначения
@@ -18,8 +18,9 @@ export const attemptsUsed = (r: RaRecord): string =>
   `${r.attempts_used ?? 0} / ${r.max_attempts ?? '—'}`;
 
 const assignmentTime = (r: RaRecord, fallbackTimeZone: string) =>
-  organizationTime(
-    typeof r.organization_timezone === 'string' ? r.organization_timezone : fallbackTimeZone,
+  resolveOrganizationTime(
+    typeof r.organization_timezone === 'string' ? r.organization_timezone : undefined,
+    fallbackTimeZone,
   );
 
 export const dueAt = (r: RaRecord, fallbackTimeZone: string): string =>

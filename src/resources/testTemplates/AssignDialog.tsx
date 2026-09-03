@@ -22,7 +22,7 @@ import {
   testAssignmentStatusLabel,
   testErrorMessage,
 } from '../../utils/format';
-import { localInputToUtcIso } from '../../utils/dates';
+import { zonedInputToUtcIso } from '../../utils/dates';
 import { attemptsUsed, bestPercent, dueAt, memberDisplayName } from '../testAssignments/fields';
 import { UnassignRowButton } from '../testAssignments/UnassignDialog';
 import { useOrgTimezone } from '../../utils/useOrgTimezone';
@@ -167,12 +167,17 @@ export const AssignTestDialog = ({
       setError('Выберите хотя бы одного сотрудника');
       return;
     }
+    const dueAt = dueAtInput === '' ? null : zonedInputToUtcIso(dueAtInput, timeZone);
+    if (dueAtInput !== '' && !dueAt) {
+      setError('Укажите существующее время дедлайна в часовом поясе организации');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       const res = await dataProvider.assignTestTemplate(templateId, {
         member_ids: selected.map((m) => m.id),
-        due_at: dueAtInput ? (localInputToUtcIso(dueAtInput) ?? null) : null,
+        due_at: dueAt,
       });
       notify(`Назначено ${res?.created ?? 0}, обновлено ${res?.updated ?? 0}`, {
         type: 'success',

@@ -284,7 +284,11 @@ export const PayrollPage = () => {
             {report.items.length === 0 ? (
               <PayrollEmpty />
             ) : viewMode === 'list' ? (
-              <PayrollListView report={report} granularity={granularity} />
+              <PayrollListView
+                report={report}
+                granularity={granularity}
+                timeContext={calendarContext}
+              />
             ) : (
               <PayrollMatrixView report={report} granularity={granularity} />
             )}

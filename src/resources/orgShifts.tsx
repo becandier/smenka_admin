@@ -65,6 +65,7 @@ import { useOrgTimezone } from '../utils/useOrgTimezone';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { isDayRangeInvalid, utcIsoToZonedParts } from '../utils/dates';
+import { formatDateTime, resolveOrganizationTime } from '../utils/time';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { MemberNameCell } from '../components/MemberNameCell';
 import { DateRangeAlert } from '../components/DateRangeAlert';
@@ -521,6 +522,7 @@ const ShiftAdjustmentAction = () => {
   const record = useRecordContext();
   const role = useMyOrgRole();
   const refresh = useRefresh();
+  const organizationTimezone = useOrgTimezone();
   const [open, setOpen] = useState(false);
   const canManage = role === 'owner' || role === 'admin';
   const { data: members, isPending } = useGetList(
@@ -564,7 +566,10 @@ const ShiftAdjustmentAction = () => {
             }}
             lockedShift={{
               id: String(record.id),
-              label: 'Текущая смена',
+              label: `Смена от ${formatDateTime(
+                record.started_at,
+                resolveOrganizationTime(record.organization_timezone, organizationTimezone),
+              )}`,
             }}
             defaultOccurredAt={record.started_at ?? null}
             editing={null}

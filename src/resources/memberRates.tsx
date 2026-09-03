@@ -31,8 +31,9 @@ import {
   formatRubles,
   parseRublesToMinor,
 } from '../utils/format';
-import { localInputToUtcIso, utcIsoToLocalInput } from '../utils/dates';
+import { utcIsoToZonedInput, zonedInputToUtcIso } from '../utils/dates';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useOrgTimezone } from '../utils/useOrgTimezone';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { OrganizationTimeText } from '../components/TimeText';
 
@@ -88,14 +89,23 @@ const RateDialog = ({
 }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
+  const organizationTimezone = useOrgTimezone();
   const [amount, setAmount] = useState(editing ? String(editing.rate_amount_minor / 100) : '');
   const [rateType, setRateType] = useState(editing?.rate_type ?? 'hourly');
+  const editingEffectiveFrom = editing?.effective_from;
   const [effectiveFrom, setEffectiveFrom] = useState(
-    editing ? utcIsoToLocalInput(editing.effective_from) : '',
+    editingEffectiveFrom ? utcIsoToZonedInput(editingEffectiveFrom, organizationTimezone) : '',
   );
   const [note, setNote] = useState(editing?.note ?? '');
   const [errors, setErrors] = useState<RateFormErrors>({});
   const [saving, setSaving] = useState(false);
+
+  // See PenaltyFormDialog: update only server-provided initial data when the scoped IANA zone
+  // becomes available, never reinterpret a newly entered value as device-local time.
+  useEffect(() => {
+    if (editingEffectiveFrom)
+      setEffectiveFrom(utcIsoToZonedInput(editingEffectiveFrom, organizationTimezone));
+  }, [editingEffectiveFrom, organizationTimezone]);
 
   const handleSubmit = async (): Promise<void> => {
     const nextErrors: RateFormErrors = {};
@@ -103,7 +113,8 @@ const RateDialog = ({
     if (minor === null) {
       nextErrors.amount = 'Сумма в рублях больше нуля, не более 2 знаков после запятой';
     }
-    const effectiveIso = effectiveFrom === '' ? undefined : localInputToUtcIso(effectiveFrom);
+    const effectiveIso =
+      effectiveFrom === '' ? undefined : zonedInputToUtcIso(effectiveFrom, organizationTimezone);
     if (!effectiveIso) {
       nextErrors.effectiveFrom = 'Укажите дату начала действия';
     }

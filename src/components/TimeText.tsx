@@ -3,15 +3,20 @@ import {
   formatDate,
   formatDateTime,
   formatTime,
-  organizationTime,
+  resolveOrganizationTime,
 } from '../utils/time';
 import { useOrgTimezone } from '../utils/useOrgTimezone';
 
 type TimeValue = string | Date | null | undefined;
 type TimeKind = 'date' | 'dateTime' | 'time';
 
-const formatByKind = (value: TimeValue, kind: TimeKind, timeZone: string): string => {
-  const context = organizationTime(timeZone);
+const formatByKind = (
+  value: TimeValue,
+  kind: TimeKind,
+  recordTimeZone: string | null | undefined,
+  scopedTimeZone: string,
+): string => {
+  const context = resolveOrganizationTime(recordTimeZone, scopedTimeZone);
   if (kind === 'date') return formatDate(value, context);
   if (kind === 'time') return formatTime(value, context);
   return formatDateTime(value, context);
@@ -29,7 +34,7 @@ export const OrganizationTimeText = ({
   kind?: TimeKind;
 }) => {
   const scopedTimeZone = useOrgTimezone();
-  return <>{formatByKind(value, kind, timeZone ?? scopedTimeZone)}</>;
+  return <>{formatByKind(value, kind, timeZone, scopedTimeZone)}</>;
 };
 
 export const DeviceTimeText = ({

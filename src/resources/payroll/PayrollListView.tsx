@@ -20,6 +20,7 @@ import { formatClockDuration, formatMoneyMinor, formatSignedMoneyMinor } from '.
 import { MemberNameCell } from '../../components/MemberNameCell';
 import { formatBucketLabel } from './buckets';
 import type { Granularity, PayrollItem, PayrollReport } from './types';
+import { calendarDayForInstant, type TimeContext } from '../../utils/time';
 
 // Подсказка к бейджу «нет ставки»: сколько не вошло в начисление (как в базовом payroll).
 const missingRateHint = (item: PayrollItem): string => {
@@ -32,21 +33,6 @@ const MissingRateBadge = ({ title }: { title: string }) => (
     <Chip size="small" color="warning" icon={<WarningAmberIcon />} label="нет ставки" />
   </Tooltip>
 );
-
-// UTC-момент периода отчёта → календарный день БРАУЗЕРА (YYYY-MM-DD). report.period.date_from/
-// date_to — полные UTC-таймстемпы (границы дня в таймзоне админа, см. index.tsx: PayrollPage
-// строит их через localDayStartToUtcIso/localDayEndToUtcIso от браузерной таймзоны, не
-// org-таймзоны — тот же режим, что и у остальных day-range фильтров списков админки, включая
-// сам /adjustments). Ссылка «в начисления» должна передавать те же day-строки, что понимает
-// dataProvider.getList('adjustments') → toUtcDayRangeFilter → parseDay (строго YYYY-MM-DD) —
-// голый полный ISO-таймстемп в этот фильтр не матчится и молча отбрасывается.
-const isoToLocalDay = (iso: string | null): string | null => {
-  if (!iso) return null;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-};
 
 // Ячейка «Штраф»: сумма штрафов + подсказка с количеством (если штрафы есть).
 const PenaltyCell = ({ amount_minor, count }: { amount_minor: number; count: number }) =>
@@ -77,11 +63,13 @@ const AdjustmentCell = ({
   count,
   memberId,
   period,
+  timeContext,
 }: {
   amount_minor: number;
   count: number;
   memberId: string | undefined;
   period: { date_from: string | null; date_to: string | null };
+  timeContext: TimeContext;
 }) => {
   const color = amount_minor > 0 ? 'success.main' : amount_minor < 0 ? 'error.main' : undefined;
   const value = formatSignedMoneyMinor(amount_minor);
@@ -93,8 +81,8 @@ const AdjustmentCell = ({
     );
   }
   const filter: Record<string, string> = { member_id: memberId };
-  const dateFromDay = isoToLocalDay(period.date_from);
-  const dateToDay = isoToLocalDay(period.date_to);
+  const dateFromDay = calendarDayForInstant(period.date_from, timeContext);
+  const dateToDay = calendarDayForInstant(period.date_to, timeContext);
   if (dateFromDay) filter.date_from = dateFromDay;
   if (dateToDay) filter.date_to = dateToDay;
   const href = `/adjustments?filter=${encodeURIComponent(JSON.stringify(filter))}`;
@@ -190,9 +178,11 @@ const BreakdownTable = ({ item, granularity }: { item: PayrollItem; granularity:
 export const PayrollListView = ({
   report,
   granularity,
+  timeContext,
 }: {
   report: PayrollReport;
   granularity: Granularity;
+  timeContext: TimeContext;
 }) => {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const detailed = granularity !== 'none';
@@ -278,6 +268,7 @@ export const PayrollListView = ({
                   count={item.adjustments_count}
                   memberId={memberIdByUser.get(item.user_id)}
                   period={report.period}
+                  timeContext={timeContext}
                 />
                 <NetCell amount_minor={item.net_amount_minor} />
                 <TableCell>

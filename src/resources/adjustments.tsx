@@ -57,7 +57,7 @@ import { RestoreButton } from '../components/RestoreButton';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { wideDatagridScrollSx } from '../theme';
 import { OrganizationTimeText } from '../components/TimeText';
-import { formatDateTime, organizationTime } from '../utils/time';
+import { formatDateTime, resolveOrganizationTime } from '../utils/time';
 
 // Ручные начисления/удержания (manual_time_entry B1-B4, payroll_adjustments). Ресурс
 // «Начисления» (`/adjustments`) — owner/admin своей org; super_admin сквозным доступом не видит
@@ -193,7 +193,7 @@ export const AdjustmentFormDialog = ({
     id: String(s.id),
     label: `${formatDateTime(
       s.started_at,
-      organizationTime(s.organization_timezone ?? tz),
+      resolveOrganizationTime(s.organization_timezone, tz),
     )} · ${shiftStatusLabel(s.status)}`,
   }));
 

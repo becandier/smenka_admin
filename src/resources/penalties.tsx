@@ -38,14 +38,14 @@ import {
   parseRublesToMinor,
   shiftStatusLabel,
 } from '../utils/format';
-import { localInputToUtcIso, utcIsoToLocalInput } from '../utils/dates';
+import { utcIsoToZonedInput, zonedInputToUtcIso } from '../utils/dates';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
 import { MemberNameCell } from '../components/MemberNameCell';
 import { RestoreButton } from '../components/RestoreButton';
 import { FeatureLockButton, LockedIconButton } from '../subscription/FeatureLock';
 import { useHasFeature, useIsReadOnly } from '../subscription/SubscriptionContext';
 import { OrganizationTimeText } from '../components/TimeText';
-import { organizationTime, formatDateTime } from '../utils/time';
+import { formatDateTime, resolveOrganizationTime } from '../utils/time';
 import { useOrgTimezone } from '../utils/useOrgTimezone';
 
 // Penalty (admin-facing) — снимок суммы/причины на момент назначения (см. fines/admin.md).
@@ -116,12 +116,20 @@ const PenaltyFormDialog = ({
   const [reason, setReason] = useState(editing?.reason ?? '');
   const [amount, setAmount] = useState(editing ? String(editing.amount_minor / 100) : '');
   const [shiftId, setShiftId] = useState<string>(lockedShift?.id ?? editing?.shift_id ?? '');
+  const editingOccurredAt = editing?.occurred_at;
   const [occurredAt, setOccurredAt] = useState(
-    editing ? utcIsoToLocalInput(editing.occurred_at) : '',
+    editingOccurredAt ? utcIsoToZonedInput(editingOccurredAt, organizationTimezone) : '',
   );
   const [comment, setComment] = useState(editing?.comment ?? '');
   const [errors, setErrors] = useState<PenaltyFormErrors>({});
   const [saving, setSaving] = useState(false);
+
+  // useOrgTimezone starts with a safe default while the scoped organization is loading. Rebuild
+  // an existing API instant once its actual IANA timezone arrives; a new form has no initial
+  // timestamp to rewrite.
+  useEffect(() => {
+    if (editingOccurredAt) setOccurredAt(utcIsoToZonedInput(editingOccurredAt, organizationTimezone));
+  }, [editingOccurredAt, organizationTimezone]);
 
   // Шаблоны нужны только в режиме создания «Из шаблона».
   const { data: templates } = useGetList<PenaltyTemplate>(
@@ -144,7 +152,7 @@ const PenaltyFormDialog = ({
     id: String(s.id),
     label: `${formatDateTime(
       s.started_at,
-      organizationTime(s.organization_timezone ?? organizationTimezone),
+      resolveOrganizationTime(s.organization_timezone, organizationTimezone),
     )} · ${shiftStatusLabel(s.status)}`,
   }));
 
@@ -164,7 +172,7 @@ const PenaltyFormDialog = ({
     if (minor === null) nextErrors.amount = 'Сумма больше нуля, не более 2 знаков';
 
     const effectiveShift = lockedShift?.id ?? (shiftId === '' ? null : shiftId);
-    const occurredIso = occurredAt === '' ? null : localInputToUtcIso(occurredAt);
+    const occurredIso = occurredAt === '' ? null : zonedInputToUtcIso(occurredAt, organizationTimezone);
     // Дата обязательна, только если смена не выбрана (иначе бэк подставит shift.started_at).
     if (!effectiveShift && !occurredIso) nextErrors.occurred = 'Укажите дату (или выберите смену)';
     if (occurredAt !== '' && !occurredIso) nextErrors.occurred = 'Некорректная дата';
@@ -599,7 +607,7 @@ export const ShiftPenaltySection = () => {
   const memberId = member?.id ? String(member.id) : null;
   const lockedLabel = `Смена от ${formatDateTime(
     record.started_at,
-    organizationTime(record.organization_timezone ?? organizationTimezone),
+    resolveOrganizationTime(record.organization_timezone, organizationTimezone),
   )}`;
 
   return (

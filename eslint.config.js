@@ -49,12 +49,14 @@ export default defineConfig(
     files: ['**/*.js'],
     extends: [tseslint.configs.disableTypeChecked],
   },
-  // Временные API timestamp форматируются только через src/utils/time.ts. Исключения:
-  // dates.ts — низкоуровневая конвертация wall-time формы в UTC; format.ts/files.ts —
-  // числовая локализация денег/размера файла, не Date; time.ts — единственная точка Intl.
+  // Временные API timestamp форматируются только через src/utils/time.ts. Исключение —
+  // format.ts/files.ts: там toLocaleString используется только для чисел (деньги/размер
+  // файла), не для Date, поэтому набор селектора отдельный от запрета на Intl.DateTimeFormat
+  // ниже. dates.ts после миграции на time.ts больше не форматирует и не строит Intl напрямую,
+  // поэтому в исключениях не перечислен — новый вызов там тоже будет отловлен.
   {
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/utils/time.ts', 'src/utils/dates.ts', 'src/utils/format.ts', 'src/utils/files.ts'],
+    ignores: ['src/utils/time.ts', 'src/utils/format.ts', 'src/utils/files.ts'],
     rules: {
       'no-restricted-syntax': [
         'error',
@@ -63,9 +65,20 @@ export default defineConfig(
             "CallExpression[callee.property.name='toLocaleString'], CallExpression[callee.property.name='toLocaleDateString'], CallExpression[callee.property.name='toLocaleTimeString']",
           message: 'Для отображения времени используйте src/utils/time.ts с явным TimeContext.',
         },
+      ],
+    },
+  },
+  // Intl.DateTimeFormat — единственная точка построения формата времени, только в time.ts.
+  // Запрещаем и `new Intl.DateTimeFormat(...)`, и вызов без `new` (конструктор вызываемый).
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/utils/time.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
         {
           selector:
-            "NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",
+            "NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat'], CallExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",
           message: 'Formatter времени создаётся только в src/utils/time.ts.',
         },
       ],
