@@ -1034,7 +1034,9 @@ export const dataProvider: DataProvider = {
       // графику); новые поля — auto_finish_by_schedule/require_schedule/late_tolerance_minutes/
       // overtime_request_days (work_schedules/backend.md, «organization_settings — изменения»).
       // early_start_minutes — допуск на ранний старт смены (schedule_window_enforcement/
-      // backend.md, «organization_settings — новое поле»).
+      // backend.md, «organization_settings — новое поле»). checklist_grace_minutes — окно
+      // дозаполнения чек-листа после закрытия смены (checklist_grace_period/backend.md,
+      // «OrganizationSettings — новое поле»), 0 запрещает дозаполнение.
       for (const k of [
         'geo_check_enabled',
         'require_work_location',
@@ -1045,6 +1047,7 @@ export const dataProvider: DataProvider = {
         'overtime_request_days',
         'max_pause_minutes',
         'max_pauses_per_shift',
+        'checklist_grace_minutes',
       ]) {
         if (k in data) body[k] = data[k] === '' ? null : data[k];
       }
