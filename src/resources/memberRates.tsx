@@ -27,14 +27,15 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import {
   RATE_TYPE_CHOICES,
   RATE_TYPE_LABELS,
-  formatDateTime,
   formatRateBadge,
   formatRubles,
   parseRublesToMinor,
 } from '../utils/format';
-import { localInputToUtcIso, utcIsoToLocalInput } from '../utils/dates';
+import { utcIsoToZonedInput, zonedInputToUtcIso } from '../utils/dates';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useOrgTimezone } from '../utils/useOrgTimezone';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { OrganizationTimeText } from '../components/TimeText';
 
 interface Rate {
   id: string;
@@ -88,14 +89,23 @@ const RateDialog = ({
 }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
+  const organizationTimezone = useOrgTimezone();
   const [amount, setAmount] = useState(editing ? String(editing.rate_amount_minor / 100) : '');
   const [rateType, setRateType] = useState(editing?.rate_type ?? 'hourly');
+  const editingEffectiveFrom = editing?.effective_from;
   const [effectiveFrom, setEffectiveFrom] = useState(
-    editing ? utcIsoToLocalInput(editing.effective_from) : '',
+    editingEffectiveFrom ? utcIsoToZonedInput(editingEffectiveFrom, organizationTimezone) : '',
   );
   const [note, setNote] = useState(editing?.note ?? '');
   const [errors, setErrors] = useState<RateFormErrors>({});
   const [saving, setSaving] = useState(false);
+
+  // See PenaltyFormDialog: update only server-provided initial data when the scoped IANA zone
+  // becomes available, never reinterpret a newly entered value as device-local time.
+  useEffect(() => {
+    if (editingEffectiveFrom)
+      setEffectiveFrom(utcIsoToZonedInput(editingEffectiveFrom, organizationTimezone));
+  }, [editingEffectiveFrom, organizationTimezone]);
 
   const handleSubmit = async (): Promise<void> => {
     const nextErrors: RateFormErrors = {};
@@ -103,7 +113,8 @@ const RateDialog = ({
     if (minor === null) {
       nextErrors.amount = 'Сумма в рублях больше нуля, не более 2 знаков после запятой';
     }
-    const effectiveIso = effectiveFrom === '' ? undefined : localInputToUtcIso(effectiveFrom);
+    const effectiveIso =
+      effectiveFrom === '' ? undefined : zonedInputToUtcIso(effectiveFrom, organizationTimezone);
     if (!effectiveIso) {
       nextErrors.effectiveFrom = 'Укажите дату начала действия';
     }
@@ -320,7 +331,7 @@ export const MemberRatesSection = () => {
               return (
                 <TableRow key={rate.id} sx={isCurrent ? { bgcolor: 'action.selected' } : undefined}>
                   <TableCell>
-                    {formatDateTime(rate.effective_from)}
+                    <OrganizationTimeText value={rate.effective_from} />
                     {isCurrent && (
                       <Chip size="small" color="success" label="Действует" sx={{ ml: 1 }} />
                     )}
@@ -328,7 +339,9 @@ export const MemberRatesSection = () => {
                   <TableCell>{formatRubles(rate.rate_amount_minor)} ₽</TableCell>
                   <TableCell>{RATE_TYPE_LABELS[rate.rate_type] ?? rate.rate_type}</TableCell>
                   <TableCell>{rate.note ?? '—'}</TableCell>
-                  <TableCell>{formatDateTime(rate.created_at)}</TableCell>
+                  <TableCell>
+                    <OrganizationTimeText value={rate.created_at} />
+                  </TableCell>
                   {canEdit && (
                     <TableCell align="right">
                       <IconButton
@@ -370,7 +383,8 @@ export const MemberRatesSection = () => {
             <Typography>
               {formatRubles(deleting.rate_amount_minor)} ₽ (
               {RATE_TYPE_LABELS[deleting.rate_type] ?? deleting.rate_type}), действует с{' '}
-              {formatDateTime(deleting.effective_from)}. Действующая ставка для затронутых периодов
+              <OrganizationTimeText value={deleting.effective_from} />. Действующая ставка для
+              затронутых периодов
               может измениться.
             </Typography>
           </DialogContent>

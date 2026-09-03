@@ -18,8 +18,9 @@ import DownloadIcon from '@mui/icons-material/Download';
 import { useCurrentOrg } from '../../orgContext';
 import { useMyOrgRole } from '../../utils/useMyOrgRole';
 import { saveBlob } from '../../utils/files';
-import { formatDate } from '../../utils/format';
-import { isDayRangeInvalid, localDayEndToUtcIso, localDayStartToUtcIso } from '../../utils/dates';
+import { isDayRangeInvalid } from '../../utils/dates';
+import { formatDate, organizationTime, utcBoundsForCalendarDay } from '../../utils/time';
+import { useOrgTimezone } from '../../utils/useOrgTimezone';
 import { PayrollFilters } from './PayrollFilters';
 import { PayrollListView, PayrollEmpty } from './PayrollListView';
 import { PayrollMatrixView } from './PayrollMatrixView';
@@ -56,6 +57,7 @@ export const PayrollPage = () => {
   const role = useMyOrgRole();
   const dataProvider = useDataProvider();
   const notify = useNotify();
+  const tz = useOrgTimezone();
 
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -74,13 +76,13 @@ export const PayrollPage = () => {
 
   const allowed = role === 'owner' || role === 'admin';
   const rangeInvalid = isDayRangeInvalid(dateFrom, dateTo);
-  // «Дни» нарезаются в таймзоне админа, чтобы совпадать с локальным восприятием суток.
-  const tz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
+  const calendarContext = useMemo(() => organizationTime(tz), [tz]);
 
   const query = useMemo<PayrollQuery>(
     () => ({
-      date_from: dateFrom === '' ? undefined : localDayStartToUtcIso(dateFrom),
-      date_to: dateTo === '' ? undefined : localDayEndToUtcIso(dateTo),
+      date_from:
+        dateFrom === '' ? undefined : utcBoundsForCalendarDay(dateFrom, calendarContext).from,
+      date_to: dateTo === '' ? undefined : utcBoundsForCalendarDay(dateTo, calendarContext).to,
       granularity,
       tz,
       user_ids: userIds.length ? userIds : undefined,
@@ -88,7 +90,17 @@ export const PayrollPage = () => {
       only_missing_rate: onlyMissingRate || undefined,
       include_penalties: includePenalties,
     }),
-    [dateFrom, dateTo, granularity, tz, userIds, locationIds, onlyMissingRate, includePenalties],
+    [
+      dateFrom,
+      dateTo,
+      calendarContext,
+      granularity,
+      tz,
+      userIds,
+      locationIds,
+      onlyMissingRate,
+      includePenalties,
+    ],
   );
 
   useEffect(() => {
@@ -170,7 +182,10 @@ export const PayrollPage = () => {
 
   const periodLabel = report
     ? report.period.date_from || report.period.date_to
-      ? `${formatDate(report.period.date_from)} — ${formatDate(report.period.date_to)}`
+      ? `${formatDate(report.period.date_from, calendarContext)} — ${formatDate(
+          report.period.date_to,
+          calendarContext,
+        )}`
       : 'за всё время'
     : null;
 
@@ -269,7 +284,11 @@ export const PayrollPage = () => {
             {report.items.length === 0 ? (
               <PayrollEmpty />
             ) : viewMode === 'list' ? (
-              <PayrollListView report={report} granularity={granularity} />
+              <PayrollListView
+                report={report}
+                granularity={granularity}
+                timeContext={calendarContext}
+              />
             ) : (
               <PayrollMatrixView report={report} granularity={granularity} />
             )}

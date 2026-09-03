@@ -1,5 +1,6 @@
 import type { RaRecord } from 'react-admin';
-import { formatDateTime, pluralizeAssignments, pluralizeAttempts } from '../../utils/format';
+import { pluralizeAssignments, pluralizeAttempts } from '../../utils/format';
+import { formatDateTime, resolveOrganizationTime } from '../../utils/time';
 
 // Читатели полей TestAssignmentOut (backend.md) — общие для колонок реестра
 // (testAssignments/index.tsx, FunctionField) и карточки деталей назначения
@@ -16,10 +17,19 @@ export const bestPercent = (r: RaRecord): string =>
 export const attemptsUsed = (r: RaRecord): string =>
   `${r.attempts_used ?? 0} / ${r.max_attempts ?? '—'}`;
 
-export const dueAt = (r: RaRecord): string => (r.due_at ? formatDateTime(String(r.due_at)) : '—');
+const assignmentTime = (r: RaRecord, fallbackTimeZone: string) =>
+  resolveOrganizationTime(
+    typeof r.organization_timezone === 'string' ? r.organization_timezone : undefined,
+    fallbackTimeZone,
+  );
 
-export const lastAttemptAt = (r: RaRecord): string =>
-  r.last_attempt_at ? formatDateTime(String(r.last_attempt_at)) : '—';
+export const dueAt = (r: RaRecord, fallbackTimeZone: string): string =>
+  r.due_at ? formatDateTime(String(r.due_at), assignmentTime(r, fallbackTimeZone)) : '—';
+
+export const lastAttemptAt = (r: RaRecord, fallbackTimeZone: string): string =>
+  r.last_attempt_at
+    ? formatDateTime(String(r.last_attempt_at), assignmentTime(r, fallbackTimeZone))
+    : '—';
 
 // --- Снятие назначения (test_assignment_unassign): тексты подтверждения ---
 // Вынесены из UnassignDialog.tsx (react-refresh/only-export-components: файл с компонентами

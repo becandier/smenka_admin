@@ -4,9 +4,8 @@ import { fetchWithAuthRetry } from './tokenRefresh';
 import {
   INVALID_RANGE_MESSAGE,
   isDayRangeInvalid,
-  localDayEndToUtcIso,
-  localDayStartToUtcIso,
 } from '../utils/dates';
+import { deviceTime, organizationTime, utcBoundsForCalendarDay } from '../utils/time';
 import { parseRublesToMinor, textOrEmpty } from '../utils/format';
 import { normalizeDisplayName } from '../utils/memberName';
 import type { AccessState, FileUploadResult, ReorderInput } from '../resources/knowledge/types';
@@ -271,12 +270,17 @@ const toUtcDayRangeFilter = (filter: Record<string, unknown>): Record<string, un
     });
   }
   const result = { ...filter };
+  const context =
+    typeof filter.__organization_timezone === 'string' && filter.__organization_timezone !== ''
+      ? organizationTime(filter.__organization_timezone)
+      : deviceTime();
   if (typeof result.date_from === 'string' && result.date_from !== '') {
-    result.date_from = localDayStartToUtcIso(result.date_from);
+    result.date_from = utcBoundsForCalendarDay(result.date_from, context).from;
   }
   if (typeof result.date_to === 'string' && result.date_to !== '') {
-    result.date_to = localDayEndToUtcIso(result.date_to);
+    result.date_to = utcBoundsForCalendarDay(result.date_to, context).to;
   }
+  delete result.__organization_timezone;
   return result;
 };
 

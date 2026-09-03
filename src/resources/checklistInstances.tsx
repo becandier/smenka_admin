@@ -3,7 +3,6 @@ import { Link as RouterLink } from 'react-router-dom';
 import {
   List,
   Datagrid,
-  DateField,
   EmailField,
   FunctionField,
   SelectInput,
@@ -18,7 +17,7 @@ import {
 import { Box, Button, Card, CardContent, Chip, Stack, Tooltip, Typography } from '@mui/material';
 import PhotoCameraOutlinedIcon from '@mui/icons-material/PhotoCameraOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import { checklistReportStatusLabel, formatDateTime, workLocationLabel } from '../utils/format';
+import { checklistReportStatusLabel, workLocationLabel } from '../utils/format';
 import { formatMemberNameFlat } from '../utils/memberName';
 import { isDayRangeInvalid } from '../utils/dates';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
@@ -27,6 +26,8 @@ import { DateRangeAlert } from '../components/DateRangeAlert';
 import { InfoRow } from '../components/InfoRow';
 import { ChecklistItemPhotos } from '../components/ChecklistItemPhotos';
 import { useCurrentOrg } from '../orgContext';
+import { OrganizationTimeText } from '../components/TimeText';
+import { useOrgTimezone } from '../utils/useOrgTimezone';
 
 const typeChoices = [
   { id: 'shift_start', name: 'Начало смены' },
@@ -216,31 +217,50 @@ const ChecklistInstanceDatagrid = () => {
       <FunctionField label="Чек-лист" render={nameCell} />
       <FunctionField label="Сотрудник" render={nameField} sortable={false} />
       <EmailField source="user_email" label="Email" emptyText="—" sortable={false} />
-      <DateField source="shift_started_at" label="Смена" showTime />
+      <FunctionField
+        source="shift_started_at"
+        label="Смена"
+        render={(record: RaRecord) => (
+          <OrganizationTimeText
+            value={record.shift_started_at}
+            timeZone={record.organization_timezone}
+          />
+        )}
+      />
       <FunctionField label="Точка" render={workLocationName} />
       <FunctionField label="Статус" render={statusChip} />
       <FunctionField label="Обязательный" render={requiredChip} />
       <FunctionField label="Пункты" render={itemsSummaryCell} />
       <FunctionField label="Фото" render={photosCountCell} />
-      <DateField source="completed_at" label="Заполнен" showTime emptyText="—" />
+      <FunctionField
+        source="completed_at"
+        label="Заполнен"
+        render={(record: RaRecord) => (
+          <OrganizationTimeText value={record.completed_at} timeZone={record.organization_timezone} />
+        )}
+      />
     </Datagrid>
   );
 };
 
 // Реестр экземпляров чек-листов организации: серверная пагинация через
 // GET /organizations/{org}/checklist-instances (checklist_reports/backend.md).
-export const ChecklistInstanceList = () => (
-  <List
-    filters={checklistInstanceFilters}
-    sort={{ field: 'shift_started_at', order: 'DESC' }}
-    exporter={false}
-    empty={false}
-  >
-    <ResetEntityFiltersOnOrgChange />
-    <DateRangeAlert />
-    <ChecklistInstanceDatagrid />
-  </List>
-);
+export const ChecklistInstanceList = () => {
+  const timeZone = useOrgTimezone();
+  return (
+    <List
+      filters={checklistInstanceFilters}
+      filter={{ __organization_timezone: timeZone }}
+      sort={{ field: 'shift_started_at', order: 'DESC' }}
+      exporter={false}
+      empty={false}
+    >
+      <ResetEntityFiltersOnOrgChange />
+      <DateRangeAlert />
+      <ChecklistInstanceDatagrid />
+    </List>
+  );
+};
 
 const ChecklistInstanceHeader = () => {
   const record = useRecordContext();
@@ -262,12 +282,20 @@ const ChecklistInstanceHeader = () => {
       </InfoRow>
       <InfoRow label="Email">{record.user_email ?? '—'}</InfoRow>
       <InfoRow label="Точка">{workLocationLabel(record.work_location ?? null)}</InfoRow>
-      <InfoRow label="Начало смены">{formatDateTime(record.shift_started_at)}</InfoRow>
+      <InfoRow label="Начало смены">
+        <OrganizationTimeText
+          value={record.shift_started_at}
+          timeZone={record.organization_timezone}
+        />
+      </InfoRow>
       <InfoRow label="Конец смены">
-        {record.shift_finished_at ? formatDateTime(record.shift_finished_at) : '—'}
+        <OrganizationTimeText
+          value={record.shift_finished_at}
+          timeZone={record.organization_timezone}
+        />
       </InfoRow>
       <InfoRow label="Заполнен">
-        {record.completed_at ? formatDateTime(record.completed_at) : '—'}
+        <OrganizationTimeText value={record.completed_at} timeZone={record.organization_timezone} />
       </InfoRow>
       {record.shift_id && (
         <Box sx={{ pt: 1 }}>
@@ -327,7 +355,10 @@ const ChecklistInstanceItemsList = () => {
               )}
               {it.completed_at && (
                 <Typography variant="caption" color="text.secondary">
-                  {formatDateTime(it.completed_at)}
+                  <OrganizationTimeText
+                    value={it.completed_at}
+                    timeZone={record?.organization_timezone}
+                  />
                 </Typography>
               )}
             </Stack>
@@ -338,7 +369,11 @@ const ChecklistInstanceItemsList = () => {
             )}
             {photos.length > 0 && (
               <Box sx={{ pl: 3 }}>
-                <ChecklistItemPhotos photos={photos} photoSource={it.photo_source} />
+                <ChecklistItemPhotos
+                  photos={photos}
+                  photoSource={it.photo_source}
+                  timeZone={record?.organization_timezone}
+                />
               </Box>
             )}
           </Box>

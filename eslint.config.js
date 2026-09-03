@@ -49,6 +49,57 @@ export default defineConfig(
     files: ['**/*.js'],
     extends: [tseslint.configs.disableTypeChecked],
   },
+  // Временные API timestamp форматируются только через src/utils/time.ts. Оба запрета —
+  // toLocaleString-семейство и Intl.DateTimeFormat (с `new` и без) — живут в ОДНОМ объекте
+  // rules['no-restricted-syntax']: во flat config два разных объекта конфигурации, матчащие
+  // один и тот же файл и задающие одноимённое правило, не складываются, а полностью замещают
+  // друг друга — более поздний объект стирает более ранний. dates.ts после миграции на
+  // time.ts больше не форматирует и не строит Intl напрямую, поэтому в исключениях не
+  // перечислен — новый вызов там тоже будет отловлен.
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/utils/time.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.property.name='toLocaleString'], CallExpression[callee.property.name='toLocaleDateString'], CallExpression[callee.property.name='toLocaleTimeString']",
+          message: 'Для отображения времени используйте src/utils/time.ts с явным TimeContext.',
+        },
+        {
+          selector:
+            "NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat'], CallExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",
+          message: 'Formatter времени создаётся только в src/utils/time.ts.',
+        },
+      ],
+    },
+  },
+  // format.ts/files.ts: голый toLocaleString там используется только для чисел
+  // (деньги/размер файла — format.ts:67, files.ts:53), не для Date, поэтому для них
+  // снимается запрет только на сам toLocaleString. toLocaleDateString/toLocaleTimeString
+  // (форматирование дат) и Intl.DateTimeFormat остаются под запретом — эксклюзив
+  // time.ts. Этот объект идёт ПОСЛЕ общего и матчит только эти два файла, поэтому для
+  // них его rules полностью замещают общие (тот же принцип «последний матчащий объект
+  // побеждает») — здесь их нужно перечислить заново, а не только сузить.
+  {
+    files: ['src/utils/format.ts', 'src/utils/files.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.property.name='toLocaleDateString'], CallExpression[callee.property.name='toLocaleTimeString']",
+          message: 'Для отображения времени используйте src/utils/time.ts с явным TimeContext.',
+        },
+        {
+          selector:
+            "NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat'], CallExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",
+          message: 'Formatter времени создаётся только в src/utils/time.ts.',
+        },
+      ],
+    },
+  },
   // Отключает стилистические правила, конфликтующие с Prettier. Держать последним.
   prettier,
 );

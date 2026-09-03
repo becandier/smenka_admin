@@ -3,7 +3,6 @@ import {
   List,
   Datagrid,
   TextField,
-  DateField,
   BooleanField,
   BooleanInput,
   FunctionField,
@@ -29,6 +28,7 @@ import { RestoreButton } from '../components/RestoreButton';
 import { FeatureLockButton, PremiumRequiredScreen } from '../subscription/FeatureLock';
 import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
 import { useHasFeature, useIsReadOnly } from '../subscription/SubscriptionContext';
+import { OrganizationTimeText } from '../components/TimeText';
 
 // Шаблоны штрафов ведут только org owner/admin. super_admin штрафы конкретной
 // организации не ведёт (ТЗ fines) — для него экран закрыт (не полагаемся только на 403 бэка).
@@ -140,8 +140,14 @@ export const PenaltyTemplateList = () => {
         <FunctionField label="Сумма" render={amountField} />
         <TextField source="currency" label="Валюта" />
         <BooleanField source="is_deleted" label="Удалён" />
-        <DateField source="created_at" label="Создан" showTime />
-        <DateField source="updated_at" label="Изменён" showTime />
+        <FunctionField
+          label="Создан"
+          render={(record: RaRecord) => <OrganizationTimeText value={record.created_at} />}
+        />
+        <FunctionField
+          label="Изменён"
+          render={(record: RaRecord) => <OrganizationTimeText value={record.updated_at} />}
+        />
         <FunctionField
           label=""
           render={(r: RaRecord) => <PenaltyTemplateRowActions record={r} />}

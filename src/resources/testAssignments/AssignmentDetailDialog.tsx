@@ -62,13 +62,18 @@ const extractAttemptRefs = (assignment: RaRecord): AttemptRef[] => {
 
 interface AssignmentDetailDialogProps {
   assignment: RaRecord;
+  timeZone: string;
   onClose: () => void;
 }
 
 // Деталь назначения (admin.md, «Раздел «Результаты тестов»»): сводка по строке реестра +
 // список попыток (если данные доступны, см. extractAttemptRefs) с переходом к разметке
 // верно/неверно (AttemptReviewDialog).
-export const AssignmentDetailDialog = ({ assignment, onClose }: AssignmentDetailDialogProps) => {
+export const AssignmentDetailDialog = ({
+  assignment,
+  timeZone,
+  onClose,
+}: AssignmentDetailDialogProps) => {
   const attemptRefs = useMemo(() => extractAttemptRefs(assignment), [assignment]);
   const [openAttemptId, setOpenAttemptId] = useState<string | null>(null);
   const status = String(assignment.status ?? '');
@@ -88,8 +93,8 @@ export const AssignmentDetailDialog = ({ assignment, onClose }: AssignmentDetail
           </InfoRow>
           <InfoRow label="Лучший результат">{bestPercent(assignment)}</InfoRow>
           <InfoRow label="Попыток">{attemptsUsed(assignment)}</InfoRow>
-          <InfoRow label="Дедлайн">{dueAt(assignment)}</InfoRow>
-          <InfoRow label="Последняя сдача">{lastAttemptAt(assignment)}</InfoRow>
+          <InfoRow label="Дедлайн">{dueAt(assignment, timeZone)}</InfoRow>
+          <InfoRow label="Последняя сдача">{lastAttemptAt(assignment, timeZone)}</InfoRow>
         </Stack>
 
         <Typography variant="subtitle1" sx={{ mb: 1 }}>

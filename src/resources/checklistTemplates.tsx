@@ -6,7 +6,6 @@ import {
   TextField,
   BooleanField,
   NumberField,
-  DateField,
   FunctionField,
   SelectField,
   Create,
@@ -68,6 +67,7 @@ import {
 } from '../utils/format';
 import { RestoreButton } from '../components/RestoreButton';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { OrganizationTimeText } from '../components/TimeText';
 
 const typeChoices = [
   { id: 'shift_start', name: 'Начало смены' },
@@ -196,7 +196,10 @@ export const ChecklistTemplateList = () => (
       <BooleanField source="is_required" label="Обязательный" />
       <NumberField source="items_count" label="Пунктов" />
       <BooleanField source="is_deleted" label="Удалён" />
-      <DateField source="created_at" label="Создан" showTime />
+      <FunctionField
+        label="Создан"
+        render={(record: RaRecord) => <OrganizationTimeText value={record.created_at} />}
+      />
       <FunctionField
         label=""
         render={(r: RaRecord) => <ChecklistTemplateRowActions record={r} />}

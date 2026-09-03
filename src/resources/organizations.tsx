@@ -4,7 +4,7 @@ import {
   TextField,
   NumberField,
   BooleanField,
-  DateField,
+  FunctionField,
   Create,
   SimpleForm,
   TextInput,
@@ -17,6 +17,7 @@ import {
 import { Button } from '@mui/material';
 import LoginIcon from '@mui/icons-material/Login';
 import { useCurrentOrg } from '../orgContext';
+import { DeviceTimeText } from '../components/TimeText';
 
 const deletedChoices = [
   { id: 'true', name: 'Удалённые' },
@@ -56,7 +57,10 @@ export const OrganizationList = () => (
       <TextField source="owner_email" label="Владелец" emptyText="—" sortable={false} />
       <NumberField source="member_count" label="Участников" sortable={false} />
       <BooleanField source="is_deleted" label="Удалена" sortable={false} />
-      <DateField source="created_at" label="Создана" showTime />
+      <FunctionField
+        label="Создана"
+        render={(record) => <DeviceTimeText value={record.created_at} />}
+      />
       <OpenCabinetButton />
     </Datagrid>
   </List>

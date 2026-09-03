@@ -2,7 +2,6 @@ import { useState, type ReactNode } from 'react';
 import {
   List,
   Datagrid,
-  DateField,
   TextField,
   EmailField,
   FunctionField,
@@ -53,8 +52,6 @@ import PaidIcon from '@mui/icons-material/Paid';
 import {
   checklistStatusLabel,
   finishReasonLabel,
-  formatDateTime,
-  formatDateTimeInTz,
   formatDuration,
   memberRoleLabel,
   overtimeStatusLabel,
@@ -68,11 +65,13 @@ import { useOrgTimezone } from '../utils/useOrgTimezone';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { isDayRangeInvalid, utcIsoToZonedParts } from '../utils/dates';
+import { formatDateTime, resolveOrganizationTime } from '../utils/time';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { MemberNameCell } from '../components/MemberNameCell';
 import { DateRangeAlert } from '../components/DateRangeAlert';
 import { InfoRow } from '../components/InfoRow';
 import { ChecklistItemPhotos } from '../components/ChecklistItemPhotos';
+import { OrganizationTimeText } from '../components/TimeText';
 import { ShiftPenaltySection } from './penalties';
 import {
   ManualShiftCreateDialog,
@@ -290,8 +289,18 @@ const OrgShiftDatagrid = () => {
       {/* shift_geo_photo_fallback: бейдж «Без гео» с причиной в tooltip; у обычных смен
           колонка пустая. */}
       <FunctionField label="Гео" render={GeoFallbackChip} sortable={false} />
-      <DateField source="started_at" label="Начало" showTime />
-      <DateField source="finished_at" label="Конец" showTime emptyText="—" />
+      <FunctionField
+        label="Начало"
+        render={(record: RaRecord) => (
+          <OrganizationTimeText value={record.started_at} timeZone={record.organization_timezone} />
+        )}
+      />
+      <FunctionField
+        label="Конец"
+        render={(record: RaRecord) => (
+          <OrganizationTimeText value={record.finished_at} timeZone={record.organization_timezone} />
+        )}
+      />
       <FunctionField label="Отработано" render={durationField} />
       <FunctionField label="Точка" render={workLocationName} sortable={false} />
       <FunctionField label="Чек-листы" render={checklistsSummaryCell} />
@@ -338,18 +347,22 @@ const OrgShiftListActions = () => {
 // Список орг-смен: серверная пагинация, колонки сотрудника из ShiftResponse,
 // строка кликабельна → деталь чужой смены (Show). Сортировка только по датам.
 // empty={false} — отключаем встроенную empty-страницу, рендерим свою в любом случае.
-export const OrgShiftList = () => (
-  <List
-    filters={shiftFilters}
-    sort={{ field: 'started_at', order: 'DESC' }}
-    exporter={false}
-    empty={false}
-    actions={<OrgShiftListActions />}
-  >
-    <DateRangeAlert />
-    <OrgShiftDatagrid />
-  </List>
-);
+export const OrgShiftList = () => {
+  const timeZone = useOrgTimezone();
+  return (
+    <List
+      filters={shiftFilters}
+      filter={{ __organization_timezone: timeZone }}
+      sort={{ field: 'started_at', order: 'DESC' }}
+      exporter={false}
+      empty={false}
+      actions={<OrgShiftListActions />}
+    >
+      <DateRangeAlert />
+      <OrgShiftDatagrid />
+    </List>
+  );
+};
 
 // Шапка детали смены: данные сотрудника (nullable → «—») + тайминги.
 const ShiftHeader = () => {
@@ -365,9 +378,11 @@ const ShiftHeader = () => {
       <InfoRow label="Кастомная роль">{record.custom_role_name ?? '—'}</InfoRow>
       <InfoRow label="Статус">{shiftStatusLabel(record.status)}</InfoRow>
       <InfoRow label="Точка">{workLocationLabel(record.work_location ?? null)}</InfoRow>
-      <InfoRow label="Начало">{formatDateTime(record.started_at)}</InfoRow>
+      <InfoRow label="Начало">
+        <OrganizationTimeText value={record.started_at} timeZone={record.organization_timezone} />
+      </InfoRow>
       <InfoRow label="Конец">
-        {record.finished_at ? formatDateTime(record.finished_at) : '—'}
+        <OrganizationTimeText value={record.finished_at} timeZone={record.organization_timezone} />
       </InfoRow>
       <InfoRow label="Отработано">{formatDuration(record.worked_seconds)}</InfoRow>
       <ShiftManualActionsBar />
@@ -489,7 +504,9 @@ const ManualEditsCard = () => {
         {record.is_edited && (
           <Typography>
             Изменена: {record.edited_by_name ?? '—'}
-            {record.edited_at ? `, ${formatDateTime(record.edited_at)}` : ''}
+            {record.edited_at ? (
+              <>, <OrganizationTimeText value={record.edited_at} timeZone={record.organization_timezone} /></>
+            ) : null}
           </Typography>
         )}
         <Typography color="text.secondary">Комментарий: {record.manual_note ?? '—'}</Typography>
@@ -505,6 +522,7 @@ const ShiftAdjustmentAction = () => {
   const record = useRecordContext();
   const role = useMyOrgRole();
   const refresh = useRefresh();
+  const organizationTimezone = useOrgTimezone();
   const [open, setOpen] = useState(false);
   const canManage = role === 'owner' || role === 'admin';
   const { data: members, isPending } = useGetList(
@@ -548,7 +566,10 @@ const ShiftAdjustmentAction = () => {
             }}
             lockedShift={{
               id: String(record.id),
-              label: `Смена от ${formatDateTime(record.started_at)}`,
+              label: `Смена от ${formatDateTime(
+                record.started_at,
+                resolveOrganizationTime(record.organization_timezone, organizationTimezone),
+              )}`,
             }}
             defaultOccurredAt={record.started_at ?? null}
             editing={null}
@@ -581,9 +602,17 @@ const PausesBlock = () => {
         const secs = pauseSeconds(p.started_at, p.finished_at ?? null);
         return (
           <Box key={p.id} sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Typography>{formatDateTime(p.started_at)}</Typography>
+            <Typography>
+              <OrganizationTimeText value={p.started_at} timeZone={record?.organization_timezone} />
+            </Typography>
             <Typography color="text.secondary">→</Typography>
-            <Typography>{p.finished_at ? formatDateTime(p.finished_at) : 'активна'}</Typography>
+            <Typography>
+              {p.finished_at ? (
+                <OrganizationTimeText value={p.finished_at} timeZone={record?.organization_timezone} />
+              ) : (
+                'активна'
+              )}
+            </Typography>
             <Chip size="small" label={secs === null ? '—' : formatDuration(secs)} />
           </Box>
         );
@@ -596,9 +625,11 @@ const PausesBlock = () => {
 const ChecklistInstanceItems = ({
   shiftId,
   instanceId,
+  timeZone,
 }: {
   shiftId: string;
   instanceId: string;
+  timeZone?: string | null;
 }) => {
   const dataProvider = useDataProvider();
   const { data, error } = useAsync<any>(
@@ -653,7 +684,11 @@ const ChecklistInstanceItems = ({
             </Box>
             {photos.length > 0 && (
               <Box sx={{ pl: 3 }}>
-                <ChecklistItemPhotos photos={photos} photoSource={it.photo_source} />
+                <ChecklistItemPhotos
+                  photos={photos}
+                  photoSource={it.photo_source}
+                  timeZone={timeZone}
+                />
               </Box>
             )}
           </Box>
@@ -709,7 +744,13 @@ const ShiftChecklists = () => {
               </Box>
             </AccordionSummary>
             <AccordionDetails>
-              {shiftId && <ChecklistInstanceItems shiftId={shiftId} instanceId={String(it.id)} />}
+              {shiftId && (
+                <ChecklistInstanceItems
+                  shiftId={shiftId}
+                  instanceId={String(it.id)}
+                  timeZone={record?.organization_timezone}
+                />
+              )}
             </AccordionDetails>
           </Accordion>
         );
@@ -817,9 +858,17 @@ const ShiftPlanSection = () => {
       <Stack spacing={0.5}>
         <InfoRow label="График">{record.schedule_name ?? '—'}</InfoRow>
         <InfoRow label="Плановое начало">
-          {formatDateTimeInTz(record.scheduled_start_at, tz)}
+          <OrganizationTimeText
+            value={record.scheduled_start_at}
+            timeZone={record.organization_timezone ?? tz}
+          />
         </InfoRow>
-        <InfoRow label="Плановый конец">{formatDateTimeInTz(record.scheduled_end_at, tz)}</InfoRow>
+        <InfoRow label="Плановый конец">
+          <OrganizationTimeText
+            value={record.scheduled_end_at}
+            timeZone={record.organization_timezone ?? tz}
+          />
+        </InfoRow>
         <InfoRow label="Опоздание">
           {typeof record.late_seconds === 'number' && record.late_seconds > 0
             ? formatDuration(record.late_seconds)

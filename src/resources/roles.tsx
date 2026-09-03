@@ -2,7 +2,7 @@ import {
   List,
   Datagrid,
   TextField,
-  DateField,
+  FunctionField,
   Edit,
   Create,
   SimpleForm,
@@ -17,6 +17,7 @@ import {
 } from 'react-admin';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
+import { OrganizationTimeText } from '../components/TimeText';
 
 const roleFilters = [<SearchInput key="q" source="q" alwaysOn />];
 
@@ -50,7 +51,10 @@ export const RoleList = () => {
         bulkActionButtons={isReadOnly ? false : <BulkDeleteButton mutationMode="pessimistic" />}
       >
         <TextField source="name" label="Название" />
-        <DateField source="created_at" label="Создана" showTime />
+        <FunctionField
+          label="Создана"
+          render={(record) => <OrganizationTimeText value={record.created_at} />}
+        />
       </Datagrid>
     </List>
   );

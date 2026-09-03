@@ -22,9 +22,10 @@ import {
   testAssignmentStatusLabel,
   testErrorMessage,
 } from '../../utils/format';
-import { localInputToUtcIso } from '../../utils/dates';
+import { zonedInputToUtcIso } from '../../utils/dates';
 import { attemptsUsed, bestPercent, dueAt, memberDisplayName } from '../testAssignments/fields';
 import { UnassignRowButton } from '../testAssignments/UnassignDialog';
+import { useOrgTimezone } from '../../utils/useOrgTimezone';
 
 interface MemberOption {
   id: string;
@@ -47,10 +48,12 @@ const AssignedRow = ({
   record,
   templateTitle,
   onUnassigned,
+  timeZone,
 }: {
   record: RaRecord;
   templateTitle: string;
   onUnassigned: () => void;
+  timeZone: string;
 }) => {
   const status = String(record.status ?? '');
   return (
@@ -63,7 +66,8 @@ const AssignedRow = ({
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography noWrap>{memberDisplayName(record)}</Typography>
         <Typography variant="body2" color="text.secondary" noWrap>
-          {attemptsUsed(record)} попыток · лучший {bestPercent(record)} · дедлайн {dueAt(record)}
+          {attemptsUsed(record)} попыток · лучший {bestPercent(record)} · дедлайн{' '}
+          {dueAt(record, timeZone)}
         </Typography>
       </Box>
       <Chip
@@ -89,6 +93,7 @@ export const AssignTestDialog = ({
 }: AssignDialogProps) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
+  const timeZone = useOrgTimezone();
 
   // --- Блок «уже назначены» ---
   const [assignments, setAssignments] = useState<RaRecord[]>([]);
@@ -162,12 +167,17 @@ export const AssignTestDialog = ({
       setError('Выберите хотя бы одного сотрудника');
       return;
     }
+    const dueAt = dueAtInput === '' ? null : zonedInputToUtcIso(dueAtInput, timeZone);
+    if (dueAtInput !== '' && !dueAt) {
+      setError('Укажите существующее время дедлайна в часовом поясе организации');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       const res = await dataProvider.assignTestTemplate(templateId, {
         member_ids: selected.map((m) => m.id),
-        due_at: dueAtInput ? (localInputToUtcIso(dueAtInput) ?? null) : null,
+        due_at: dueAt,
       });
       notify(`Назначено ${res?.created ?? 0}, обновлено ${res?.updated ?? 0}`, {
         type: 'success',
@@ -213,6 +223,7 @@ export const AssignTestDialog = ({
                 key={String(a.id)}
                 record={a}
                 templateTitle={templateTitle}
+                timeZone={timeZone}
                 onUnassigned={() => void loadAssignments()}
               />
             ))}
