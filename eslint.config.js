@@ -75,17 +75,23 @@ export default defineConfig(
       ],
     },
   },
-  // format.ts/files.ts: toLocaleString там используется только для чисел (деньги/размер
-  // файла), не для Date, поэтому для них запрет toLocaleString-семейства снимается —
-  // но не запрет на Intl.DateTimeFormat, который остаётся эксклюзивом time.ts. Этот объект
-  // идёт ПОСЛЕ общего и матчит только эти два файла, поэтому для них его rules полностью
-  // замещают общие (тот же принцип «последний матчащий объект побеждает»), оставляя только
-  // селектор Intl.DateTimeFormat.
+  // format.ts/files.ts: голый toLocaleString там используется только для чисел
+  // (деньги/размер файла — format.ts:67, files.ts:53), не для Date, поэтому для них
+  // снимается запрет только на сам toLocaleString. toLocaleDateString/toLocaleTimeString
+  // (форматирование дат) и Intl.DateTimeFormat остаются под запретом — эксклюзив
+  // time.ts. Этот объект идёт ПОСЛЕ общего и матчит только эти два файла, поэтому для
+  // них его rules полностью замещают общие (тот же принцип «последний матчащий объект
+  // побеждает») — здесь их нужно перечислить заново, а не только сузить.
   {
     files: ['src/utils/format.ts', 'src/utils/files.ts'],
     rules: {
       'no-restricted-syntax': [
         'error',
+        {
+          selector:
+            "CallExpression[callee.property.name='toLocaleDateString'], CallExpression[callee.property.name='toLocaleTimeString']",
+          message: 'Для отображения времени используйте src/utils/time.ts с явным TimeContext.',
+        },
         {
           selector:
             "NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat'], CallExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",

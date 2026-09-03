@@ -10,7 +10,29 @@ permissions:
   packages: write
 
 jobs:
+  # Пуш в main этого репозитория триггерит автодеплой на прод (см. job deploy ниже) —
+  # линт и тесты обязаны отработать ДО сборки/публикации образа в ghcr.io, иначе
+  # непроверенный код может уйти в прод.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test -- --run
+
   build-push:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -24,6 +24,16 @@ const selectorContains = (ruleConfig: unknown, needle: string): boolean =>
   Array.isArray(ruleConfig) &&
   ruleConfig.some((entry) => isSelectorEntry(entry) && entry.selector.includes(needle));
 
+// ESLint нормализует severity flat-конфига ('error'/'warn'/'off') в число (2/1/0) уже
+// в calculateConfigForFile — проверяем именно эту нормализованную форму. Регресс,
+// пойманный повторным ревью: понижение 'error' → 'warn' в eslint.config.js оставляло
+// селекторы на месте (эта проверка проходила), но `npm run lint` переставал падать
+// на реальном нарушении (exit 0, warning вместо error) — тест обязан ловить и severity,
+// не только состав селекторов.
+const ERROR_SEVERITY = 2;
+
+const ruleSeverity = (ruleConfig: unknown): unknown => (Array.isArray(ruleConfig) ? ruleConfig[0] : undefined);
+
 // typescript-eslint инициализирует TS project service (полный анализ src) на первый вызов
 // calculateConfigForFile — это разовая дорогая операция (десятки секунд на CI), кэшируемая
 // дальше на уровень процесса. Один общий ESLint-инстанс + увеличенный таймаут на первый тест.
@@ -35,11 +45,14 @@ const PROJECT_SERVICE_WARMUP_TIMEOUT = 60_000;
 
 describe('eslint no-restricted-syntax time guard', () => {
   it(
-    'flags both toLocaleString-family and Intl.DateTimeFormat for a regular src file',
+    'flags both toLocaleString-family and Intl.DateTimeFormat for a regular src file, as an error',
     async () => {
       const config = await eslint.calculateConfigForFile('src/resources/orgShifts.tsx');
       const rule = config.rules?.['no-restricted-syntax'];
+      expect(ruleSeverity(rule)).toBe(ERROR_SEVERITY);
+      expect(selectorContains(rule, 'toLocaleString')).toBe(true);
       expect(selectorContains(rule, 'toLocaleDateString')).toBe(true);
+      expect(selectorContains(rule, 'toLocaleTimeString')).toBe(true);
       expect(selectorContains(rule, 'Intl')).toBe(true);
     },
     PROJECT_SERVICE_WARMUP_TIMEOUT,
@@ -50,12 +63,29 @@ describe('eslint no-restricted-syntax time guard', () => {
     expect(config.rules?.['no-restricted-syntax']).toBeUndefined();
   });
 
+  // dates.ts не перечислен ни в одном исключении (см. комментарий в eslint.config.js) —
+  // репрезентативный "обычный" файл вне format.ts/files.ts, который должен остаться под
+  // полным запретом. Проверяем его отдельно от orgShifts.tsx, чтобы будущий узкий override
+  // (третий объект с более конкретным glob, перекрывающий этот файл) сломал тест, а не
+  // прошёл незамеченным.
+  it('keeps the full guard (including bare toLocaleString) active for src/utils/dates.ts', async () => {
+    const config = await eslint.calculateConfigForFile('src/utils/dates.ts');
+    const rule = config.rules?.['no-restricted-syntax'];
+    expect(ruleSeverity(rule)).toBe(ERROR_SEVERITY);
+    expect(selectorContains(rule, 'toLocaleString')).toBe(true);
+    expect(selectorContains(rule, 'toLocaleDateString')).toBe(true);
+    expect(selectorContains(rule, 'Intl')).toBe(true);
+  });
+
   it.each(['src/utils/format.ts', 'src/utils/files.ts'])(
-    'exempts %s from toLocaleString (numeric formatting) but still forbids Intl.DateTimeFormat',
+    'exempts %s from bare toLocaleString (numeric formatting) but still forbids toLocaleDateString/toLocaleTimeString and Intl.DateTimeFormat, as an error',
     async (filePath) => {
       const config = await eslint.calculateConfigForFile(filePath);
       const rule = config.rules?.['no-restricted-syntax'];
-      expect(selectorContains(rule, 'toLocaleDateString')).toBe(false);
+      expect(ruleSeverity(rule)).toBe(ERROR_SEVERITY);
+      expect(selectorContains(rule, 'toLocaleString')).toBe(false);
+      expect(selectorContains(rule, 'toLocaleDateString')).toBe(true);
+      expect(selectorContains(rule, 'toLocaleTimeString')).toBe(true);
       expect(selectorContains(rule, 'Intl')).toBe(true);
     },
   );
