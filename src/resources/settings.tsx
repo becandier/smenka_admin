@@ -31,6 +31,7 @@ import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
 import { useMyOrgRole } from '../utils/useMyOrgRole';
 import { scheduleErrorMessage } from '../utils/format';
 import { DEFAULT_ORG_TIMEZONE, TIMEZONE_CHOICES } from '../utils/timezones';
+import { validateChecklistGraceMinutes } from './settingsValidation';
 import type { CurrentOrg } from '../config';
 import type { Permissions } from '../providers/authProvider';
 
@@ -370,6 +371,19 @@ export const SettingsPage = () => {
               helperText="1–90"
               defaultValue={7}
               validate={[minValue(1), maxValue(90)]}
+            />
+          </SettingsSection>
+
+          <SettingsSection
+            title="Чек-листы"
+            description="Дозаполнение чек-листа после закрытия смены."
+          >
+            <NumberInput
+              source="checklist_grace_minutes"
+              label="Дозаполнение чек-листа после закрытия смены, мин"
+              helperText="0–240; 0 — дозаполнение запрещено"
+              defaultValue={30}
+              validate={validateChecklistGraceMinutes}
             />
           </SettingsSection>
 
