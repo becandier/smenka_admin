@@ -608,14 +608,9 @@ export const dataProvider: DataProvider = {
       // исключение»).
       if (!getCurrentOrgId()) return { data: [], total: 0 };
       const filter = { ...(params.filter ?? {}) } as Record<string, unknown>;
-      const hasIncludeArchived = Object.prototype.hasOwnProperty.call(filter, 'include_archived');
-      const includeArchived = filter.include_archived === true;
       const includePaused = filter.include_paused === true;
       delete filter.include_paused;
-      delete filter.include_archived;
-      const queryName = hasIncludeArchived ? 'include_archived' : 'include_paused';
-      const queryValue = hasIncludeArchived ? includeArchived : includePaused;
-      const data = await request(`${orgBase()}/work-schedules?${queryName}=${queryValue}`);
+      const data = await request(`${orgBase()}/work-schedules?include_paused=${includePaused}`);
       const items: any[] = data?.items ?? [];
       return clientPaginate(items, { ...params, filter });
     }

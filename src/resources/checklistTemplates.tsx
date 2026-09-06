@@ -69,6 +69,7 @@ import {
 import { RestoreButton } from '../components/RestoreButton';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { OrganizationTimeText } from '../components/TimeText';
+import { splitScheduleAssignments } from './checklistSchedule';
 
 const typeChoices = [
   { id: 'shift_start', name: 'Начало смены' },
@@ -221,7 +222,19 @@ export const ChecklistTemplateCreate = () => {
       const result = await dataProvider.create('checklist-templates', { data });
       const createdId = String(result.data.id);
       if (scheduleIds.length > 0) {
-        await dataProvider.setTemplateSchedules(createdId, scheduleIds);
+        try {
+          await dataProvider.setTemplateSchedules(createdId, scheduleIds);
+        } catch (e: any) {
+          const code = e?.body?.code;
+          notify(
+            code === 'SCHEDULE_NOT_FOUND'
+              ? 'Шаблон создан, но один из графиков больше недоступен. Проверьте назначения.'
+              : `Шаблон создан, но графики не сохранены: ${e?.message ?? 'ошибка сервера'}`,
+            { type: 'warning' },
+          );
+          redirect('edit', 'checklist-templates', createdId);
+          return;
+        }
       }
       notify('Шаблон создан', { type: 'success' });
       redirect('edit', 'checklist-templates', createdId);
@@ -810,7 +823,7 @@ const ScheduleAssignment = ({
       .getList('work-schedules', {
         pagination: { page: 1, perPage: 200 },
         sort: { field: 'name', order: 'ASC' },
-        filter: { include_archived: true },
+        filter: { include_paused: true },
       })
       .then((result: any) => {
         if (mounted) setSchedules(result.data ?? []);
@@ -859,12 +872,9 @@ const ScheduleAssignment = ({
     }
   };
 
-  const activeSchedules = schedules.filter(
-    (schedule) => !schedule.is_paused && !schedule.is_archived,
-  );
-  const staleSchedules = schedules.filter(
-    (schedule) =>
-      selected.includes(String(schedule.id)) && (schedule.is_paused || schedule.is_archived),
+  const { active: activeSchedules, stale: staleSchedules } = splitScheduleAssignments(
+    schedules,
+    selected,
   );
 
   return (
@@ -906,7 +916,7 @@ const ScheduleAssignment = ({
                     disabled={readOnly || saving}
                   />
                 }
-                label={`${String(schedule.name ?? schedule.id)} (архивный график)`}
+                label={`${String(schedule.name ?? schedule.id)} (приостановленный график)`}
               />
             ))}
           </Stack>
