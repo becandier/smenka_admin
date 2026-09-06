@@ -1,10 +1,7 @@
 import { DataProvider, GetListParams, HttpError } from 'react-admin';
 import { getCurrentOrgId } from '../config';
 import { fetchWithAuthRetry } from './tokenRefresh';
-import {
-  INVALID_RANGE_MESSAGE,
-  isDayRangeInvalid,
-} from '../utils/dates';
+import { INVALID_RANGE_MESSAGE, isDayRangeInvalid } from '../utils/dates';
 import { deviceTime, organizationTime, utcBoundsForCalendarDay } from '../utils/time';
 import { parseRublesToMinor, textOrEmpty } from '../utils/format';
 import { normalizeDisplayName } from '../utils/memberName';
@@ -611,9 +608,14 @@ export const dataProvider: DataProvider = {
       // исключение»).
       if (!getCurrentOrgId()) return { data: [], total: 0 };
       const filter = { ...(params.filter ?? {}) } as Record<string, unknown>;
+      const hasIncludeArchived = Object.prototype.hasOwnProperty.call(filter, 'include_archived');
+      const includeArchived = filter.include_archived === true;
       const includePaused = filter.include_paused === true;
       delete filter.include_paused;
-      const data = await request(`${orgBase()}/work-schedules?include_paused=${includePaused}`);
+      delete filter.include_archived;
+      const queryName = hasIncludeArchived ? 'include_archived' : 'include_paused';
+      const queryValue = hasIncludeArchived ? includeArchived : includePaused;
+      const data = await request(`${orgBase()}/work-schedules?${queryName}=${queryValue}`);
       const items: any[] = data?.items ?? [];
       return clientPaginate(items, { ...params, filter });
     }
@@ -1489,6 +1491,12 @@ export const dataProvider: DataProvider = {
     request(`${orgBase()}/checklist-templates/${templateId}/locations`, {
       method: 'PUT',
       body: JSON.stringify({ location_ids: locationIds }),
+    }),
+  // checklist_work_schedule: полная замена привязок шаблона к активным графикам.
+  setTemplateSchedules: (templateId: string, scheduleIds: string[]) =>
+    request(`${orgBase()}/checklist-templates/${templateId}/schedules`, {
+      method: 'PUT',
+      body: JSON.stringify({ schedule_ids: scheduleIds }),
     }),
   // checklist_work_location: обратный срез — какие шаблоны привязаны к точке (карточка точки).
   // Удалённые шаблоны включены в выдачу (is_deleted: true) — админ должен видеть привязку.

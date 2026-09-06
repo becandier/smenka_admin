@@ -24,6 +24,7 @@ import {
   useDataProvider,
   useNotify,
   useRefresh,
+  useRedirect,
   type RaRecord,
 } from 'react-admin';
 import {
@@ -209,15 +210,49 @@ export const ChecklistTemplateList = () => (
   </List>
 );
 
-export const ChecklistTemplateCreate = () => (
-  <Create redirect="edit">
-    <SimpleForm>
-      <TextInput source="name" label="Название" validate={required()} />
-      <SelectInput source="type" label="Тип" choices={typeChoices} validate={required()} />
-      <BooleanInput source="is_required" label="Обязательный" defaultValue={false} />
-    </SimpleForm>
-  </Create>
-);
+export const ChecklistTemplateCreate = () => {
+  const dataProvider = useDataProvider();
+  const notify = useNotify();
+  const redirect = useRedirect();
+  const [scheduleIds, setScheduleIds] = useState<string[]>([]);
+
+  const save = async (data: Record<string, unknown>) => {
+    try {
+      const result = await dataProvider.create('checklist-templates', { data });
+      const createdId = String(result.data.id);
+      if (scheduleIds.length > 0) {
+        await dataProvider.setTemplateSchedules(createdId, scheduleIds);
+      }
+      notify('Шаблон создан', { type: 'success' });
+      redirect('edit', 'checklist-templates', createdId);
+    } catch (e: any) {
+      const code = e?.body?.code;
+      notify(
+        code === 'SCHEDULE_NOT_FOUND'
+          ? 'Один из выбранных графиков больше недоступен'
+          : (e?.message ?? 'Ошибка создания'),
+        { type: 'error' },
+      );
+      throw e;
+    }
+  };
+
+  return (
+    <Create>
+      <SimpleForm onSubmit={save}>
+        <TextInput source="name" label="Название" validate={required()} />
+        <SelectInput source="type" label="Тип" choices={typeChoices} validate={required()} />
+        <BooleanInput source="is_required" label="Обязательный" defaultValue={false} />
+        <ScheduleAssignment
+          selectedIds={scheduleIds}
+          onSelectedChange={setScheduleIds}
+          readOnly={false}
+          createMode
+        />
+      </SimpleForm>
+    </Create>
+  );
+};
 
 // ---- Кастомный экран редактирования шаблона (пункты + назначения) ----
 
@@ -744,6 +779,150 @@ const LocationsAssignment = ({
   );
 };
 
+const ScheduleAssignment = ({
+  templateId,
+  selectedIds,
+  onSelectedChange,
+  onSaved,
+  readOnly,
+  createMode = false,
+}: {
+  templateId?: string;
+  selectedIds: string[];
+  onSelectedChange: (ids: string[]) => void;
+  onSaved?: () => void;
+  readOnly: boolean;
+  createMode?: boolean;
+}) => {
+  const dataProvider = useDataProvider();
+  const notify = useNotify();
+  const [schedules, setSchedules] = useState<RaRecord[]>([]);
+  const [selected, setSelected] = useState<string[]>(selectedIds);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setSelected(selectedIds), [selectedIds]);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    dataProvider
+      .getList('work-schedules', {
+        pagination: { page: 1, perPage: 200 },
+        sort: { field: 'name', order: 'ASC' },
+        filter: { include_archived: true },
+      })
+      .then((result: any) => {
+        if (mounted) setSchedules(result.data ?? []);
+      })
+      .catch((e: any) => {
+        if (mounted) {
+          setSchedules([]);
+          notify(e?.message ?? 'Не удалось загрузить графики', { type: 'error' });
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [dataProvider, notify]);
+
+  const toggle = (id: string) => {
+    setSelected((previous) => {
+      const next = previous.includes(id) ? previous.filter((x) => x !== id) : [...previous, id];
+      onSelectedChange(next);
+      return next;
+    });
+  };
+
+  const save = async () => {
+    if (!templateId) return;
+    setSaving(true);
+    try {
+      await dataProvider.setTemplateSchedules(templateId, selected);
+      notify('Графики сохранены', { type: 'success' });
+      onSaved?.();
+    } catch (e: any) {
+      const code = e?.body?.code;
+      notify(
+        code === 'SCHEDULE_NOT_FOUND'
+          ? 'Один из выбранных графиков больше недоступен'
+          : code === 'TEMPLATE_NOT_FOUND'
+            ? 'Шаблон чек-листа больше не существует'
+            : (e?.message ?? 'Ошибка сохранения графиков'),
+        { type: 'error' },
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const activeSchedules = schedules.filter(
+    (schedule) => !schedule.is_paused && !schedule.is_archived,
+  );
+  const staleSchedules = schedules.filter(
+    (schedule) =>
+      selected.includes(String(schedule.id)) && (schedule.is_paused || schedule.is_archived),
+  );
+
+  return (
+    <Card sx={{ mb: 2 }}>
+      <CardContent>
+        <Typography variant="subtitle1" sx={{ mb: 0.5 }}>
+          Графики
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Выбранные графики ограничивают выдачу чек-листа. Пустой список не задаёт ограничение по
+          графику.
+        </Typography>
+        {loading ? (
+          <CircularProgress size={22} />
+        ) : activeSchedules.length === 0 && staleSchedules.length === 0 ? (
+          <Typography color="text.secondary">В организации нет активных графиков.</Typography>
+        ) : (
+          <Stack>
+            {activeSchedules.map((schedule) => (
+              <FormControlLabel
+                key={schedule.id}
+                control={
+                  <Checkbox
+                    checked={selected.includes(String(schedule.id))}
+                    onChange={() => toggle(String(schedule.id))}
+                    disabled={readOnly || saving}
+                  />
+                }
+                label={String(schedule.name ?? schedule.id)}
+              />
+            ))}
+            {staleSchedules.map((schedule) => (
+              <FormControlLabel
+                key={schedule.id}
+                control={
+                  <Checkbox
+                    checked
+                    onChange={() => toggle(String(schedule.id))}
+                    disabled={readOnly || saving}
+                  />
+                }
+                label={`${String(schedule.name ?? schedule.id)} (архивный график)`}
+              />
+            ))}
+          </Stack>
+        )}
+        {!createMode && !readOnly && (
+          <Box sx={{ mt: 1 }}>
+            <Button variant="contained" disabled={saving} onClick={save}>
+              Сохранить графики
+            </Button>
+          </Box>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
 const PersonalOverrides = ({
   templateId,
   personalAdd,
@@ -834,7 +1013,13 @@ export const ChecklistTemplateEdit = () => {
       .getTemplateAssignments(id)
       .then((res: any) => setAssignments(res))
       .catch(() =>
-        setAssignments({ role_ids: [], personal_add: [], personal_remove: [], location_ids: [] }),
+        setAssignments({
+          role_ids: [],
+          personal_add: [],
+          personal_remove: [],
+          location_ids: [],
+          schedule_ids: [],
+        }),
       );
   }, [id, dataProvider]);
 
@@ -876,6 +1061,13 @@ export const ChecklistTemplateEdit = () => {
         templateId={template.id}
         locationIds={assignments?.location_ids ?? []}
         onChanged={onChanged}
+        readOnly={isReadOnly}
+      />
+      <ScheduleAssignment
+        templateId={template.id}
+        selectedIds={assignments?.schedule_ids ?? template.schedule_ids ?? []}
+        onSelectedChange={() => undefined}
+        onSaved={onChanged}
         readOnly={isReadOnly}
       />
       <PersonalOverrides
