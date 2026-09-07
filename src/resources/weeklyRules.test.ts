@@ -31,12 +31,19 @@ describe('validateWeeklyRules', () => {
     ] });
   });
 
-  it('propagates create API failure so the UI can show the error code', async () => {
+  it('propagates create API failure so the UI can show the error code and skip redirect', async () => {
     const writer = {
       setScheduleWeeklyRules: () => Promise.reject(new Error('WEEKLY_RULES_SAVE_FAILED')),
     };
-    await expect(persistWeeklyRulesAfterCreate(writer, 'schedule-1', [
-      { weekday: 6, is_enabled: true, start_time: '09:00', end_time: '19:00' },
-    ])).rejects.toThrow('WEEKLY_RULES_SAVE_FAILED');
+    let redirectCalled = false;
+    try {
+      await persistWeeklyRulesAfterCreate(writer, 'schedule-1', [
+        { weekday: 6, is_enabled: true, start_time: '09:00', end_time: '19:00' },
+      ]);
+      redirectCalled = true;
+    } catch (error) {
+      expect(error).toHaveProperty('message', 'WEEKLY_RULES_SAVE_FAILED');
+    }
+    expect(redirectCalled).toBe(false);
   });
 });

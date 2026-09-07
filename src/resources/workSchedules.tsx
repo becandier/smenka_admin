@@ -194,7 +194,8 @@ export const WorkScheduleCreate = () => {
       );
     } catch (error) {
       notify(weeklyRulesErrorMessage(error), { type: 'error' });
-      // График уже создан, поэтому открываем его редактирование для повторной попытки.
+      // Не уходим со страницы создания: пользователь видит ошибку и сохраняет контекст.
+      return;
     }
     redirect('edit', 'work-schedules', data.id);
   };
