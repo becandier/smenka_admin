@@ -31,3 +31,12 @@ export const weeklyRulesPayload = (rules: WeeklyRule[]): { rules: WeeklyRule[] }
     end_time: rule.is_enabled ? rule.end_time : null,
   })),
 });
+
+export const persistWeeklyRulesAfterCreate = async (
+  writer: { setScheduleWeeklyRules: (scheduleId: string, rules: WeeklyRule[]) => Promise<unknown> },
+  scheduleId: string,
+  rules: WeeklyRule[],
+): Promise<void> => {
+  if (rules.length === 0) return;
+  await writer.setScheduleWeeklyRules(scheduleId, rules);
+};

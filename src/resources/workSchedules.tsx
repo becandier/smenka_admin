@@ -58,7 +58,7 @@ import {
   scheduleErrorMessage,
 } from '../utils/format';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
-import { validateWeeklyRules, type WeeklyRule } from './weeklyRules';
+import { persistWeeklyRulesAfterCreate, validateWeeklyRules, type WeeklyRule } from './weeklyRules';
 
 const scheduleFilters = [
   <SearchInput key="q" source="q" alwaysOn />,
@@ -178,6 +178,7 @@ const CreateDurationHint = () => {
 
 export const WorkScheduleCreate = () => {
   const dataProvider = useDataProvider();
+  const notify = useNotify();
   const redirect = useRedirect();
   const [weeklyRules, setWeeklyRules] = useState<WeeklyRule[]>([]);
   const handleSuccess = async (data: any) => {
@@ -186,9 +187,14 @@ export const WorkScheduleCreate = () => {
       return;
     }
     try {
-      await dataProvider.setScheduleWeeklyRules(String(data.id), weeklyRules);
-    } catch {
-      // График создан; при ошибке настройки пользователь попадёт в его редактирование.
+      await persistWeeklyRulesAfterCreate(
+        { setScheduleWeeklyRules: dataProvider.setScheduleWeeklyRules },
+        String(data.id),
+        weeklyRules,
+      );
+    } catch (error) {
+      notify(weeklyRulesErrorMessage(error), { type: 'error' });
+      // График уже создан, поэтому открываем его редактирование для повторной попытки.
     }
     redirect('edit', 'work-schedules', data.id);
   };

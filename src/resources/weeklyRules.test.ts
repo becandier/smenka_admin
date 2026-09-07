@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateWeeklyRules, weeklyRulesPayload } from './weeklyRules';
+import { persistWeeklyRulesAfterCreate, validateWeeklyRules, weeklyRulesPayload } from './weeklyRules';
 
 describe('validateWeeklyRules', () => {
   it('accepts an empty set and a valid Saturday override', () => {
@@ -29,5 +29,14 @@ describe('validateWeeklyRules', () => {
       { weekday: 6, is_enabled: true, start_time: '09:00', end_time: '19:00' },
       { weekday: 7, is_enabled: false, start_time: null, end_time: null },
     ] });
+  });
+
+  it('propagates create API failure so the UI can show the error code', async () => {
+    const writer = {
+      setScheduleWeeklyRules: () => Promise.reject(new Error('WEEKLY_RULES_SAVE_FAILED')),
+    };
+    await expect(persistWeeklyRulesAfterCreate(writer, 'schedule-1', [
+      { weekday: 6, is_enabled: true, start_time: '09:00', end_time: '19:00' },
+    ])).rejects.toThrow('WEEKLY_RULES_SAVE_FAILED');
   });
 });
