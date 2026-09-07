@@ -58,6 +58,7 @@ import {
   scheduleErrorMessage,
 } from '../utils/format';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { validateWeeklyRules, type WeeklyRule } from './weeklyRules';
 
 const scheduleFilters = [
   <SearchInput key="q" source="q" alwaysOn />,
@@ -451,6 +452,146 @@ const LocationsAssignment = ({
   );
 };
 
+const WEEKDAYS = [
+  { weekday: 1, label: 'Понедельник' },
+  { weekday: 2, label: 'Вторник' },
+  { weekday: 3, label: 'Среда' },
+  { weekday: 4, label: 'Четверг' },
+  { weekday: 5, label: 'Пятница' },
+  { weekday: 6, label: 'Суббота' },
+  { weekday: 7, label: 'Воскресенье' },
+] as const;
+
+const weeklyRulesErrorMessage = (error: unknown, fallback = 'Ошибка сохранения недельных правил') => {
+  const code = error instanceof Error && 'body' in error
+    ? (error as { body?: { code?: unknown } }).body?.code
+    : undefined;
+  if (typeof code === 'string' && code !== '') return `${fallback} (${code})`;
+  return scheduleErrorMessage(error, fallback);
+};
+
+const WeeklyRulesEditor = ({
+  schedule,
+  onSaved,
+}: {
+  schedule: any;
+  onSaved: () => void;
+}) => {
+  const dataProvider = useDataProvider();
+  const notify = useNotify();
+  const isReadOnly = useIsReadOnly();
+  const [rules, setRules] = useState<Record<number, WeeklyRule>>({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const next: Record<number, WeeklyRule> = {};
+    for (const rule of (Array.isArray(schedule.weekly_rules) ? schedule.weekly_rules : []) as WeeklyRule[]) {
+      if (rule.weekday >= 1 && rule.weekday <= 7) next[rule.weekday] = { ...rule };
+    }
+    setRules(next);
+  }, [schedule.weekly_rules]);
+
+  const setMode = (weekday: number, mode: 'default' | 'override' | 'disabled') => {
+    if (mode === 'default') {
+      setRules((prev) => {
+        const next = { ...prev };
+        delete next[weekday];
+        return next;
+      });
+      return;
+    }
+    setRules((prev) => ({
+      ...prev,
+      [weekday]: mode === 'disabled'
+        ? { weekday, is_enabled: false, start_time: null, end_time: null }
+        : {
+            weekday,
+            is_enabled: true,
+            start_time: prev[weekday]?.start_time ?? schedule.start_time,
+            end_time: prev[weekday]?.end_time ?? schedule.end_time,
+          },
+    }));
+  };
+
+  const updateTime = (weekday: number, field: 'start_time' | 'end_time', value: string) =>
+    setRules((prev) => ({ ...prev, [weekday]: { ...prev[weekday], weekday, is_enabled: true, [field]: value } }));
+
+  const validationError = validateWeeklyRules(Object.values(rules));
+
+  const save = async () => {
+    if (validationError) {
+      notify('Проверьте время: формат ЧЧ:ММ, начало и конец не должны совпадать', { type: 'error' });
+      return;
+    }
+    setSaving(true);
+    try {
+      await dataProvider.setScheduleWeeklyRules(
+        schedule.id,
+        WEEKDAYS.map(({ weekday }) => rules[weekday]).filter((rule): rule is WeeklyRule => Boolean(rule)),
+      );
+      notify('Недельные правила сохранены', { type: 'success' });
+      onSaved();
+    } catch (error) {
+      notify(weeklyRulesErrorMessage(error), { type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const clear = () => setRules({});
+  const paused = Boolean(schedule.is_paused);
+  const controlsDisabled = paused || isReadOnly;
+
+  return (
+    <Card sx={{ mb: 2 }}>
+      <CardContent>
+        <Typography variant="subtitle1" sx={{ mb: 0.5 }}>Правила по дням недели</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          По умолчанию используются базовые часы графика: {schedule.start_time}–{schedule.end_time}.
+          Правило применяется к новым сменам в выбранный день.
+        </Typography>
+        {paused && <Alert severity="info" sx={{ mb: 2 }}>Приостановленный график доступен только для просмотра и снятия правил.</Alert>}
+        <Table size="small">
+          <TableBody>
+            {WEEKDAYS.map(({ weekday, label }) => {
+              const rule = rules[weekday];
+              const mode = !rule ? 'default' : rule.is_enabled ? 'override' : 'disabled';
+              return (
+                <TableRow key={weekday}>
+                  <TableCell sx={{ minWidth: 140 }}>{label}</TableCell>
+                  <TableCell sx={{ minWidth: 190 }}>
+                    <Select size="small" fullWidth value={mode} disabled={controlsDisabled} onChange={(e) => setMode(weekday, e.target.value as 'default' | 'override' | 'disabled')}>
+                      <MenuItem value="default">По умолчанию</MenuItem>
+                      <MenuItem value="override">Свои часы</MenuItem>
+                      <MenuItem value="disabled">Выходной</MenuItem>
+                    </Select>
+                  </TableCell>
+                  <TableCell>
+                    {mode === 'override' && (
+                      <Stack direction="row" spacing={1}>
+                        <MuiTextField size="small" type="time" label="Начало" value={rule?.start_time ?? ''} disabled={controlsDisabled} onChange={(e) => updateTime(weekday, 'start_time', e.target.value)} inputProps={{ step: 300 }} InputLabelProps={{ shrink: true }} />
+                        <MuiTextField size="small" type="time" label="Конец" value={rule?.end_time ?? ''} disabled={controlsDisabled} onChange={(e) => updateTime(weekday, 'end_time', e.target.value)} inputProps={{ step: 300 }} InputLabelProps={{ shrink: true }} />
+                      </Stack>
+                    )}
+                    {mode === 'default' && <Typography variant="body2" color="text.secondary">{schedule.start_time}–{schedule.end_time}</Typography>}
+                    {mode === 'disabled' && <Typography variant="body2" color="text.secondary">Не стартуется</Typography>}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+        {!isReadOnly && (
+          <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+            <Button variant="contained" disabled={saving || controlsDisabled} onClick={() => void save()}>Сохранить правила</Button>
+            <Button variant="outlined" disabled={saving || isReadOnly || Object.keys(rules).length === 0} onClick={clear}>Снять все правила</Button>
+          </Stack>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
 // Личные переопределения. Контракт заменяет ВЕСЬ список overrides сотрудника разом (PUT
 // .../members/{user_id}/schedule-overrides, а не точечно, как у чек-листов) — при смене
 // значения для ОДНОГО графика собираем полный список сотрудника заново: подгружаем assignments
@@ -661,6 +802,7 @@ export const WorkScheduleEdit = () => {
     <Box sx={{ p: 2, maxWidth: 800 }}>
       <Title title={`График — ${schedule.name}`} />
       <ScheduleMetaForm schedule={schedule} onSaved={onChanged} />
+      <WeeklyRulesEditor schedule={schedule} onSaved={onChanged} />
       <AssignmentExplainer />
       <RolesAssignment
         scheduleId={schedule.id}

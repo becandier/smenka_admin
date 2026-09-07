@@ -1531,6 +1531,16 @@ export const dataProvider: DataProvider = {
       method: 'PUT',
       body: JSON.stringify({ work_location_ids: locationIds }),
     }),
+  // Недельные правила графика: полная замена набора переопределений. Пустой массив
+  // возвращает график к базовым временам для всех дней.
+  setScheduleWeeklyRules: (
+    scheduleId: string,
+    rules: { weekday: number; is_enabled: boolean; start_time: string | null; end_time: string | null }[],
+  ) =>
+    request(`${orgBase()}/work-schedules/${scheduleId}/weekly-rules`, {
+      method: 'PUT',
+      body: JSON.stringify({ rules }),
+    }),
   // Личные переопределения сотрудника: контракт бэка заменяет ВЕСЬ список переопределений
   // сотрудника по ВСЕМ графикам сразу (PUT .../members/{user_id}/schedule-overrides), в отличие
   // от чек-листов (там PUT/DELETE точечно на пару template↔user). Вызывающий компонент
