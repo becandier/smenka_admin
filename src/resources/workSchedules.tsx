@@ -176,32 +176,50 @@ const CreateDurationHint = () => {
   );
 };
 
-export const WorkScheduleCreate = () => (
-  <Create redirect="edit">
-    <SimpleForm>
+export const WorkScheduleCreate = () => {
+  const dataProvider = useDataProvider();
+  const redirect = useRedirect();
+  const [weeklyRules, setWeeklyRules] = useState<WeeklyRule[]>([]);
+  const handleSuccess = async (data: any) => {
+    if (!data?.id || weeklyRules.length === 0) {
+      redirect('edit', 'work-schedules', data?.id);
+      return;
+    }
+    try {
+      await dataProvider.setScheduleWeeklyRules(String(data.id), weeklyRules);
+    } catch {
+      // График создан; при ошибке настройки пользователь попадёт в его редактирование.
+    }
+    redirect('edit', 'work-schedules', data.id);
+  };
+  return (
+    <Create mutationOptions={{ onSuccess: (data) => void handleSuccess(data) }}>
+      <SimpleForm>
+        <WorkScheduleCreateFields onRulesChange={setWeeklyRules} />
+      </SimpleForm>
+    </Create>
+  );
+};
+
+const WorkScheduleCreateFields = ({ onRulesChange }: { onRulesChange: (rules: WeeklyRule[]) => void }) => {
+  const [startTime, endTime] = useWatch({ name: ['start_time', 'end_time'] }) as [string, string];
+  return (
+    <>
       <TextInput source="name" label="Название" validate={required()} />
       <Stack direction="row" spacing={2}>
-        <TextInput
-          source="start_time"
-          label="Начало"
-          type="time"
-          validate={required()}
-          inputProps={{ step: 300 }}
-          InputLabelProps={{ shrink: true }}
-        />
-        <TextInput
-          source="end_time"
-          label="Конец"
-          type="time"
-          validate={[required(), validateEndTimeDiffers]}
-          inputProps={{ step: 300 }}
-          InputLabelProps={{ shrink: true }}
-        />
+        <TextInput source="start_time" label="Начало" type="time" validate={required()} inputProps={{ step: 300 }} InputLabelProps={{ shrink: true }} />
+        <TextInput source="end_time" label="Конец" type="time" validate={[required(), validateEndTimeDiffers]} inputProps={{ step: 300 }} InputLabelProps={{ shrink: true }} />
       </Stack>
       <CreateDurationHint />
-    </SimpleForm>
-  </Create>
-);
+      <WeeklyRulesEditor
+        schedule={{ id: '', start_time: startTime ?? '', end_time: endTime ?? '', weekly_rules: [] }}
+        onSaved={() => undefined}
+        draft
+        onDraftRulesChange={onRulesChange}
+      />
+    </>
+  );
+};
 
 // ---- Экран редактирования (кастомный, по образцу checklistTemplates.tsx) ----
 
@@ -473,9 +491,13 @@ const weeklyRulesErrorMessage = (error: unknown, fallback = 'Ошибка сох
 const WeeklyRulesEditor = ({
   schedule,
   onSaved,
+  draft = false,
+  onDraftRulesChange,
 }: {
   schedule: any;
   onSaved: () => void;
+  draft?: boolean;
+  onDraftRulesChange?: (rules: WeeklyRule[]) => void;
 }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
@@ -484,12 +506,17 @@ const WeeklyRulesEditor = ({
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (draft) return;
     const next: Record<number, WeeklyRule> = {};
     for (const rule of (Array.isArray(schedule.weekly_rules) ? schedule.weekly_rules : []) as WeeklyRule[]) {
       if (rule.weekday >= 1 && rule.weekday <= 7) next[rule.weekday] = { ...rule };
     }
     setRules(next);
-  }, [schedule.weekly_rules]);
+  }, [draft, schedule.weekly_rules]);
+
+  useEffect(() => {
+    if (draft) onDraftRulesChange?.(Object.values(rules));
+  }, [draft, onDraftRulesChange, rules]);
 
   const setMode = (weekday: number, mode: 'default' | 'override' | 'disabled') => {
     if (mode === 'default') {
@@ -540,7 +567,7 @@ const WeeklyRulesEditor = ({
 
   const clear = () => setRules({});
   const paused = Boolean(schedule.is_paused);
-  const controlsDisabled = paused || isReadOnly;
+  const controlsDisabled = isReadOnly;
 
   return (
     <Card sx={{ mb: 2 }}>
@@ -550,7 +577,7 @@ const WeeklyRulesEditor = ({
           По умолчанию используются базовые часы графика: {schedule.start_time}–{schedule.end_time}.
           Правило применяется к новым сменам в выбранный день.
         </Typography>
-        {paused && <Alert severity="info" sx={{ mb: 2 }}>Приостановленный график доступен только для просмотра и снятия правил.</Alert>}
+        {paused && <Alert severity="info" sx={{ mb: 2 }}>График приостановлен, но правила можно изменить или снять. Новые смены по нему не стартуют.</Alert>}
         <Table size="small">
           <TableBody>
             {WEEKDAYS.map(({ weekday, label }) => {
@@ -581,7 +608,7 @@ const WeeklyRulesEditor = ({
             })}
           </TableBody>
         </Table>
-        {!isReadOnly && (
+        {!isReadOnly && !draft && (
           <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
             <Button variant="contained" disabled={saving || controlsDisabled} onClick={() => void save()}>Сохранить правила</Button>
             <Button variant="outlined" disabled={saving || isReadOnly || Object.keys(rules).length === 0} onClick={clear}>Снять все правила</Button>

@@ -1539,7 +1539,11 @@ export const dataProvider: DataProvider = {
   ) =>
     request(`${orgBase()}/work-schedules/${scheduleId}/weekly-rules`, {
       method: 'PUT',
-      body: JSON.stringify({ rules }),
+      body: JSON.stringify({ rules: rules.map((rule) => ({
+        ...rule,
+        start_time: rule.is_enabled ? rule.start_time : null,
+        end_time: rule.is_enabled ? rule.end_time : null,
+      })) }),
     }),
   // Личные переопределения сотрудника: контракт бэка заменяет ВЕСЬ список переопределений
   // сотрудника по ВСЕМ графикам сразу (PUT .../members/{user_id}/schedule-overrides), в отличие

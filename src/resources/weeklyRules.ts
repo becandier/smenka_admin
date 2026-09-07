@@ -23,3 +23,11 @@ export const validateWeeklyRules = (rules: WeeklyRule[]): string | undefined => 
   return undefined;
 };
 
+export const weeklyRulesPayload = (rules: WeeklyRule[]): { rules: WeeklyRule[] } => ({
+  rules: rules.map((rule) => ({
+    weekday: rule.weekday,
+    is_enabled: rule.is_enabled,
+    start_time: rule.is_enabled ? rule.start_time : null,
+    end_time: rule.is_enabled ? rule.end_time : null,
+  })),
+});

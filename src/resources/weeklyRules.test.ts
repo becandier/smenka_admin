@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateWeeklyRules } from './weeklyRules';
+import { validateWeeklyRules, weeklyRulesPayload } from './weeklyRules';
 
 describe('validateWeeklyRules', () => {
   it('accepts an empty set and a valid Saturday override', () => {
@@ -19,5 +19,15 @@ describe('validateWeeklyRules', () => {
     ])).toBeTruthy();
     expect(validateWeeklyRules([{ weekday: 2, is_enabled: true, start_time: '25:00', end_time: '19:00' }])).toBeTruthy();
     expect(validateWeeklyRules([{ weekday: 3, is_enabled: true, start_time: '09:00', end_time: '09:00' }])).toBeTruthy();
+  });
+
+  it('builds the full replacement API payload and clears disabled times', () => {
+    expect(weeklyRulesPayload([
+      { weekday: 6, is_enabled: true, start_time: '09:00', end_time: '19:00' },
+      { weekday: 7, is_enabled: false, start_time: '08:00', end_time: '17:00' },
+    ])).toEqual({ rules: [
+      { weekday: 6, is_enabled: true, start_time: '09:00', end_time: '19:00' },
+      { weekday: 7, is_enabled: false, start_time: null, end_time: null },
+    ] });
   });
 });
