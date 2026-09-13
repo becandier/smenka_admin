@@ -11,8 +11,10 @@
 // поэтому параллельные 401 обязаны ждать ОДИН и тот же вызов /auth/refresh, а не слать
 // каждый свой (потенциально уже отозванный) refresh_token — см.
 // docs/tasks/admin_token_refresh_bug/admin.md.
+import { HttpError } from 'react-admin';
 import { API_BASE_URL, getAccessToken, getRefreshToken, setTokens } from '../config';
 import { postJsonRaw } from './httpJson';
+import { networkHttpErrorArgs } from '../utils/networkError';
 
 const performRefresh = async (): Promise<boolean> => {
   const refresh = getRefreshToken();
@@ -64,7 +66,20 @@ export const fetchWithAuthRetry = async (
   const token = getAccessToken();
   const headers = new Headers(options.headers ?? {});
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  } catch {
+    // Сеть недоступна / CORS-ответ без заголовков (например 500 без CORS — до бэкенд-фикса
+    // work_schedule_weekly_rules) / обрыв соединения — fetch бросает голый TypeError без кода
+    // и статуса ("Load failed" в Safari, "Failed to fetch" в Chrome). Приводим к HttpError,
+    // чтобы request()/fetchPayrollExport() (dataProvider.ts) и authGet() (authProvider.ts) —
+    // все идут через этот же fetchWithAuthRetry — видели единообразный error.body.code, а UI
+    // показывал понятный текст (utils/networkError.ts) вместо сырого текста рантайма. Отказ
+    // /auth/refresh не затрагивается — обрабатывается отдельно в performRefresh() выше.
+    const args = networkHttpErrorArgs();
+    throw new HttpError(args.message, args.status, args.body);
+  }
   if (res.status === 401 && !retried && (await refreshTokens(token))) {
     return fetchWithAuthRetry(path, options, true);
   }

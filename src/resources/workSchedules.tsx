@@ -57,6 +57,7 @@ import {
   scheduleDurationHint,
   scheduleErrorMessage,
 } from '../utils/format';
+import { networkErrorMessage } from '../utils/networkError';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { persistWeeklyRulesAfterCreate, validateWeeklyRules, type WeeklyRule } from './weeklyRules';
 
@@ -491,6 +492,8 @@ const weeklyRulesErrorMessage = (error: unknown, fallback = 'Ошибка сох
   const code = error instanceof Error && 'body' in error
     ? (error as { body?: { code?: unknown } }).body?.code
     : undefined;
+  const network = networkErrorMessage(code);
+  if (network) return network;
   if (typeof code === 'string' && code !== '') return `${fallback} (${code})`;
   return scheduleErrorMessage(error, fallback);
 };

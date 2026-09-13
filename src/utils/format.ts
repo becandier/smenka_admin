@@ -1,5 +1,6 @@
 import { HttpError } from 'react-admin';
 import type { PaymentKind, PaymentStatus } from '../subscription/billingTypes';
+import { networkErrorMessage } from './networkError';
 import {
   deviceTime,
   formatDate as formatDateInContext,
@@ -276,6 +277,8 @@ const SCHEDULE_ERROR_MESSAGES: Record<string, string> = {
 
 export const scheduleErrorMessage = (error: unknown, fallback = 'Ошибка'): string => {
   const code = error instanceof HttpError ? error.body?.code : undefined;
+  const network = networkErrorMessage(code);
+  if (network) return network;
   if (code && SCHEDULE_ERROR_MESSAGES[code]) return SCHEDULE_ERROR_MESSAGES[code];
   if (error instanceof Error && error.message) return error.message;
   return fallback;
