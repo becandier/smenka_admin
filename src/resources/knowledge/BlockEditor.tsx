@@ -26,9 +26,11 @@ import AttachFileIcon from '@mui/icons-material/AttachFile';
 import OndemandVideoIcon from '@mui/icons-material/OndemandVideo';
 import BrokenImageIcon from '@mui/icons-material/BrokenImage';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
+import { useNotify } from 'react-admin';
 
 import type { KnowledgeBlock, KnowledgeContent } from './types';
-import { FILE_CATEGORY_POLICY } from '../../utils/files';
+import { FILE_CATEGORY_POLICY, validateFileForCategory } from '../../utils/files';
+import { compressKnowledgeImage } from '../../utils/knowledgeImageCompression';
 import { useUploadFile } from './hooks';
 import {
   CUSTOM_BLOCK_TYPES,
@@ -388,6 +390,11 @@ export interface BlockEditorProps {
 export const BlockEditor = ({ value, onChange, readOnly = false }: BlockEditorProps) => {
   const schema = useKnowledgeSchema();
   const { upload, uploading } = useUploadFile();
+  const notify = useNotify();
+  // Сжатие изображения (compressKnowledgeImage) идёт в браузере до сетевого запроса — во
+  // время него `uploading` из useUploadFile ещё false. Кнопка «Изображение» показывает тот же
+  // индикатор загрузки на всё время: обработка + сама загрузка (storage_housekeeping/admin.md).
+  const [imageProcessing, setImageProcessing] = useState(false);
 
   // Инициализируем документ один раз из value; дальнейшая синхронизация — через onChange.
   // Смену страницы родитель делает ремонтом по key. Тип PartialBlock здесь — общий
@@ -431,8 +438,25 @@ export const BlockEditor = ({ value, onChange, readOnly = false }: BlockEditorPr
   const handleImagePick = useCallback(
     async (file: File | undefined) => {
       if (!file) return;
+      // Сжатие — до сетевого запроса и до серверной валидации (storage_housekeeping/admin.md,
+      // п.2): уменьшение стороны >2000px, JPEG/WebP/PNG по прозрачности, «нет выигрыша» —
+      // исходник как есть. Сбой обработки (canvas/decode) — тоже исходник, без ошибки.
+      setImageProcessing(true);
+      let toUpload: File;
       try {
-        const res = await upload(file);
+        toUpload = await compressKnowledgeImage(file);
+      } finally {
+        setImageProcessing(false);
+      }
+      // Проверка размера/типа итогового файла до отправки — тем же способом, что
+      // FileUploadInput, без похода на сервер за заведомо отклонённым файлом.
+      const validationError = validateFileForCategory(toUpload, 'knowledge_base');
+      if (validationError) {
+        notify(validationError, { type: 'error' });
+        return;
+      }
+      try {
+        const res = await upload(toUpload);
         appendBlock({
           type: CUSTOM_BLOCK_TYPES.image,
           props: {
@@ -446,7 +470,7 @@ export const BlockEditor = ({ value, onChange, readOnly = false }: BlockEditorPr
         // Ошибка уже показана уведомлением в useUploadFile (по error.code).
       }
     },
-    [upload, appendBlock],
+    [upload, appendBlock, notify],
   );
 
   const handleFilePick = useCallback(
@@ -488,8 +512,10 @@ export const BlockEditor = ({ value, onChange, readOnly = false }: BlockEditorPr
         <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap' }}>
           <Button
             size="small"
-            startIcon={uploading ? <CircularProgress size={16} /> : <ImageIcon />}
-            disabled={uploading}
+            startIcon={
+              uploading || imageProcessing ? <CircularProgress size={16} /> : <ImageIcon />
+            }
+            disabled={uploading || imageProcessing}
             onClick={() => imageInputRef.current?.click()}
           >
             Изображение
