@@ -87,10 +87,23 @@ export const fileErrorMessage = (error: unknown, category?: FileCategory): strin
       return 'Файл не найден';
     case 'INVALID_FILE_CATEGORY':
       return 'Неизвестная категория файла';
+    case FILE_PURGED_CODE:
+      return 'Файл удалён по истечении срока хранения';
     default:
       return (error as { message?: string })?.message ?? 'Не удалось обработать файл';
   }
 };
+
+// GET /files/{file_id} для файла, чей объект уже удалён из хранилища по сроку хранения
+// (checklist_photo_retention/backend.md), отвечает 410 с этим кодом. Presigned-ссылка для
+// такого файла не выдаётся никогда — повторный запрос бессмыслен.
+export const FILE_PURGED_CODE = 'FILE_PURGED';
+
+// Перезапрос ссылки (ChecklistItemPhotos) ловит этот код, чтобы отличить «фото удалено по
+// сроку хранения, пока экран был открыт» (тихий переход в плитку-заглушку, без сообщения
+// об ошибке — admin.md п.4) от прочих сбоев (показываем ошибку как раньше).
+export const isFilePurgedError = (error: unknown): boolean =>
+  (error as { body?: { code?: string } })?.body?.code === FILE_PURGED_CODE;
 
 // Предвалидация выбранного файла по политике категории (до загрузки).
 // Возвращает текст ошибки или null, если файл проходит клиентские проверки.
