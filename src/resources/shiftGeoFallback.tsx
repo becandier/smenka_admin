@@ -17,9 +17,10 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import LocationOffOutlinedIcon from '@mui/icons-material/LocationOffOutlined';
 import BrokenImageOutlinedIcon from '@mui/icons-material/BrokenImageOutlined';
+import AutoDeleteOutlinedIcon from '@mui/icons-material/AutoDeleteOutlined';
 import ReplayIcon from '@mui/icons-material/Replay';
 import { geoFallbackReasonLabel, workLocationLabel } from '../utils/format';
-import { fileErrorMessage } from '../utils/files';
+import { fileErrorMessage, isFilePurgedError } from '../utils/files';
 import { InfoRow } from '../components/InfoRow';
 
 // Старт смены по фото при недоступной геолокации (shift_geo_photo_fallback/admin.md).
@@ -53,12 +54,17 @@ export const GeoFallbackChip = (record: RaRecord) => {
 type PhotoState =
   | { status: 'loading' }
   | { status: 'ready'; url: string }
-  | { status: 'error'; message: string };
+  | { status: 'error'; message: string }
+  | { status: 'purged' };
 
 // Фото старта смены. Presigned URL живёт ограниченное время, поэтому не храним его в записи
 // смены, а запрашиваем GET /files/{file_id} при открытии карточки. Протухшую ссылку
 // (ошибка <img> — типично 403 от S3) один раз чиним автоматически, как в ChecklistItemPhotos;
 // после повторной неудачи показываем заглушку с ручным повтором.
+// Отдельно: 410 FILE_PURGED (storage_housekeeping/admin.md) — фото удалено по сроку хранения
+// (90 дней, SHIFT_GEO_PHOTO_RETENTION_DAYS). Это ожидаемое состояние, а не сбой — нейтральная
+// заглушка без кнопки повтора и без полноэкранного просмотра, как PurgedPhotoTile в
+// ChecklistItemPhotos.
 const GeoFallbackPhoto = ({ fileId }: { fileId: string }) => {
   const dataProvider = useDataProvider();
   const [state, setState] = useState<PhotoState>({ status: 'loading' });
@@ -83,8 +89,12 @@ const GeoFallbackPhoto = ({ fileId }: { fileId: string }) => {
         else setState({ status: 'error', message: 'Не удалось загрузить фото' });
       })
       .catch((error: unknown) => {
-        if (id === requestId.current)
-          setState({ status: 'error', message: fileErrorMessage(error) });
+        if (id !== requestId.current) return;
+        if (isFilePurgedError(error)) {
+          setState({ status: 'purged' });
+          return;
+        }
+        setState({ status: 'error', message: fileErrorMessage(error) });
       });
   }, [dataProvider, fileId]);
 
@@ -123,6 +133,28 @@ const GeoFallbackPhoto = ({ fileId }: { fileId: string }) => {
       >
         <CircularProgress size={20} />
       </Box>
+    );
+  }
+
+  if (state.status === 'purged') {
+    return (
+      <Stack
+        alignItems="center"
+        justifyContent="center"
+        spacing={0.5}
+        sx={{
+          width: THUMB_SIZE,
+          height: THUMB_SIZE,
+          borderRadius: 1,
+          bgcolor: 'action.hover',
+          color: 'text.secondary',
+          p: 1,
+          textAlign: 'center',
+        }}
+      >
+        <AutoDeleteOutlinedIcon fontSize="small" />
+        <Typography variant="caption">Фото удалено — истёк срок хранения (90 дней)</Typography>
+      </Stack>
     );
   }
 
