@@ -88,3 +88,4 @@ jobs:
             cd /opt/smenka
             docker compose -f docker-compose.prod.yml --env-file .env pull admin
             docker compose -f docker-compose.prod.yml --env-file .env up -d admin
+            docker image prune -f || true  # старый :latest без тега иначе копится на диске
