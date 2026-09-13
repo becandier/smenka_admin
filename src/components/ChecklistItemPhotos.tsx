@@ -3,12 +3,17 @@ import { useDataProvider } from 'react-admin';
 import { Box, Dialog, DialogContent, IconButton, Link, Stack, Typography } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import BrokenImageOutlinedIcon from '@mui/icons-material/BrokenImageOutlined';
+import AutoDeleteOutlinedIcon from '@mui/icons-material/AutoDeleteOutlined';
 import { photoCaptureLabel } from '../utils/format';
+import { isFilePurgedError } from '../utils/files';
+import { isPhotoPurged, shouldFetchPhotoUrl, shouldShowExpiry } from '../utils/checklistPhotoRetention';
 import { OrganizationTimeText } from './TimeText';
 
-// Фото пункта-экземпляра чек-листа (см. checklist_photos/admin.md). Все поля сверх id/file_id
-// — optional: presigned url может прийти null (деградация storage), метаданные геолокации
-// могут отсутствовать (геолокация была недоступна — допустимый кейс).
+// Фото пункта-экземпляра чек-листа (см. checklist_photos/admin.md, checklist_photo_retention/admin.md).
+// Все поля сверх id/file_id — optional: presigned url может прийти null (деградация storage),
+// метаданные геолокации могут отсутствовать (геолокация была недоступна — допустимый кейс).
+// purged_at/expires_at — срок хранения (checklist_photo_retention): не null у purged_at
+// означает, что объект в S3 удалён безвозвратно и url для него больше не выдаётся.
 export interface ChecklistPhoto {
   id: string;
   file_id: string;
@@ -18,6 +23,8 @@ export interface ChecklistPhoto {
   latitude?: number | null;
   longitude?: number | null;
   position?: number;
+  purged_at?: string | null;
+  expires_at?: string | null;
 }
 
 // Внешняя ссылка на карту по координатам (MVP: без встроенного виджета). Яндекс.Карты
@@ -54,9 +61,36 @@ const PhotoCoords = ({
   );
 };
 
+// Плитка того же размера вместо миниатюры для фото, удалённого по сроку хранения —
+// нейтральная иконка (не «ошибка»/красный цвет, это ожидаемое состояние, admin.md п.1).
+// Не кликабельна: полноэкранный просмотр для удалённого фото не открываем.
+const PurgedPhotoTile = () => (
+  <Stack
+    alignItems="center"
+    justifyContent="center"
+    spacing={0.5}
+    sx={{
+      width: THUMB_SIZE,
+      height: THUMB_SIZE,
+      borderRadius: 1,
+      bgcolor: 'action.hover',
+      color: 'text.secondary',
+      textAlign: 'center',
+      px: 1,
+    }}
+  >
+    <AutoDeleteOutlinedIcon fontSize="small" />
+    <Typography variant="caption">Фото удалено — истёк срок хранения</Typography>
+  </Stack>
+);
+
 // Одна миниатюра. presigned url короткоживущий: при ошибке загрузки картинки (типично 403
 // от S3 на протухшую ссылку) — один перезапрос свежего url через GET /files/{file_id}.
 // Если url не пришёл в payload (storage деградировал при отдаче detail) — запрашиваем сразу.
+// Фото, уже помеченное как удалённое по сроку хранения (purged_at != null) — GET /files не
+// запрашивается вовсе; если 410 FILE_PURGED пришёл только при перезапросе (фото удалили,
+// пока экран был открыт) — тихо переходим в то же состояние, без сообщения об ошибке
+// (admin.md п.4).
 const PhotoThumb = ({
   photo,
   onOpen,
@@ -67,6 +101,7 @@ const PhotoThumb = ({
   const dataProvider = useDataProvider();
   const [url, setUrl] = useState<string | null>(photo.url ?? null);
   const [failed, setFailed] = useState(false);
+  const [purgedLocally, setPurgedLocally] = useState(false);
   // Рефрешим url не более одного раза: после повторной ошибки показываем плейсхолдер.
   const refreshed = useRef(false);
 
@@ -82,12 +117,28 @@ const PhotoThumb = ({
         if (file?.url) setUrl(file.url);
         else setFailed(true);
       })
-      .catch(() => setFailed(true));
+      .catch((error: unknown) => {
+        if (isFilePurgedError(error)) {
+          setPurgedLocally(true);
+          return;
+        }
+        setFailed(true);
+      });
   }, [dataProvider, photo.file_id]);
 
+  // Булевы значения, а не весь `photo`: объект пункта пересоздаётся при каждом рендере
+  // родителя (`[...photos].sort(...)` в ChecklistItemPhotos) — зависимость эффекта на его
+  // ссылку заново запускала бы refresh() при каждом ре-рендере списка.
+  const needsUrlFetch = shouldFetchPhotoUrl(photo);
+  const purged = isPhotoPurged(photo) || purgedLocally;
+
   useEffect(() => {
-    if (!photo.url) refresh();
-  }, [photo.url, refresh]);
+    if (needsUrlFetch) refresh();
+  }, [needsUrlFetch, refresh]);
+
+  if (purged) {
+    return <PurgedPhotoTile />;
+  }
 
   if (failed) {
     return (
@@ -167,6 +218,16 @@ export const ChecklistItemPhotos = ({
               {captureLabel}: <OrganizationTimeText value={photo.captured_at} timeZone={timeZone} />
             </Typography>
             <PhotoCoords latitude={photo.latitude} longitude={photo.longitude} />
+            {isPhotoPurged(photo) && (
+              <Typography variant="caption" color="text.secondary">
+                Удалено: <OrganizationTimeText value={photo.purged_at} timeZone={timeZone} kind="date" />
+              </Typography>
+            )}
+            {shouldShowExpiry(photo) && (
+              <Typography variant="caption" color="text.secondary">
+                Хранится до <OrganizationTimeText value={photo.expires_at} timeZone={timeZone} kind="date" />
+              </Typography>
+            )}
           </Stack>
         ))}
       </Stack>
