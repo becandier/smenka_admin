@@ -433,6 +433,9 @@ const ADJUSTMENT_ERROR_MESSAGES: Record<string, string> = {
   SHIFT_NOT_FOUND: 'Смена не найдена или не принадлежит этому сотруднику',
   ORG_NOT_FOUND: 'Организация не найдена',
   FORBIDDEN: 'Нет прав на это действие',
+  // payroll_breakdown: категории начислений.
+  ADJUSTMENT_CATEGORY_NOT_FOUND: 'Категория не найдена или удалена',
+  ADJUSTMENT_CATEGORY_DUPLICATE: 'Категория с таким названием уже есть',
 };
 
 export const adjustmentErrorMessage = (error: unknown, fallback = 'Ошибка'): string => {

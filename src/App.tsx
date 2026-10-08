@@ -11,6 +11,7 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import HistoryIcon from '@mui/icons-material/History';
 import MoneyOffIcon from '@mui/icons-material/MoneyOff';
 import PaidIcon from '@mui/icons-material/Paid';
+import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import QuizIcon from '@mui/icons-material/Quiz';
@@ -45,6 +46,11 @@ import {
   PenaltyTemplateEdit,
 } from './resources/penaltyTemplates';
 import { AdjustmentList } from './resources/adjustments';
+import {
+  AdjustmentCategoryList,
+  AdjustmentCategoryCreate,
+  AdjustmentCategoryEdit,
+} from './resources/adjustmentCategories';
 import { AuditLogList } from './resources/auditLogs';
 import { TestTemplateList, TestTemplateCreate, TestTemplateEdit } from './resources/testTemplates';
 import { TestAssignmentList } from './resources/testAssignments';
@@ -171,6 +177,15 @@ export const App = () => (
           {/* Ручные начисления/удержания (manual_time_entry) — компонент сам режет доступ до
               owner/admin (как penalty-templates/payroll); в меню пункт виден только им. */}
           <Resource name="adjustments" list={AdjustmentList} icon={PaidIcon} />
+          {/* Категории начислений (payroll_breakdown) — справочник owner/admin, рядом с
+              «Начислениями»; компоненты сами режут доступ. */}
+          <Resource
+            name="adjustment-categories"
+            list={AdjustmentCategoryList}
+            create={AdjustmentCategoryCreate}
+            edit={AdjustmentCategoryEdit}
+            icon={LocalOfferIcon}
+          />
           {/* Аудит — read-only лента действий owner/admin; без create/edit/show-мутаций. */}
           <Resource name="audit-logs" list={AuditLogList} icon={HistoryIcon} />
           {/* Тестирование сотрудников (employee_tests) — только org owner/admin, не платформенная

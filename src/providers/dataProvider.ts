@@ -4,6 +4,7 @@ import { fetchWithAuthRetry } from './tokenRefresh';
 import { INVALID_RANGE_MESSAGE, isDayRangeInvalid } from '../utils/dates';
 import { deviceTime, organizationTime, utcBoundsForCalendarDay } from '../utils/time';
 import { parseRublesToMinor, textOrEmpty } from '../utils/format';
+import { ADJUSTMENT_CATEGORY_ERROR_FIELDS } from '../resources/adjustmentCategoryUtils';
 import { normalizeDisplayName } from '../utils/memberName';
 import type { AccessState, FileUploadResult, ReorderInput } from '../resources/knowledge/types';
 import type {
@@ -35,6 +36,10 @@ const ORG_CLIENT = new Set([
   'work-locations',
   'checklist-templates',
   'penalty-templates',
+  // payroll_breakdown: справочник категорий начислений — маленький, без пагинации на бэке.
+  // Грузим только живые (без include_deleted): удалённые в списке не показываются, а PATCH
+  // удалённой бэк всё равно отверг бы 404 (backend.md, «Категории начислений»).
+  'adjustment-categories',
 ]);
 
 // Pydantic отдаёт error.validation[].field полным loc-путём запроса — "body.login",
@@ -108,6 +113,8 @@ const clientListPath = (resource: string): string => {
       return `${orgBase()}/checklist-templates`;
     case 'penalty-templates':
       return `${orgBase()}/penalty-templates`;
+    case 'adjustment-categories':
+      return `${orgBase()}/adjustment-categories`;
     default:
       throw new Error(`Нет client-пути для ресурса: ${resource}`);
   }
@@ -129,6 +136,8 @@ const deleteOnePath = (resource: string, id: string): string => {
       return `${orgBase()}/penalties/${id}`;
     case 'adjustments':
       return `${orgBase()}/adjustments/${id}`;
+    case 'adjustment-categories':
+      return `${orgBase()}/adjustment-categories/${id}`;
     case 'test-templates':
       return `${orgBase()}/test-templates/${id}`;
     case 'test-assignments':
@@ -687,10 +696,18 @@ export const dataProvider: DataProvider = {
       // «фильтруется на клиенте»), в filterKeys НЕ входит — на сервер не уходит,
       // применяется в AdjustmentDatagrid поверх уже полученной страницы. include_deleted
       // (unified_soft_delete) — показать отменённые/удалённые начисления для восстановления.
+      // category_id (payroll_breakdown) — UUID категории или спецзначение `none`.
       return orgServerList(params, {
         path: 'adjustments',
         defaultSort: 'occurred_at',
-        filterKeys: ['member_id', 'shift_id', 'date_from', 'date_to', 'include_deleted'],
+        filterKeys: [
+          'member_id',
+          'shift_id',
+          'date_from',
+          'date_to',
+          'include_deleted',
+          'category_id',
+        ],
         withSort: false,
       });
     }
@@ -937,8 +954,23 @@ export const dataProvider: DataProvider = {
         }),
       };
     }
+    if (resource === 'adjustment-categories') {
+      // payroll_breakdown: 409 ADJUSTMENT_CATEGORY_DUPLICATE — не VALIDATION_ERROR, поэтому
+      // раскладываем в ошибку поля «Название» сами (тот же приём, что у members).
+      try {
+        return {
+          data: await request(`${orgBase()}/adjustment-categories`, {
+            method: 'POST',
+            body: JSON.stringify({ name: textOrEmpty(d.name).trim() }),
+          }),
+        };
+      } catch (e) {
+        return rethrowMemberErrorAsField(e, ADJUSTMENT_CATEGORY_ERROR_FIELDS);
+      }
+    }
     if (resource === 'adjustments') {
       // Создать ручное начисление (manual_time_entry B1): POST .../adjustments.
+      // category_id (payroll_breakdown) — необязательный, null = «Без категории».
       const body = {
         member_id: d.member_id,
         amount_minor: d.amount_minor,
@@ -947,6 +979,7 @@ export const dataProvider: DataProvider = {
         occurred_at: d.occurred_at ?? null,
         shift_id: d.shift_id ?? null,
         comment: d.comment ? String(d.comment) : null,
+        category_id: d.category_id ?? null,
       };
       return {
         data: await request(`${orgBase()}/adjustments`, {
@@ -1210,11 +1243,31 @@ export const dataProvider: DataProvider = {
       });
       return { data: updated ?? { ...data, id } };
     }
+    if (resource === 'adjustment-categories') {
+      try {
+        const updated = await request(`${orgBase()}/adjustment-categories/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name: textOrEmpty(data.name).trim() }),
+        });
+        return { data: updated ?? { ...data, id } };
+      } catch (e) {
+        return rethrowMemberErrorAsField(e, ADJUSTMENT_CATEGORY_ERROR_FIELDS);
+      }
+    }
     if (resource === 'adjustments') {
       // Исправить начисление (manual_time_entry B3): member_id неизменен (не входит в
-      // список ключей — форма и не должна его слать при правке).
+      // список ключей — форма и не должна его слать при правке). category_id
+      // (payroll_breakdown) форма кладёт только если категорию поменяли — иначе начисление на
+      // удалённой категории не прошло бы PATCH (бэк проверяет только назначаемую категорию).
       const body: Record<string, unknown> = {};
-      for (const k of ['amount_minor', 'reason', 'comment', 'occurred_at', 'shift_id']) {
+      for (const k of [
+        'amount_minor',
+        'reason',
+        'comment',
+        'occurred_at',
+        'shift_id',
+        'category_id',
+      ]) {
         if (k in data) body[k] = data[k];
       }
       const updated = await request(`${orgBase()}/adjustments/${id}`, {

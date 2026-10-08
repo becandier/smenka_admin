@@ -26,6 +26,8 @@ const messages = {
     'checklist-instances': { name: 'Чек-лист |||| Чек-листы' },
     'org-shifts': { name: 'Смена |||| Смены' },
     'penalty-templates': { name: 'Шаблон штрафа |||| Шаблоны штрафов' },
+    // Справочник категорий ручных начислений (payroll_breakdown).
+    'adjustment-categories': { name: 'Категория начислений |||| Категории начислений' },
     // Графики работы и заявки на переработку (work_schedules).
     'work-schedules': { name: 'График работы |||| Графики работы' },
     'overtime-requests': { name: 'Переработка |||| Переработки' },
