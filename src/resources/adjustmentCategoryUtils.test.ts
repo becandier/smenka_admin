@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   NO_CATEGORY_LABEL,
   categoryLabel,
+  compareCategoryNames,
   deleteCategoryConfirmText,
   validateCategoryName,
 } from './adjustmentCategoryUtils';
@@ -43,5 +44,18 @@ describe('deleteCategoryConfirmText', () => {
     expect(text).toContain('Уже созданные начисления (12) сохранят эту категорию');
     expect(text).toContain('новые назначить на неё будет нельзя');
     expect(text.toLowerCase()).not.toContain('архив');
+  });
+});
+
+describe('compareCategoryNames', () => {
+  it('сортирует без учёта регистра, как бэк (lower(name))', () => {
+    const names = ['премия', 'Аванс', 'Бонус', 'аренда формы', 'Премия за план'];
+    expect([...names].sort(compareCategoryNames)).toEqual([
+      'Аванс',
+      'аренда формы',
+      'Бонус',
+      'премия',
+      'Премия за план',
+    ]);
   });
 });

@@ -4,7 +4,10 @@ import { fetchWithAuthRetry } from './tokenRefresh';
 import { INVALID_RANGE_MESSAGE, isDayRangeInvalid } from '../utils/dates';
 import { deviceTime, organizationTime, utcBoundsForCalendarDay } from '../utils/time';
 import { parseRublesToMinor, textOrEmpty } from '../utils/format';
-import { ADJUSTMENT_CATEGORY_ERROR_FIELDS } from '../resources/adjustmentCategoryUtils';
+import {
+  ADJUSTMENT_CATEGORY_ERROR_FIELDS,
+  compareCategoryNames,
+} from '../resources/adjustmentCategoryUtils';
 import { normalizeDisplayName } from '../utils/memberName';
 import type { AccessState, FileUploadResult, ReorderInput } from '../resources/knowledge/types';
 import type {
@@ -37,8 +40,8 @@ const ORG_CLIENT = new Set([
   'checklist-templates',
   'penalty-templates',
   // payroll_breakdown: справочник категорий начислений — маленький, без пагинации на бэке.
-  // Грузим только живые (без include_deleted): удалённые в списке не показываются, а PATCH
-  // удалённой бэк всё равно отверг бы 404 (backend.md, «Категории начислений»).
+  // Мягкое удаление как у шаблонов (SOFT_DELETE_CLIENT): по умолчанию getList отдаёт только
+  // живые, удалённые — по filter.include_deleted (фильтр начислений по удалённой категории).
   'adjustment-categories',
 ]);
 
@@ -183,7 +186,11 @@ const mapTemplate = (t: any): any => ({
 // тянем include_deleted=true всегда (ORG_CLIENT и так грузит список целиком) — «показывать ли
 // удалённые» дальше решает клиент (getList режет по filter.include_deleted, getOne/getMany
 // видят полный список, иначе клик по удалённой строке в списке не открывал бы её на редактирование).
-const SOFT_DELETE_CLIENT = new Set(['checklist-templates', 'penalty-templates']);
+const SOFT_DELETE_CLIENT = new Set([
+  'checklist-templates',
+  'penalty-templates',
+  'adjustment-categories',
+]);
 
 const loadClient = async (resource: string): Promise<any[]> => {
   const query = SOFT_DELETE_CLIENT.has(resource) ? '?include_deleted=true' : '';
@@ -194,8 +201,14 @@ const loadClient = async (resource: string): Promise<any[]> => {
   return items;
 };
 
-// Клиентская пагинация/сортировка/фильтрация для ограниченных org-списков.
-const clientPaginate = (rows: any[], params: GetListParams) => {
+// Клиентская пагинация/сортировка/фильтрация для ограниченных org-списков. compareStrings —
+// необязательное сравнение строковых значений (по умолчанию `<`, с учётом регистра);
+// категории начислений передают сравнение без учёта регистра, как сортирует бэк.
+const clientPaginate = (
+  rows: any[],
+  params: GetListParams,
+  compareStrings?: (a: string, b: string) => number,
+) => {
   const { q, ...rest } = (params.filter ?? {}) as Record<string, unknown>;
   let filtered = rows;
   if (typeof q === 'string' && q.trim() !== '') {
@@ -219,7 +232,12 @@ const clientPaginate = (rows: any[], params: GetListParams) => {
     if (av === bv) return 0;
     if (av === undefined || av === null) return 1;
     if (bv === undefined || bv === null) return -1;
-    const cmp = av < bv ? -1 : 1;
+    const cmp =
+      compareStrings && typeof av === 'string' && typeof bv === 'string'
+        ? compareStrings(av, bv)
+        : av < bv
+          ? -1
+          : 1;
     return order === 'DESC' ? -cmp : cmp;
   });
 
@@ -752,7 +770,11 @@ export const dataProvider: DataProvider = {
         delete filter.include_deleted;
         if (!includeDeleted) rows = rows.filter((r) => !r.is_deleted);
       }
-      return clientPaginate(rows, { ...params, filter });
+      return clientPaginate(
+        rows,
+        { ...params, filter },
+        resource === 'adjustment-categories' ? compareCategoryNames : undefined,
+      );
     }
     throw new Error(`getList: неизвестный ресурс ${resource}`);
   },

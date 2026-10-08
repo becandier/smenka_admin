@@ -32,6 +32,10 @@ export const ADJUSTMENT_CATEGORY_ERROR_FIELDS: Record<
   },
 };
 
+// Сравнение имён без учёта регистра — как сортирует бэк (lower(name)).
+export const compareCategoryNames = (a: string, b: string): number =>
+  a.localeCompare(b, 'ru', { sensitivity: 'base' });
+
 // Имя категории для отображения: null/пусто (старое начисление или «Без категории»).
 export const categoryLabel = (name: string | null | undefined): string =>
   typeof name === 'string' && name.trim() !== '' ? name : NO_CATEGORY_LABEL;

@@ -63,6 +63,7 @@ import {
   NO_CATEGORY_FILTER,
   NO_CATEGORY_LABEL,
   categoryLabel,
+  compareCategoryNames,
   type AdjustmentCategory,
 } from './adjustmentCategoryUtils';
 
@@ -193,7 +194,9 @@ export const AdjustmentFormDialog = ({
   const categoryOptions = useMemo(() => {
     const live = liveCategories ?? [];
     const liveIds = new Set(live.map((c) => c.id));
-    return [...live, ...createdCategories.filter((c) => !liveIds.has(c.id))];
+    return [...live, ...createdCategories.filter((c) => !liveIds.has(c.id))].sort((a, b) =>
+      compareCategoryNames(a.name, b.name),
+    );
   }, [liveCategories, createdCategories]);
   // Начисление на удалённой категории: показываем её имя текущим значением, но выбрать
   // её заново нельзя (пункт disabled) — только живую или «Без категории». Пока список не
@@ -348,7 +351,12 @@ export const AdjustmentFormDialog = ({
       } else if (code === 'SHIFT_NOT_FOUND') {
         setErrors({ shift: adjustmentErrorMessage(e) });
       } else if (code === 'ADJUSTMENT_CATEGORY_NOT_FOUND') {
-        // Категорию удалили, пока форма была открыта — обновляем список выбора.
+        // Категорию удалили, пока форма была открыта: сбрасываем выбор в «Без категории»
+        // (иначе повторное сохранение снова пошлёт удалённый id, а Select останется с
+        // значением вне списка) и обновляем список выбора.
+        const failedId = categoryId;
+        setCategoryId('');
+        setCreatedCategories((prev) => prev.filter((c) => c.id !== failedId));
         setErrors({ category: adjustmentErrorMessage(e) });
         void refetchCategories();
       } else if (code === 'ADJUSTMENT_NOT_FOUND') {
@@ -735,17 +743,21 @@ const AdjustmentDatagrid = () => {
 
 // Фильтр по категории (payroll_breakdown): живые категории + «Без категории» (`none`).
 const CategoryFilterInput = (props: { source: string; label: string; alwaysOn?: boolean }) => {
+  // Удалённые тоже: начисления сохраняют их категорию, и URL-фильтр с её id не должен
+  // показывать пустой выбор. Сначала живые, затем удалённые с пометкой.
   const { data } = useGetList<AdjustmentCategory>('adjustment-categories', {
     pagination: { page: 1, perPage: 500 },
     sort: { field: 'name', order: 'ASC' },
+    filter: { include_deleted: true },
   });
-  const choices = useMemo(
-    () => [
+  const choices = useMemo(() => {
+    const rows = data ?? [];
+    return [
       { id: NO_CATEGORY_FILTER, name: NO_CATEGORY_LABEL },
-      ...(data ?? []).map((c) => ({ id: c.id, name: c.name })),
-    ],
-    [data],
-  );
+      ...rows.filter((c) => !c.is_deleted).map((c) => ({ id: c.id, name: c.name })),
+      ...rows.filter((c) => c.is_deleted).map((c) => ({ id: c.id, name: `${c.name} (удалена)` })),
+    ];
+  }, [data]);
   return <SelectInput {...props} choices={choices} />;
 };
 
