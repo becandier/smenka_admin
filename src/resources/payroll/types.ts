@@ -12,6 +12,30 @@ export interface PayrollBucket {
   gross_amount_minor: number;
   unpaid_seconds: number;
   has_missing_rate: boolean;
+  // payroll_breakdown: base + overtime == gross бакета. Опциональны на время раскатки.
+  base_amount_minor?: number;
+  overtime_amount_minor?: number;
+}
+
+// payroll_breakdown: сумма начислений по одной категории. category_id/category_name = null —
+// «Без категории». amount_minor — знаковая сумма, accrual/deduction — по модулю (≥ 0).
+export interface PayrollCategoryAmount {
+  category_id: string | null;
+  category_name: string | null;
+  amount_minor: number;
+  accrual_minor: number;
+  deduction_minor: number;
+  count: number;
+}
+
+// payroll_breakdown: разбивка денег (additive, backend.md «Отчёт payroll»). Все поля
+// опциональны — старый бэк их не отдаёт, клиент подстраховывается `?? 0` / пустым списком.
+export interface PayrollMoneyBreakdown {
+  base_amount_minor?: number; // оплата за отработанное время
+  overtime_amount_minor?: number; // оплата согласованной переработки
+  adjustment_accrual_minor?: number; // сумма доплат (≥ 0)
+  adjustment_deduction_minor?: number; // сумма удержаний по модулю (≥ 0)
+  adjustments_by_category?: PayrollCategoryAmount[];
 }
 
 // Строка по сотруднику. breakdown присутствует только при granularity != none.
@@ -19,7 +43,7 @@ export interface PayrollBucket {
 // Штрафы не разбиваются по корзинам (breakdown их не содержит) — только агрегат на сотрудника.
 // overtime_seconds/planned_*/delta_amount_minor/late_* — additive (work_schedules, backend.md R8):
 // план/факт и опоздания, тоже только агрегат на сотрудника (в breakdown не разбиваются).
-export interface PayrollItem {
+export interface PayrollItem extends PayrollMoneyBreakdown {
   user_id: string;
   user_name: string;
   // member_display_name/admin.md: «Зарплата» — приоритет обратный (см. MemberNameCell reversed).
@@ -52,7 +76,7 @@ export interface PayrollItem {
 // work_schedules R8 описывает их только «к строке сотрудника» (PayrollItem), про totals явно
 // не говорит — держим опциональными и подстраховываемся `?? 0` в рендере (PayrollListView/Matrix),
 // чтобы не упасть, если бэк первое время не будет агрегировать их в totals.
-export interface PayrollTotals {
+export interface PayrollTotals extends PayrollMoneyBreakdown {
   worked_seconds: number;
   shifts_count: number;
   gross_amount_minor: number;

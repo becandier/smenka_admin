@@ -38,6 +38,7 @@ import BarChartIcon from '@mui/icons-material/BarChart';
 import CurrencyRubleIcon from '@mui/icons-material/CurrencyRuble';
 import MoneyOffIcon from '@mui/icons-material/MoneyOff';
 import PaidIcon from '@mui/icons-material/Paid';
+import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
@@ -297,6 +298,7 @@ const MyMenu = () => {
     '/payroll',
     '/penalty-templates',
     '/adjustments',
+    '/adjustment-categories',
   ]);
 
   return (
@@ -467,6 +469,13 @@ const MyMenu = () => {
                 to="/adjustments"
                 primaryText="Начисления"
                 leftIcon={<PaidIcon />}
+                sx={childItemIconSx}
+              />
+              {/* payroll_breakdown: справочник категорий — рядом с «Начислениями». */}
+              <Menu.Item
+                to="/adjustment-categories"
+                primaryText="Категории начислений"
+                leftIcon={<LocalOfferIcon />}
                 sx={childItemIconSx}
               />
             </SubMenu>
