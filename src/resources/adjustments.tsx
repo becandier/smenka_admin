@@ -58,6 +58,13 @@ import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { wideDatagridScrollSx } from '../theme';
 import { OrganizationTimeText } from '../components/TimeText';
 import { formatDateTime, resolveOrganizationTime } from '../utils/time';
+import { AdjustmentCategoryQuickCreateDialog } from './adjustmentCategories';
+import {
+  NO_CATEGORY_FILTER,
+  NO_CATEGORY_LABEL,
+  categoryLabel,
+  type AdjustmentCategory,
+} from './adjustmentCategoryUtils';
 
 // Ручные начисления/удержания (manual_time_entry B1-B4, payroll_adjustments). Ресурс
 // «Начисления» (`/adjustments`) — owner/admin своей org; super_admin сквозным доступом не видит
@@ -81,6 +88,10 @@ export interface Adjustment {
   created_at: string;
   is_deleted?: boolean;
   organization_timezone?: string | null;
+  // payroll_breakdown: категория начисления (null — «Без категории»). Опциональны на время
+  // раскатки — старый бэк этих полей не отдаёт.
+  category_id?: string | null;
+  category_name?: string | null;
 }
 
 interface CurrentRate {
@@ -115,6 +126,7 @@ interface AdjustmentFormErrors {
   reason?: string;
   occurred?: string;
   shift?: string;
+  category?: string;
 }
 
 type AdjustmentType = 'credit' | 'debit';
@@ -167,6 +179,35 @@ export const AdjustmentFormDialog = ({
   const [comment, setComment] = useState(editing?.comment ?? '');
   const [errors, setErrors] = useState<AdjustmentFormErrors>({});
   const [saving, setSaving] = useState(false);
+
+  // payroll_breakdown: категория ('' — «Без категории»). Живые категории организации;
+  // только что созданные из диалога держим локально, пока список не перезагрузился.
+  const initialCategoryId = editing?.category_id ?? '';
+  const [categoryId, setCategoryId] = useState<string>(initialCategoryId);
+  const [creatingCategory, setCreatingCategory] = useState(false);
+  const [createdCategories, setCreatedCategories] = useState<AdjustmentCategory[]>([]);
+  const { data: liveCategories, refetch: refetchCategories } = useGetList<AdjustmentCategory>(
+    'adjustment-categories',
+    { pagination: { page: 1, perPage: 500 }, sort: { field: 'name', order: 'ASC' } },
+  );
+  const categoryOptions = useMemo(() => {
+    const live = liveCategories ?? [];
+    const liveIds = new Set(live.map((c) => c.id));
+    return [...live, ...createdCategories.filter((c) => !liveIds.has(c.id))];
+  }, [liveCategories, createdCategories]);
+  // Начисление на удалённой категории: показываем её имя текущим значением, но выбрать
+  // её заново нельзя (пункт disabled) — только живую или «Без категории». Пока список не
+  // загрузился (или не загрузился вовсе), пункт просто держит текущее значение без пометки.
+  const categoriesLoaded = liveCategories !== undefined;
+  const outsideCurrentCategory =
+    editing?.category_id && !categoryOptions.some((c) => c.id === editing.category_id)
+      ? {
+          id: editing.category_id,
+          name: categoriesLoaded
+            ? `${categoryLabel(editing.category_name)} (удалена)`
+            : categoryLabel(editing.category_name),
+        }
+      : null;
 
   const memberOptions = (members ?? []).map((m) => ({
     id: m.id,
@@ -258,17 +299,18 @@ export const AdjustmentFormDialog = ({
     try {
       const occurredIso = zonedDayStartToUtcIso(occurredAt, tz);
       if (editing) {
-        await dataProvider.update('adjustments', {
-          id: editing.id,
-          data: {
-            amount_minor: signedMinor,
-            reason: reason.trim(),
-            comment: comment.trim() === '' ? null : comment.trim(),
-            occurred_at: occurredIso,
-            shift_id: effectiveShiftId,
-          },
-          previousData: editing,
-        });
+        const data: Record<string, unknown> = {
+          amount_minor: signedMinor,
+          reason: reason.trim(),
+          comment: comment.trim() === '' ? null : comment.trim(),
+          occurred_at: occurredIso,
+          shift_id: effectiveShiftId,
+        };
+        // category_id шлём только при смене: «не передано» ≠ null (backend.md), и начисление
+        // на удалённой категории остаётся валидным, пока её не трогают.
+        if (categoryId !== initialCategoryId)
+          data.category_id = categoryId === '' ? null : categoryId;
+        await dataProvider.update('adjustments', { id: editing.id, data, previousData: editing });
         notify('Начисление исправлено', { type: 'success' });
       } else {
         await dataProvider.create('adjustments', {
@@ -280,6 +322,7 @@ export const AdjustmentFormDialog = ({
             occurred_at: occurredIso,
             shift_id: effectiveShiftId,
             comment: comment.trim() === '' ? null : comment.trim(),
+            category_id: categoryId === '' ? null : categoryId,
           },
         });
         notify('Начисление создано', { type: 'success' });
@@ -295,6 +338,7 @@ export const AdjustmentFormDialog = ({
           reason: fieldErrors.reason,
           occurred: fieldErrors.occurred_at,
           shift: fieldErrors.shift_id,
+          category: fieldErrors.category_id,
         });
         if (Object.keys(fieldErrors).length === 0) {
           notify(e?.message ?? 'Некорректные данные', { type: 'error' });
@@ -303,6 +347,10 @@ export const AdjustmentFormDialog = ({
         setErrors({ member: adjustmentErrorMessage(e) });
       } else if (code === 'SHIFT_NOT_FOUND') {
         setErrors({ shift: adjustmentErrorMessage(e) });
+      } else if (code === 'ADJUSTMENT_CATEGORY_NOT_FOUND') {
+        // Категорию удалили, пока форма была открыта — обновляем список выбора.
+        setErrors({ category: adjustmentErrorMessage(e) });
+        void refetchCategories();
       } else if (code === 'ADJUSTMENT_NOT_FOUND') {
         notify(adjustmentErrorMessage(e), { type: 'warning' });
         onDone();
@@ -443,6 +491,41 @@ export const AdjustmentFormDialog = ({
             )
           )}
 
+          <Stack direction="row" spacing={1} alignItems="flex-start">
+            <MuiTextField
+              select
+              fullWidth
+              label="Категория"
+              value={categoryId}
+              onChange={(e) => {
+                setCategoryId(e.target.value);
+                setErrors((prev) => ({ ...prev, category: undefined }));
+              }}
+              error={Boolean(errors.category)}
+              helperText={errors.category}
+            >
+              <MenuItem value="">{NO_CATEGORY_LABEL}</MenuItem>
+              {outsideCurrentCategory && (
+                <MenuItem value={outsideCurrentCategory.id} disabled={categoriesLoaded}>
+                  {outsideCurrentCategory.name}
+                </MenuItem>
+              )}
+              {categoryOptions.map((c) => (
+                <MenuItem key={c.id} value={c.id}>
+                  {c.name}
+                </MenuItem>
+              ))}
+            </MuiTextField>
+            <Button
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={() => setCreatingCategory(true)}
+              sx={{ mt: 1, whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              Новая
+            </Button>
+          </Stack>
+
           <MuiTextField
             label="Комментарий"
             value={comment}
@@ -464,6 +547,19 @@ export const AdjustmentFormDialog = ({
           {editing ? 'Исправить' : 'Добавить'}
         </Button>
       </DialogActions>
+      {creatingCategory && (
+        <AdjustmentCategoryQuickCreateDialog
+          onClose={() => setCreatingCategory(false)}
+          onCreated={(category) => {
+            setCreatedCategories((prev) => [...prev, category]);
+            setCategoryId(category.id);
+            setErrors((prev) => ({ ...prev, category: undefined }));
+            setCreatingCategory(false);
+            notify('Категория создана', { type: 'success' });
+            void refetchCategories();
+          }}
+        />
+      )}
     </Dialog>
   );
 };
@@ -476,6 +572,15 @@ const nameField = (r: RaRecord) => (
 const amountField = (r: RaRecord) => (
   <Typography sx={{ color: r.amount_minor >= 0 ? 'success.main' : 'error.main' }}>
     {formatSignedMoneyMinor(r.amount_minor)}
+  </Typography>
+);
+const categoryField = (r: RaRecord) => (
+  <Typography
+    variant="body2"
+    color={r.category_name ? undefined : 'text.secondary'}
+    component="span"
+  >
+    {categoryLabel(r.category_name)}
   </Typography>
 );
 const shiftLinkField = (r: RaRecord) =>
@@ -603,6 +708,7 @@ const AdjustmentDatagrid = () => {
         <FunctionField label="Сотрудник" render={nameField} sortable={false} />
         <FunctionField label="Сумма" render={amountField} sortable={false} />
         <TextField source="reason" label="Основание" sortable={false} />
+        <FunctionField label="Категория" render={categoryField} sortable={false} />
         <FunctionField
           label="Дата"
           render={(record: RaRecord) => (
@@ -627,11 +733,28 @@ const AdjustmentDatagrid = () => {
   );
 };
 
+// Фильтр по категории (payroll_breakdown): живые категории + «Без категории» (`none`).
+const CategoryFilterInput = (props: { source: string; label: string; alwaysOn?: boolean }) => {
+  const { data } = useGetList<AdjustmentCategory>('adjustment-categories', {
+    pagination: { page: 1, perPage: 500 },
+    sort: { field: 'name', order: 'ASC' },
+  });
+  const choices = useMemo(
+    () => [
+      { id: NO_CATEGORY_FILTER, name: NO_CATEGORY_LABEL },
+      ...(data ?? []).map((c) => ({ id: c.id, name: c.name })),
+    ],
+    [data],
+  );
+  return <SelectInput {...props} choices={choices} />;
+};
+
 const adjustmentFilters = [
   <MemberSelectFilter key="member_id" source="member_id" label="Сотрудник" idField="id" alwaysOn />,
   <DateInput key="date_from" source="date_from" label="С даты" />,
   <DateInput key="date_to" source="date_to" label="По дату" />,
   <SelectInput key="type" source="type" label="Тип" choices={ADJUSTMENT_TYPE_CHOICES} />,
+  <CategoryFilterInput key="category_id" source="category_id" label="Категория" />,
   <BooleanInput
     key="include_deleted"
     source="include_deleted"
