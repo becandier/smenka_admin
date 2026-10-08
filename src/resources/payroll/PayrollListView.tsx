@@ -4,6 +4,7 @@ import {
   Box,
   Chip,
   IconButton,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -20,7 +21,16 @@ import { formatClockDuration, formatMoneyMinor, formatSignedMoneyMinor } from '.
 import { MemberNameCell } from '../../components/MemberNameCell';
 import { formatBucketLabel } from './buckets';
 import type { Granularity, PayrollItem, PayrollReport } from './types';
-import { calendarDayForInstant, type TimeContext } from '../../utils/time';
+import type { TimeContext } from '../../utils/time';
+import { categoryLabel } from '../adjustmentCategoryUtils';
+import {
+  adjustmentSplit,
+  adjustmentsListHref,
+  buildBreakdownLines,
+  categoryAmounts,
+  deductionDisplayMinor,
+  grossTooltip,
+} from './breakdown';
 
 // Подсказка к бейджу «нет ставки»: сколько не вошло в начисление (как в базовом payroll).
 const missingRateHint = (item: PayrollItem): string => {
@@ -52,55 +62,25 @@ const NetCell = ({ amount_minor }: { amount_minor: number }) => (
   </TableCell>
 );
 
-// Ячейка «Начисления» (manual_time_entry, backend.md раздел C): знаковая сумма, цвет по
-// знаку (плюс — зелёный, минус — красный, admin.md §5), подсказка с количеством. Ненулевая
-// сумма — ссылка в реестр /adjustments с фильтром по сотруднику и периодом отчёта; memberId
-// разрешаем через карту user_id→member_id (payroll отдаёт только user_id, adjustments
-// фильтруется по member_id) — при отсутствии маппинга (сотрудник выбыл из org) просто не
-// делаем ссылку кликабельной, сумму всё равно показываем.
-const AdjustmentCell = ({
-  amount_minor,
-  count,
-  memberId,
-  period,
-  timeContext,
-}: {
-  amount_minor: number;
-  count: number;
-  memberId: string | undefined;
-  period: { date_from: string | null; date_to: string | null };
-  timeContext: TimeContext;
-}) => {
-  const color = amount_minor > 0 ? 'success.main' : amount_minor < 0 ? 'error.main' : undefined;
-  const value = formatSignedMoneyMinor(amount_minor);
-  if (count === 0 || !memberId) {
-    return (
-      <TableCell align="right" sx={color ? { color } : undefined}>
-        {value}
-      </TableCell>
-    );
-  }
-  const filter: Record<string, string> = { member_id: memberId };
-  const dateFromDay = calendarDayForInstant(period.date_from, timeContext);
-  const dateToDay = calendarDayForInstant(period.date_to, timeContext);
-  if (dateFromDay) filter.date_from = dateFromDay;
-  if (dateToDay) filter.date_to = dateToDay;
-  const href = `/adjustments?filter=${encodeURIComponent(JSON.stringify(filter))}`;
-  return (
-    <Tooltip title={`${count} шт. · перейти в начисления`}>
-      <TableCell align="right" sx={{ p: 0 }}>
-        <Link
-          to={href}
-          style={{ color: color ? undefined : 'inherit', display: 'block', padding: '6px 16px' }}
-        >
-          <Typography variant="body2" component="span" sx={color ? { color } : undefined}>
-            {value}
-          </Typography>
-        </Link>
-      </TableCell>
-    </Tooltip>
-  );
+// Ячейка «Начислено» (payroll_breakdown): подсказка «за время X · переработка Y», если
+// переработка ≠ 0 (и в основной таблице, и в дневной разбивке).
+const GrossCell = ({ row }: { row: Parameters<typeof grossTooltip>[0] }) => {
+  const hint = grossTooltip(row, formatMoneyMinor);
+  const cell = <TableCell align="right">{formatMoneyMinor(row.gross_amount_minor)}</TableCell>;
+  return hint ? <Tooltip title={hint}>{cell}</Tooltip> : cell;
 };
+
+// «Доплаты» — без знака; «Удержания» — со знаком минус, красным, если ≠ 0 (admin.md).
+// Нулевые значения показываем «0 ₽», колонки не скрываем — таблица не прыгает.
+const AccrualCell = ({ amount_minor }: { amount_minor: number }) => (
+  <TableCell align="right">{formatMoneyMinor(amount_minor)}</TableCell>
+);
+
+const DeductionCell = ({ amount_minor }: { amount_minor: number }) => (
+  <TableCell align="right" sx={amount_minor !== 0 ? { color: 'error.main' } : undefined}>
+    {formatMoneyMinor(deductionDisplayMinor(amount_minor))}
+  </TableCell>
+);
 
 // «По графику» (work_schedules R8): плановые часы + плановые деньги мелким шрифтом снизу.
 const PlannedCell = ({
@@ -139,7 +119,7 @@ const LateCell = ({ count, seconds }: { count: number; seconds: number }) =>
 
 // Вложенная таблица дневной детализации (breakdown[]) одного сотрудника.
 const BreakdownTable = ({ item, granularity }: { item: PayrollItem; granularity: Granularity }) => (
-  <Box sx={{ pl: 4, py: 1 }}>
+  <Box sx={{ pl: 4, pb: 1 }}>
     <Table size="small">
       <TableHead>
         <TableRow>
@@ -159,7 +139,7 @@ const BreakdownTable = ({ item, granularity }: { item: PayrollItem; granularity:
             <TableCell>{formatBucketLabel(bucket.bucket_start, granularity)}</TableCell>
             <TableCell align="right">{formatClockDuration(bucket.worked_seconds)}</TableCell>
             <TableCell align="right">{bucket.shifts_count}</TableCell>
-            <TableCell align="right">{formatMoneyMinor(bucket.gross_amount_minor)}</TableCell>
+            <GrossCell row={bucket} />
             <TableCell>
               {bucket.has_missing_rate && (
                 <Tooltip title="В этот день есть смены без действующей ставки">
@@ -174,7 +154,102 @@ const BreakdownTable = ({ item, granularity }: { item: PayrollItem; granularity:
   </Box>
 );
 
-// Режим «Список»: мастер-строки по сотрудникам + раскрытие в дневную детализацию.
+// Блок «Из чего сложилось» (payroll_breakdown): доступен в раскрытии строки всегда,
+// независимо от разбивки по дням. Ссылки — в реестр начислений (фильтр по сотруднику и
+// периоду) и в карточку сотрудника, где ведутся его штрафы (отдельного реестра штрафов с
+// фильтрами нет — фильтр периода там не применяется).
+const CompositionBlock = ({
+  item,
+  memberId,
+  period,
+  timeContext,
+}: {
+  item: PayrollItem;
+  memberId: string | undefined;
+  period: PayrollReport['period'];
+  timeContext: TimeContext;
+}) => {
+  const lines = buildBreakdownLines(item);
+  return (
+    <Box sx={{ pl: 4, py: 1.5, maxWidth: 560 }}>
+      <Typography variant="subtitle2" gutterBottom>
+        Из чего сложилось
+      </Typography>
+      <Table size="small">
+        <TableBody>
+          {lines.map((line) => {
+            const emphasized = line.kind !== 'item';
+            const negative = line.amount_minor < 0;
+            return (
+              <TableRow
+                key={line.key}
+                sx={{
+                  '& td': emphasized
+                    ? { fontWeight: 'bold', borderBottom: 0, py: 0.5 }
+                    : { borderBottom: 0, py: 0.25 },
+                }}
+              >
+                <TableCell sx={{ pl: line.kind === 'item' ? 2 : 0 }}>
+                  {emphasized ? `= ${line.label}` : line.label}
+                </TableCell>
+                <TableCell align="right" sx={{ color: 'text.secondary', width: 72 }}>
+                  {line.count !== undefined ? `${line.count} шт.` : ''}
+                </TableCell>
+                <TableCell
+                  align="right"
+                  sx={{ width: 140, ...(negative ? { color: 'error.main' } : {}) }}
+                >
+                  {line.signed
+                    ? formatSignedMoneyMinor(line.amount_minor)
+                    : formatMoneyMinor(line.amount_minor)}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+      {memberId && (
+        <Stack direction="row" spacing={2} sx={{ mt: 1 }}>
+          <Link to={adjustmentsListHref(memberId, period, timeContext)}>Открыть начисления</Link>
+          <Link to={`/members/${encodeURIComponent(memberId)}`}>Открыть штрафы</Link>
+        </Stack>
+      )}
+    </Box>
+  );
+};
+
+// Сводка по категориям за весь отчёт (totals.adjustments_by_category) — под таблицей,
+// только если начисления есть.
+const CategorySummary = ({ report }: { report: PayrollReport }) => {
+  const categories = categoryAmounts(report.totals);
+  if (categories.length === 0) return null;
+  return (
+    <Box sx={{ mt: 2 }}>
+      <Typography variant="subtitle2" gutterBottom>
+        Начисления по категориям
+      </Typography>
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+        {categories.map((c) => (
+          <Chip
+            key={c.category_id ?? 'none'}
+            size="small"
+            variant="outlined"
+            color={c.amount_minor < 0 ? 'error' : 'default'}
+            label={`${categoryLabel(c.category_name)}: ${formatSignedMoneyMinor(
+              c.amount_minor,
+            )} · ${c.count} шт.`}
+          />
+        ))}
+      </Stack>
+    </Box>
+  );
+};
+
+// Количество колонок основной таблицы (для colSpan раскрытия).
+const COLUMN_COUNT = 14;
+
+// Режим «Список»: мастер-строки по сотрудникам + раскрытие: «Из чего сложилось» и (при
+// разбивке по дням/неделям/месяцам) таблица детализации под ним.
 export const PayrollListView = ({
   report,
   granularity,
@@ -187,7 +262,9 @@ export const PayrollListView = ({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const detailed = granularity !== 'none';
   // user_id→member_id: те же params, что PayrollFilters уже запрашивает на этой странице —
-  // один и тот же react-query кэш-ключ, лишнего сетевого запроса не добавляет.
+  // один и тот же react-query кэш-ключ, лишнего сетевого запроса не добавляет. payroll отдаёт
+  // только user_id, а начисления фильтруются по member_id; без маппинга (сотрудник выбыл из
+  // org) ссылки просто не показываем.
   const { data: members } = useGetList('members', {
     pagination: { page: 1, perPage: 200 },
     sort: { field: 'user_name', order: 'ASC' },
@@ -205,126 +282,123 @@ export const PayrollListView = ({
       return next;
     });
 
+  const totalsAdjustments = adjustmentSplit(report.totals);
+
   return (
-    <Table size="small">
-      <TableHead>
-        <TableRow>
-          {detailed && <TableCell sx={{ width: 48 }} />}
-          <TableCell>Сотрудник</TableCell>
-          <TableCell align="right">Отработано</TableCell>
-          <TableCell align="right">Переработка</TableCell>
-          <TableCell align="right">По графику</TableCell>
-          <TableCell align="right">Разница</TableCell>
-          <TableCell align="right">Опоздания</TableCell>
-          <TableCell align="right">Смен</TableCell>
-          <TableCell align="right">Начислено</TableCell>
-          <TableCell align="right">Штраф</TableCell>
-          <TableCell align="right">Начисления</TableCell>
-          <TableCell align="right">К выплате</TableCell>
-          <TableCell />
-        </TableRow>
-      </TableHead>
-      <TableBody>
-        {report.items.map((item) => {
-          const hasBreakdown = detailed && (item.breakdown?.length ?? 0) > 0;
-          const isOpen = expanded.has(item.user_id);
-          return (
-            <Fragment key={item.user_id}>
-              <TableRow>
-                {detailed && (
-                  <TableCell>
-                    {hasBreakdown && (
-                      <IconButton size="small" onClick={() => toggle(item.user_id)}>
-                        {isOpen ? <KeyboardArrowDownIcon /> : <KeyboardArrowRightIcon />}
-                      </IconButton>
-                    )}
-                  </TableCell>
-                )}
-                <TableCell>
-                  {/* «Зарплата» — денежный документ, приоритет обратный (admin.md, «Исключение»):
-                      основное — настоящее user_name, подпись — display_name. */}
-                  <MemberNameCell
-                    reversed
-                    user_name={item.user_name}
-                    display_name={item.display_name}
-                  />
-                </TableCell>
-                <TableCell align="right">{formatClockDuration(item.worked_seconds)}</TableCell>
-                <TableCell align="right">{formatClockDuration(item.overtime_seconds)}</TableCell>
-                <PlannedCell
-                  planned_seconds={item.planned_seconds}
-                  planned_amount_minor={item.planned_amount_minor}
-                />
-                <DeltaCell amount_minor={item.delta_amount_minor} />
-                <LateCell count={item.late_count} seconds={item.late_seconds_total} />
-                <TableCell align="right">{item.shifts_count}</TableCell>
-                <TableCell align="right">{formatMoneyMinor(item.gross_amount_minor)}</TableCell>
-                <PenaltyCell
-                  amount_minor={item.penalty_amount_minor}
-                  count={item.penalties_count}
-                />
-                <AdjustmentCell
-                  amount_minor={item.adjustment_amount_minor}
-                  count={item.adjustments_count}
-                  memberId={memberIdByUser.get(item.user_id)}
-                  period={report.period}
-                  timeContext={timeContext}
-                />
-                <NetCell amount_minor={item.net_amount_minor} />
-                <TableCell>
-                  {item.has_missing_rate && <MissingRateBadge title={missingRateHint(item)} />}
-                </TableCell>
-              </TableRow>
-              {hasBreakdown && isOpen && (
+    <>
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell sx={{ width: 48 }} />
+            <TableCell>Сотрудник</TableCell>
+            <TableCell align="right">Отработано</TableCell>
+            <TableCell align="right">Переработка</TableCell>
+            <TableCell align="right">По графику</TableCell>
+            <TableCell align="right">Разница</TableCell>
+            <TableCell align="right">Опоздания</TableCell>
+            <TableCell align="right">Смен</TableCell>
+            <TableCell align="right">Начислено</TableCell>
+            <TableCell align="right">Штраф</TableCell>
+            <TableCell align="right">Доплаты</TableCell>
+            <TableCell align="right">Удержания</TableCell>
+            <TableCell align="right">К выплате</TableCell>
+            <TableCell />
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {report.items.map((item) => {
+            const hasBreakdown = detailed && (item.breakdown?.length ?? 0) > 0;
+            const isOpen = expanded.has(item.user_id);
+            const adjustments = adjustmentSplit(item);
+            return (
+              <Fragment key={item.user_id}>
                 <TableRow>
-                  <TableCell colSpan={13} sx={{ py: 0, borderBottom: 0 }}>
-                    <BreakdownTable item={item} granularity={granularity} />
+                  <TableCell>
+                    <IconButton
+                      size="small"
+                      aria-label={isOpen ? 'Свернуть' : 'Из чего сложилось'}
+                      onClick={() => toggle(item.user_id)}
+                    >
+                      {isOpen ? <KeyboardArrowDownIcon /> : <KeyboardArrowRightIcon />}
+                    </IconButton>
+                  </TableCell>
+                  <TableCell>
+                    {/* «Зарплата» — денежный документ, приоритет обратный (admin.md, «Исключение»):
+                        основное — настоящее user_name, подпись — display_name. */}
+                    <MemberNameCell
+                      reversed
+                      user_name={item.user_name}
+                      display_name={item.display_name}
+                    />
+                  </TableCell>
+                  <TableCell align="right">{formatClockDuration(item.worked_seconds)}</TableCell>
+                  <TableCell align="right">{formatClockDuration(item.overtime_seconds)}</TableCell>
+                  <PlannedCell
+                    planned_seconds={item.planned_seconds}
+                    planned_amount_minor={item.planned_amount_minor}
+                  />
+                  <DeltaCell amount_minor={item.delta_amount_minor} />
+                  <LateCell count={item.late_count} seconds={item.late_seconds_total} />
+                  <TableCell align="right">{item.shifts_count}</TableCell>
+                  <GrossCell row={item} />
+                  <PenaltyCell
+                    amount_minor={item.penalty_amount_minor}
+                    count={item.penalties_count}
+                  />
+                  <AccrualCell amount_minor={adjustments.accrual} />
+                  <DeductionCell amount_minor={adjustments.deduction} />
+                  <NetCell amount_minor={item.net_amount_minor} />
+                  <TableCell>
+                    {item.has_missing_rate && <MissingRateBadge title={missingRateHint(item)} />}
                   </TableCell>
                 </TableRow>
-              )}
-            </Fragment>
-          );
-        })}
-        <TableRow sx={{ '& td': { fontWeight: 'bold' } }}>
-          {detailed && <TableCell />}
-          <TableCell>Итого</TableCell>
-          <TableCell align="right">{formatClockDuration(report.totals.worked_seconds)}</TableCell>
-          <TableCell align="right">
-            {formatClockDuration(report.totals.overtime_seconds ?? 0)}
-          </TableCell>
-          <PlannedCell
-            planned_seconds={report.totals.planned_seconds ?? 0}
-            planned_amount_minor={report.totals.planned_amount_minor ?? 0}
-          />
-          <DeltaCell amount_minor={report.totals.delta_amount_minor ?? 0} />
-          <LateCell
-            count={report.totals.late_count ?? 0}
-            seconds={report.totals.late_seconds_total ?? 0}
-          />
-          <TableCell align="right">{report.totals.shifts_count}</TableCell>
-          <TableCell align="right">{formatMoneyMinor(report.totals.gross_amount_minor)}</TableCell>
-          <PenaltyCell
-            amount_minor={report.totals.penalty_amount_minor}
-            count={report.totals.penalties_count}
-          />
-          <TableCell
-            align="right"
-            sx={{
-              color:
-                report.totals.adjustment_amount_minor > 0
-                  ? 'success.main'
-                  : report.totals.adjustment_amount_minor < 0
-                    ? 'error.main'
-                    : undefined,
-            }}
-          >
-            {formatSignedMoneyMinor(report.totals.adjustment_amount_minor)}
-          </TableCell>
-          <NetCell amount_minor={report.totals.net_amount_minor} />
-          <TableCell />
-        </TableRow>
-      </TableBody>
-    </Table>
+                {isOpen && (
+                  <TableRow>
+                    <TableCell colSpan={COLUMN_COUNT} sx={{ py: 0 }}>
+                      <CompositionBlock
+                        item={item}
+                        memberId={memberIdByUser.get(item.user_id)}
+                        period={report.period}
+                        timeContext={timeContext}
+                      />
+                      {hasBreakdown && <BreakdownTable item={item} granularity={granularity} />}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </Fragment>
+            );
+          })}
+          <TableRow sx={{ '& td': { fontWeight: 'bold' } }}>
+            <TableCell />
+            <TableCell>Итого</TableCell>
+            <TableCell align="right">{formatClockDuration(report.totals.worked_seconds)}</TableCell>
+            <TableCell align="right">
+              {formatClockDuration(report.totals.overtime_seconds ?? 0)}
+            </TableCell>
+            <PlannedCell
+              planned_seconds={report.totals.planned_seconds ?? 0}
+              planned_amount_minor={report.totals.planned_amount_minor ?? 0}
+            />
+            <DeltaCell amount_minor={report.totals.delta_amount_minor ?? 0} />
+            <LateCell
+              count={report.totals.late_count ?? 0}
+              seconds={report.totals.late_seconds_total ?? 0}
+            />
+            <TableCell align="right">{report.totals.shifts_count}</TableCell>
+            <GrossCell row={report.totals} />
+            <PenaltyCell
+              amount_minor={report.totals.penalty_amount_minor}
+              count={report.totals.penalties_count}
+            />
+            <AccrualCell amount_minor={totalsAdjustments.accrual} />
+            <DeductionCell amount_minor={totalsAdjustments.deduction} />
+            <NetCell amount_minor={report.totals.net_amount_minor} />
+            <TableCell />
+          </TableRow>
+        </TableBody>
+      </Table>
+      <CategorySummary report={report} />
+    </>
   );
 };
 
