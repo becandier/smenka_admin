@@ -166,11 +166,55 @@ const deleteOnePath = (resource: string, id: string): string => {
 
 // member → добавляем плоский custom_role_id для SelectInput'а в форме и login (алиас
 // user_login, admin_created_accounts/backend.md) для editable LoginInput в MemberEdit.
+// access_mode/access_profile_id — плоские поля контрола «Доступ в кабинет» (access_profiles/
+// admin.md §2): 'full' — системная роль admin, 'profile' — employee с профилем доступа,
+// 'none' — обычный сотрудник без входа в кабинет.
+export type MemberAccessMode = 'none' | 'full' | 'profile';
+
+const memberAccessMode = (m: any): MemberAccessMode => {
+  if (m?.role === 'admin') return 'full';
+  return m?.access_profile?.id ? 'profile' : 'none';
+};
+
 const mapMember = (m: any): any => ({
   ...m,
   custom_role_id: m?.custom_role?.id ?? null,
   login: typeof m?.user_login === 'string' ? m.user_login : null,
+  access_mode: memberAccessMode(m),
+  access_profile_id: m?.access_profile?.id ?? null,
 });
+
+// Целевые системная роль и профиль по значению контрола «Доступ в кабинет».
+const accessTarget = (
+  mode: MemberAccessMode,
+  profileId: unknown,
+): { role: 'admin' | 'employee'; profileId: string | null } => {
+  if (mode === 'full') return { role: 'admin', profileId: null };
+  if (mode === 'profile') {
+    return {
+      role: 'employee',
+      profileId: typeof profileId === 'string' && profileId !== '' ? profileId : null,
+    };
+  }
+  return { role: 'employee', profileId: null };
+};
+
+const isAccessMode = (v: unknown): v is MemberAccessMode =>
+  v === 'none' || v === 'full' || v === 'profile';
+
+// Ошибки выдачи профиля (create/update members) по error.code (admin.md §2, «Ошибки»).
+const ACCESS_PROFILE_MEMBER_ERRORS = {
+  ACCESS_PROFILE_REQUIRES_EMPLOYEE: {
+    field: 'access_profile_id',
+    status: 409,
+    message: 'Профиль доступа можно выдать только сотруднику',
+  },
+  ACCESS_PROFILE_NOT_FOUND: {
+    field: 'access_profile_id',
+    status: 404,
+    message: 'Профиль доступа не найден — возможно, он удалён',
+  },
+};
 
 // members (create/update): LOGIN_TAKEN/EMAIL_TAKEN/INVALID_DISPLAY_NAME/
 // PASSWORD_RESET_NOT_ALLOWED приходят не как VALIDATION_ERROR, поэтому request() их сам
@@ -1099,7 +1143,7 @@ export const dataProvider: DataProvider = {
       // password_managed, которые остаются производными от member), чтобы MemberCreate достал
       // их из onSuccess мутации и показал в окне выдачи доступа; в кэш ресурса `members` они
       // не персистятся отдельным запросом (следующий getList/getOne их не вернёт).
-      const body = {
+      const body: Record<string, unknown> = {
         name: d.name,
         // trim + пустая строка → null: та же семантика, что normalizeDisplayName уже
         // реализует для display_name (utils/memberName) — переиспользуем вместо повтора.
@@ -1111,6 +1155,13 @@ export const dataProvider: DataProvider = {
         role_id: d.role_id ? d.role_id : null,
         display_name: normalizeDisplayName(d.display_name),
       };
+      // «Доступ в кабинет» (access_profiles): access_profile_id передаём только когда он есть —
+      // обладателю профиля с members:manage бэк запрещает само поле (403), даже null.
+      if (isAccessMode(d.access_mode)) {
+        const target = accessTarget(d.access_mode, d.access_profile_id);
+        body.role = target.role;
+        if (target.profileId) body.access_profile_id = target.profileId;
+      }
       let created: any;
       try {
         created = await request(`${orgBase()}/members`, {
@@ -1121,6 +1172,7 @@ export const dataProvider: DataProvider = {
         rethrowMemberErrorAsField(e, {
           LOGIN_TAKEN: { field: 'login', status: 409 },
           EMAIL_TAKEN: { field: 'email', status: 409 },
+          ...ACCESS_PROFILE_MEMBER_ERRORS,
         });
       }
       return {
@@ -1235,7 +1287,32 @@ export const dataProvider: DataProvider = {
         throw new HttpError('Не указан пользователь', 400, { code: 'VALIDATION_ERROR' });
       }
       let result: any = previousData;
-      if (data.role !== undefined && data.role !== previousData?.role) {
+      if (isAccessMode(data.access_mode)) {
+        // «Доступ в кабинет» (access_profiles/admin.md §2): сначала системная роль, потом
+        // профиль. «Полный → По профилю» = role:employee, затем access_profile_id;
+        // «По профилю → Полный» = только PATCH /role (бэк обнуляет профиль сам);
+        // «По профилю → Нет» = access_profile_id:null.
+        const target = accessTarget(data.access_mode, data.access_profile_id);
+        const prevRole = previousData?.role;
+        let currentProfile: string | null = previousData?.access_profile?.id ?? null;
+        try {
+          if (target.role !== prevRole) {
+            result = await request(`${orgBase()}/members/${userId}/role`, {
+              method: 'PATCH',
+              body: JSON.stringify({ role: target.role }),
+            });
+            currentProfile = result?.access_profile?.id ?? null;
+          }
+          if (target.role === 'employee' && target.profileId !== currentProfile) {
+            result = await request(`${orgBase()}/members/${userId}/access-profile`, {
+              method: 'PATCH',
+              body: JSON.stringify({ access_profile_id: target.profileId }),
+            });
+          }
+        } catch (e: any) {
+          rethrowMemberErrorAsField(e, ACCESS_PROFILE_MEMBER_ERRORS);
+        }
+      } else if (data.role !== undefined && data.role !== previousData?.role) {
         result = await request(`${orgBase()}/members/${userId}/role`, {
           method: 'PATCH',
           body: JSON.stringify({ role: data.role }),

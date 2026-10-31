@@ -12,7 +12,6 @@ import {
   ReferenceInput,
   SearchInput,
   DeleteButton,
-  SelectField,
   TopToolbar,
   FilterButton,
   CreateButton,
@@ -21,10 +20,13 @@ import {
   email,
   useRecordContext,
   useRedirect,
+  useGetList,
+  RadioButtonGroupInput,
   type RaRecord,
 } from 'react-admin';
-import { useFormContext } from 'react-hook-form';
-import { Box, Button, Chip, Link as MuiLink, Typography } from '@mui/material';
+import { useFormContext, useWatch } from 'react-hook-form';
+import { Link as RouterLink } from 'react-router-dom';
+import { Box, Button, Chip, FormHelperText, Link as MuiLink, Typography } from '@mui/material';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
 import LockResetIcon from '@mui/icons-material/LockReset';
 import { MEMBER_ROLE_CHOICES, formatRateBadge } from '../utils/format';
@@ -33,21 +35,117 @@ import {
   validatePasswordFormat,
   generateClientPassword,
 } from '../utils/credentials';
-import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useOrgAccess } from '../utils/useOrgAccess';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
 import { MemberRatesSection } from './memberRates';
 import { MemberPenaltiesSection } from './penalties';
 import { MemberNameCell } from '../components/MemberNameCell';
+import { NoAccess } from '../components/NoAccess';
 import { OrganizationTimeText } from '../components/TimeText';
 import { ResetPasswordDialog, useIssuedCredentials } from './memberCredentials';
 
-// Управление сотрудниками (кнопка «Добавить», смена пароля, правка логина) — только
-// owner и admin организации (admin_created_accounts/admin.md, «RBAC»); финальная проверка —
-// на бэке (403), здесь только прячем недоступное.
-const useCanManageMembers = (): boolean => {
-  const role = useMyOrgRole();
-  return role === 'owner' || role === 'admin';
+// Управление сотрудниками (кнопка «Добавить», смена пароля, правка логина, удаление) —
+// право «Сотрудники · управление» (access_profiles/admin.md §2): полный администратор или
+// профиль с members:manage. Финальная проверка — на бэке (403), здесь только прячем.
+const useCanManageMembers = (): boolean => useOrgAccess().can('members', 'manage');
+
+// «Доступ в кабинет» (access_profiles/admin.md §2).
+const ACCESS_MODE_CHOICES = [
+  { id: 'none', name: 'Нет (сотрудник)' },
+  { id: 'full', name: 'Полный (администратор)' },
+  { id: 'profile', name: 'По профилю' },
+];
+
+const profileName = (r: RaRecord | undefined): string | null => {
+  const name = r?.access_profile?.name;
+  return typeof name === 'string' && name !== '' ? name : null;
+};
+
+// Колонка списка: «Администратор» / имя профиля / «—».
+const accessField = (r: RaRecord) => {
+  if (r.role === 'admin') return 'Администратор';
+  return profileName(r) ?? '—';
+};
+
+// Текст текущего значения — для read-only контрола обладателя профиля.
+const accessText = (r: RaRecord | undefined): string => {
+  if (r?.role === 'admin') return 'Полный (администратор)';
+  const name = profileName(r);
+  return name ? `По профилю: ${name}` : 'Нет (сотрудник)';
+};
+
+// «По профилю» без выбранного профиля — ошибка формы (селекта может не быть вовсе, если
+// профилей ещё нет, поэтому ошибка — на самом переключателе).
+const validateAccessMode = (values: Record<string, any>, errors: Record<string, string>) => {
+  if (values.access_mode === 'profile' && !values.access_profile_id) {
+    errors.access_mode = 'Выберите профиль доступа';
+  }
+};
+
+const ProfileSelect = () => {
+  const { data, isPending } = useGetList('access-profiles', {
+    pagination: { page: 1, perPage: 1000 },
+    sort: { field: 'name', order: 'ASC' },
+  });
+  if (!isPending && (data ?? []).length === 0) {
+    return (
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Сначала создайте профиль доступа —{' '}
+        <MuiLink component={RouterLink} to="/access-profiles/create">
+          создать профиль
+        </MuiLink>
+      </Typography>
+    );
+  }
+  return (
+    <ReferenceInput
+      source="access_profile_id"
+      reference="access-profiles"
+      sort={{ field: 'name', order: 'ASC' }}
+      perPage={1000}
+    >
+      <SelectInput
+        label="Профиль доступа"
+        optionText="name"
+        validate={required('Выберите профиль доступа')}
+      />
+    </ReferenceInput>
+  );
+};
+
+// Единый контрол «Доступ в кабинет»: выдавать доступ могут только полные администраторы;
+// обладателю профиля (даже с members:manage) он показан зафиксированным/только для чтения.
+const AccessModeInput = ({ mode }: { mode: 'create' | 'edit' }) => {
+  const { isFull } = useOrgAccess();
+  const record = useRecordContext();
+  const accessMode = useWatch({ name: 'access_mode' });
+  if (!isFull) {
+    return (
+      <Box sx={{ my: 1 }}>
+        <Typography variant="caption" color="text.secondary">
+          Доступ в кабинет
+        </Typography>
+        <Typography variant="body2">
+          {mode === 'create' ? 'Нет (сотрудник)' : accessText(record)}
+        </Typography>
+        {mode === 'create' && (
+          <FormHelperText>Выдавать доступ в кабинет могут владелец и администраторы</FormHelperText>
+        )}
+      </Box>
+    );
+  }
+  return (
+    <>
+      <RadioButtonGroupInput
+        source="access_mode"
+        label="Доступ в кабинет"
+        choices={ACCESS_MODE_CHOICES}
+        defaultValue="none"
+      />
+      {accessMode === 'profile' && <ProfileSelect />}
+    </>
+  );
 };
 
 const memberFilters = [
@@ -98,33 +196,32 @@ const MemberListActions = () => {
   );
 };
 
-export const MemberList = () => (
-  <List
-    filters={memberFilters}
-    sort={{ field: 'joined_at', order: 'DESC' }}
-    exporter={false}
-    actions={<MemberListActions />}
-  >
-    <Datagrid rowClick="edit" bulkActionButtons={false}>
-      <FunctionField label="Имя" render={nameField} sortBy="user_name" />
-      <TextField source="user_login" label="Логин" emptyText="—" />
-      <FunctionField label="Email" render={emailField} />
-      <SelectField source="role" label="Системная роль" choices={MEMBER_ROLE_CHOICES} />
-      <TextField source="custom_role.name" label="Кастомная роль" emptyText="—" />
-      <FunctionField label="Ставка" render={rateField} />
-      <FunctionField
-        label="Присоединился"
-        render={(record: RaRecord) => <OrganizationTimeText value={record.joined_at} />}
-      />
-    </Datagrid>
-  </List>
-);
-
-const NoAccess = ({ text }: { text: string }) => (
-  <Box sx={{ p: 3 }}>
-    <Typography color="text.secondary">{text}</Typography>
-  </Box>
-);
+export const MemberList = () => {
+  const { isFull, can } = useOrgAccess();
+  // current_rate бэк заполняет полному администратору или при payroll:view.
+  const showRate = isFull || can('payroll');
+  return (
+    <List
+      filters={memberFilters}
+      sort={{ field: 'joined_at', order: 'DESC' }}
+      exporter={false}
+      actions={<MemberListActions />}
+    >
+      <Datagrid rowClick="edit" bulkActionButtons={false}>
+        <FunctionField label="Имя" render={nameField} sortBy="user_name" />
+        <TextField source="user_login" label="Логин" emptyText="—" />
+        <FunctionField label="Email" render={emailField} />
+        <FunctionField label="Доступ в кабинет" render={accessField} sortBy="role" />
+        <TextField source="custom_role.name" label="Кастомная роль" emptyText="—" />
+        {showRate && <FunctionField label="Ставка" render={rateField} />}
+        <FunctionField
+          label="Присоединился"
+          render={(record: RaRecord) => <OrganizationTimeText value={record.joined_at} />}
+        />
+      </Datagrid>
+    </List>
+  );
+};
 
 // Форма создания сотрудника (admin.md, «Создание сотрудника»): логин ИЛИ email обязателен;
 // пароль опционален (пусто — сгенерирует сервер, см. GeneratePasswordButton — клиентское
@@ -141,6 +238,7 @@ const validateMemberCreate = (values: Record<string, any>): Record<string, any> 
   if (loginError) errors.login = loginError;
   const passwordError = validatePasswordFormat(values.password);
   if (passwordError) errors.password = passwordError;
+  validateAccessMode(values, errors);
   return errors;
 };
 
@@ -191,13 +289,7 @@ const MemberCreateFields = () => {
         />
         <GeneratePasswordButton />
       </Box>
-      <SelectInput
-        source="role"
-        label="Системная роль"
-        choices={MEMBER_ROLE_CHOICES}
-        defaultValue="employee"
-        validate={required()}
-      />
+      <AccessModeInput mode="create" />
       <ReferenceInput source="role_id" reference="roles">
         <SelectInput label="Кастомная роль" optionText="name" emptyText="— нет —" />
       </ReferenceInput>
@@ -217,18 +309,12 @@ const MemberCreateFields = () => {
 // там же) — читаем их в onSuccess и сразу открываем окно выдачи доступа (admin.md, п.3:
 // «Показывается сразу после успешного создания»). redirect={false} + собственный onSuccess
 // отключают штатные notify/redirect Create — на список уходим сами при закрытии диалога.
+// Право «Сотрудники · управление» проверяет RequireAccess на маршруте (App.tsx).
 export const MemberCreate = () => {
-  const myRole = useMyOrgRole();
-  const canManage = myRole === 'owner' || myRole === 'admin';
   const isReadOnly = useIsReadOnly();
   const redirect = useRedirect();
   const { dialog, show } = useIssuedCredentials(() => redirect('list', 'members'));
 
-  if (!canManage) {
-    return (
-      <NoAccess text="Добавление сотрудников доступно владельцу и администратору организации." />
-    );
-  }
   // isReadOnly гейтит саму форму, не только CreateButton в MemberListActions — маршрут
   // /members/create остаётся доступен по прямой ссылке независимо от того, откуда открыт.
   if (isReadOnly) {
@@ -258,7 +344,7 @@ export const MemberCreate = () => {
 // подставляет настоящее имя сотрудника — динамическая, поэтому нужен доступ к record.
 // Очистка поля (пустая строка) = сброс на настоящее имя — нормализацию в null делает
 // dataProvider (update, ресурс members), сюда её дублировать не нужно.
-const DisplayNameInput = () => {
+const DisplayNameInput = ({ disabled }: { disabled?: boolean }) => {
   const record = useRecordContext();
   const realName = typeof record?.user_name === 'string' ? record.user_name : '';
   return (
@@ -266,6 +352,7 @@ const DisplayNameInput = () => {
       source="display_name"
       label="Имя в организации"
       helperText={`Как этот сотрудник отображается в вашей организации. Пусто — показываем имя из профиля: ${realName}`}
+      disabled={disabled}
       inputProps={{ maxLength: 100 }}
       validate={maxLength(100, 'Не более 100 символов')}
       fullWidth
@@ -282,7 +369,7 @@ const DisplayNameInput = () => {
 // как «поле не передано» и молча не меняет его — без этой проверки форма отрапортовала бы
 // успех при фактическом no-op. Логин — способ входа, снимать его незачем; если он уже задан,
 // пустое значение — ошибка, а не «выключить логин».
-const LoginInput = () => {
+const LoginInput = ({ disabled }: { disabled?: boolean }) => {
   const record = useRecordContext();
   const managed = record?.password_managed === true;
   const hadLogin = typeof record?.login === 'string' && record.login !== '';
@@ -301,7 +388,7 @@ const LoginInput = () => {
     <TextInput
       source="login"
       label="Логин"
-      disabled={!managed}
+      disabled={!managed || disabled}
       helperText={managed ? 'Логин для входа сотрудника' : undefined}
       inputProps={{ maxLength: 32 }}
       validate={validateLogin}
@@ -347,21 +434,42 @@ const ResetPasswordSection = () => {
 // toolbar={<TariffAwareToolbar/>} прячет только Save при read-only; DeleteButton ниже —
 // вне тулбара, намеренно НЕ гейтится: «выход/исключение сотрудника» — явное исключение
 // из read-only (backend.md «Read-only режим», п.3), уход из организации не блокируем.
-export const MemberEdit = () => (
-  <Edit mutationMode="pessimistic" redirect="list">
-    <SimpleForm toolbar={<TariffAwareToolbar />}>
-      <TextInput source="user_name" label="Имя" disabled />
-      <TextInput source="user_email" label="Email" disabled />
-      <LoginInput />
-      <DisplayNameInput />
-      <SelectInput source="role" label="Системная роль" choices={MEMBER_ROLE_CHOICES} />
-      <ReferenceInput source="custom_role_id" reference="roles">
-        <SelectInput label="Кастомная роль" optionText="name" emptyText="— нет —" />
-      </ReferenceInput>
-      <DeleteButton label="Удалить из организации" mutationMode="pessimistic" />
-    </SimpleForm>
-    <ResetPasswordSection />
-    <MemberRatesSection />
-    <MemberPenaltiesSection />
-  </Edit>
-);
+//
+// Карточка открывается и при «Сотрудники · просмотр» (access_profiles): без права
+// «управление» поля заблокированы, тулбар сохранения скрыт, DeleteButton прячет сам
+// react-admin (authProvider.canAccess: delete → manage).
+const validateMemberEdit = (values: Record<string, any>): Record<string, any> => {
+  const errors: Record<string, string> = {};
+  validateAccessMode(values, errors);
+  return errors;
+};
+
+export const MemberEdit = () => {
+  const canManage = useCanManageMembers();
+  return (
+    <Edit mutationMode="pessimistic" redirect="list">
+      <SimpleForm
+        toolbar={canManage ? <TariffAwareToolbar /> : false}
+        validate={validateMemberEdit}
+      >
+        <TextInput source="user_name" label="Имя" disabled />
+        <TextInput source="user_email" label="Email" disabled />
+        <LoginInput disabled={!canManage} />
+        <DisplayNameInput disabled={!canManage} />
+        <AccessModeInput mode="edit" />
+        <ReferenceInput source="custom_role_id" reference="roles">
+          <SelectInput
+            label="Кастомная роль"
+            optionText="name"
+            emptyText="— нет —"
+            disabled={!canManage}
+          />
+        </ReferenceInput>
+        <DeleteButton label="Удалить из организации" mutationMode="pessimistic" />
+      </SimpleForm>
+      <ResetPasswordSection />
+      <MemberRatesSection />
+      <MemberPenaltiesSection />
+    </Edit>
+  );
+};
