@@ -71,6 +71,7 @@ import { TariffPage } from './resources/tariff';
 import { KnowledgePage } from './resources/knowledge/KnowledgePage';
 import { PlatformSettingsPage } from './resources/platformSettings';
 import { OAUTH_LOGIN_ENABLED } from './config';
+import { queryClient } from './queryClient';
 import { RequireAccess } from './components/RequireAccess';
 import { actionLevel, type AccessLevel } from './access';
 
@@ -167,6 +168,7 @@ export const App = () => (
     <Admin
       dataProvider={dataProvider}
       authProvider={authProvider}
+      queryClient={queryClient}
       i18nProvider={i18nProvider}
       dashboard={Dashboard}
       layout={Layout}

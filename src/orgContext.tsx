@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
 import { type CurrentOrg, getCurrentOrg, setCurrentOrg as persist } from './config';
+import { queryClient } from './queryClient';
 
 interface OrgContextValue {
   org: CurrentOrg | null;
@@ -15,6 +16,8 @@ export const OrgProvider = ({ children }: { children: ReactNode }) => {
 
   const selectOrg = useCallback((next: CurrentOrg | null) => {
     persist(next);
+    // Права (canAccess) зависят от организации, а ключ кэша react-admin её не содержит.
+    queryClient.removeQueries({ queryKey: ['auth', 'canAccess'] });
     setOrg(next);
   }, []);
 
