@@ -21,6 +21,8 @@ import {
   useRecordContext,
   useRedirect,
   useGetList,
+  useNotify,
+  useRefresh,
   RadioButtonGroupInput,
   type RaRecord,
 } from 'react-admin';
@@ -446,8 +448,23 @@ const validateMemberEdit = (values: Record<string, any>): Record<string, any> =>
 
 export const MemberEdit = () => {
   const canManage = useCanManageMembers();
+  const notify = useNotify();
+  const refresh = useRefresh();
+  // Свой onError ради частичного успеха смены доступа (dataProvider, body.partial): роль уже
+  // сменилась — показываем ошибку и перечитываем запись. Остальное — как по умолчанию у
+  // pessimistic Edit: ошибки полей (body.errors) без уведомления, иначе текст ошибки.
+  const onError = (error: unknown) => {
+    const err = error as { message?: string; body?: { partial?: boolean; errors?: object } };
+    if (err?.body?.partial) {
+      notify(err.message ?? 'Ошибка сохранения', { type: 'error' });
+      refresh();
+      return;
+    }
+    if (err?.body?.errors && Object.keys(err.body.errors).length > 0) return;
+    notify(err?.message || 'ra.notification.http_error', { type: 'error' });
+  };
   return (
-    <Edit mutationMode="pessimistic" redirect="list">
+    <Edit mutationMode="pessimistic" redirect="list" mutationOptions={{ onError }}>
       <SimpleForm
         toolbar={canManage ? <TariffAwareToolbar /> : false}
         validate={validateMemberEdit}

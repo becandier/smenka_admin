@@ -1299,12 +1299,14 @@ export const dataProvider: DataProvider = {
         const target = accessTarget(data.access_mode, data.access_profile_id);
         const prevRole = previousData?.role;
         let currentProfile: string | null = previousData?.access_profile?.id ?? null;
+        let roleChanged = false;
         try {
           if (target.role !== prevRole) {
             result = await request(`${orgBase()}/members/${userId}/role`, {
               method: 'PATCH',
               body: JSON.stringify({ role: target.role }),
             });
+            roleChanged = true;
             currentProfile = result?.access_profile?.id ?? null;
           }
           if (target.role === 'employee' && target.profileId !== currentProfile) {
@@ -1314,6 +1316,18 @@ export const dataProvider: DataProvider = {
             });
           }
         } catch (e: any) {
+          // «Полный → По профилю» неатомарен: роль уже сменилась, а профиль не выдан. Тихий
+          // откат формы к previousData скрыл бы это — отдаём явную ошибку с пометкой partial,
+          // MemberEdit покажет её и перечитает запись.
+          if (roleChanged) {
+            const code = e?.body?.code as keyof typeof ACCESS_PROFILE_MEMBER_ERRORS;
+            const reason =
+              ACCESS_PROFILE_MEMBER_ERRORS[code]?.message ?? e?.message ?? 'Ошибка запроса';
+            throw new HttpError(`Роль изменена, профиль не выдан: ${reason}`, e?.status ?? 500, {
+              ...(e?.body ?? {}),
+              partial: true,
+            });
+          }
           rethrowMemberErrorAsField(e, ACCESS_PROFILE_MEMBER_ERRORS);
         }
       } else if (data.role !== undefined && data.role !== previousData?.role) {
