@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   Create,
   CreateButton,
@@ -165,8 +165,20 @@ export const AccessProfileList = () => {
 
 type MatrixChoice = 'none' | AccessLevel;
 
-const validateNotEmpty = (value: unknown): string | undefined =>
-  Object.keys(toPermissions(value)).length > 0 ? undefined : 'Выберите хотя бы один раздел';
+// Только разделы и уровни из каталога: неизвестный админке раздел (или уровень, которого у
+// раздела нет) ушёл бы в PATCH и получил 422, а в «минимум один раздел» не должен считаться.
+const filterByCatalog = (value: unknown, sections: AccessCatalogSection[]): SectionPermissions => {
+  const allowed = new Map(sections.map((sec) => [sec.code, sec.levels]));
+  const result: SectionPermissions = {};
+  for (const [code, level] of Object.entries(toPermissions(value))) {
+    if (allowed.get(code)?.includes(level)) result[code] = level;
+  }
+  return result;
+};
+
+const sameKeys = (a: SectionPermissions, b: SectionPermissions): boolean =>
+  Object.keys(a).length === Object.keys(b).length &&
+  Object.entries(a).every(([code, level]) => b[code] === level);
 
 // Пока каталог не загружен (или упал) — форму не отправляем.
 const validateCatalogLoading = (): string => 'Каталог разделов ещё не загружен';
@@ -210,15 +222,31 @@ const PermissionsMatrixInput = () => {
   const { sections, isPending, error, refetch } = useAccessCatalog();
   const catalogReady = !isPending && !error;
   const validate = useMemo(
-    () => (catalogReady ? validateNotEmpty : validateCatalogLoading),
-    [catalogReady],
+    () =>
+      catalogReady
+        ? (value: unknown): string | undefined =>
+            Object.keys(filterByCatalog(value, sections)).length > 0
+              ? undefined
+              : 'Выберите хотя бы один раздел'
+        : validateCatalogLoading,
+    [catalogReady, sections],
   );
   const {
     field,
     fieldState: { error: fieldError, isTouched },
     formState: { isSubmitted },
   } = useInput({ source: 'permissions', defaultValue: {}, validate });
-  const current = toPermissions(field.value);
+  const { setValue } = useFormContext();
+  const current = filterByCatalog(field.value, sections);
+
+  // Значение записи чистим по каталогу сразу после его загрузки — без пометки «изменено».
+  const rawValue = field.value;
+  useEffect(() => {
+    if (!catalogReady) return;
+    const raw = toPermissions(rawValue);
+    const filtered = filterByCatalog(raw, sections);
+    if (!sameKeys(raw, filtered)) setValue('permissions', filtered, { shouldDirty: false });
+  }, [catalogReady, sections, rawValue, setValue]);
 
   // Группы в порядке первого появления в каталоге; строки — в порядке каталога.
   const groups = useMemo(() => {

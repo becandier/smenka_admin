@@ -119,7 +119,7 @@ export const validateFileForCategory = (file: File, category: FileCategory): str
 };
 
 // --- RBAC по категориям (UI лишь прячет недоступное; доступ режется и на бэке 403) ---
-// Матрица — backend.md / admin.md. orgRole — фактическая роль в выбранной org (useMyOrgRole).
+// Матрица — backend.md / admin.md. orgRole — фактическая роль в выбранной org (OrgAccess.myRole).
 
 export const canUploadFileCategory = (
   category: FileCategory,

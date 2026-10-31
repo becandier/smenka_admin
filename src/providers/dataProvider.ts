@@ -20,13 +20,6 @@ import type {
 import { reportTariffGateError } from '../subscription/tariffErrorBus';
 import { reportForbiddenError } from './forbiddenErrorBus';
 import type { AccessLevel } from '../access';
-
-export interface AccessCatalogSection {
-  id: string;
-  code: string;
-  group: string;
-  levels: AccessLevel[];
-}
 import type {
   AdminPaymentsTotals,
   BillingCheckoutRequest,
@@ -36,6 +29,15 @@ import type {
   PaymentListResult,
   PaymentRow,
 } from '../subscription/billingTypes';
+
+// Раздел каталога прав (GET /access-permissions, access_profiles) — строка ресурса
+// `access-permissions` (id = code).
+export interface AccessCatalogSection {
+  id: string;
+  code: string;
+  group: string;
+  levels: AccessLevel[];
+}
 
 // Категории ресурсов:
 //  - PLATFORM_SERVER — серверная пагинация через /admin/* ({items,total,limit,offset}).
