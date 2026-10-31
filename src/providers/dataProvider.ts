@@ -67,7 +67,13 @@ const stripBodyPrefix = (field: string): string =>
 // Единая точка запроса: Bearer + разворачивание конверта {data, error}. Авторизация и тихий
 // retry протухшего access-токена — в fetchWithAuthRetry() (tokenRefresh.ts), здесь только
 // Content-Type/Accept и разбор {data,error}.
-const request = async (path: string, options: RequestInit = {}): Promise<any> => {
+// silentForbidden — необязательный под-запрос: его 403 FORBIDDEN вызывающий обрабатывает сам
+// (деградирует без данных), уведомление через forbiddenErrorBus не нужно.
+const request = async (
+  path: string,
+  options: RequestInit = {},
+  { silentForbidden = false }: { silentForbidden?: boolean } = {},
+): Promise<any> => {
   const headers = new Headers(options.headers ?? {});
   headers.set('Accept', 'application/json');
   // FormData (загрузка файла) — Content-Type с boundary браузер выставляет сам; не трогаем.
@@ -100,7 +106,7 @@ const request = async (path: string, options: RequestInit = {}): Promise<any> =>
     reportTariffGateError(err?.code, message);
     // 403 FORBIDDEN (нет права профиля доступа) — уведомление с текстом бэка через шину
     // (access_profiles/admin.md, «403 от API»); checkError на 403 не разлогинивает.
-    reportForbiddenError(res.status, err?.code, message);
+    if (!silentForbidden) reportForbiddenError(res.status, err?.code, message);
     throw new HttpError(message, res.status, body);
   }
   return json ? json.data : null;
@@ -920,9 +926,16 @@ export const dataProvider: DataProvider = {
       if (!shiftId || !instanceId) {
         throw new HttpError('Экземпляр чек-листа не найден', 404, { code: 'NOT_FOUND' });
       }
+      // Смена — необязательна: обладатель профиля с «Заполненными чек-листами», но без «Журнала
+      // смен» получает на неё 403 (access_profiles) — показываем деталь без полей смены.
       const [detail, shift] = await Promise.all([
         request(`/shifts/${shiftId}/checklists/${instanceId}`),
-        request(`${orgBase()}/shifts/${shiftId}`),
+        request(`${orgBase()}/shifts/${shiftId}`, {}, { silentForbidden: true }).catch(
+          (e: unknown) => {
+            if (e instanceof HttpError && e.status === 403) return null;
+            throw e;
+          },
+        ),
       ]);
       return {
         data: {
