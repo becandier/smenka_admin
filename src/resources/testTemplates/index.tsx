@@ -44,6 +44,7 @@ import { TestTemplateFields } from './TemplateForm';
 import { getTestTemplateDefaultValues, validateTestTemplate } from './validation';
 import { ImportTestTemplateDialog } from './ImportDialog';
 import { AssignTestDialog } from './AssignDialog';
+import { ViewModeAlert } from '../../components/ViewModeAlert';
 
 // Тесты — раздел «Тесты» (access_profiles): просмотр — tests:view, запись — tests:manage;
 // маршруты режет RequireAccess (App.tsx). super_admin сюда не допускается даже сквозным
@@ -330,7 +331,8 @@ const TestTemplateEditForm = () => {
         onError: (e: unknown) => setServerError(testErrorMessage(e, 'Не удалось сохранить тест')),
       }}
     >
-      <SimpleForm validate={validateTestTemplate} toolbar={<TariffAwareToolbar />}>
+      <ViewModeAlert section="tests" />
+      <SimpleForm validate={validateTestTemplate} toolbar={<TariffAwareToolbar section="tests" />}>
         <DeletedNotice />
         <ServerErrorAlert error={serverError} />
         <TestTemplateFields />

@@ -70,6 +70,7 @@ import { RestoreButton } from '../components/RestoreButton';
 import { useSectionReadOnly } from '../utils/useOrgAccess';
 import { OrganizationTimeText } from '../components/TimeText';
 import { splitScheduleAssignments } from './checklistSchedule';
+import { ViewModeAlert } from '../components/ViewModeAlert';
 
 const typeChoices = [
   { id: 'shift_start', name: 'Начало смены' },
@@ -1054,6 +1055,7 @@ export const ChecklistTemplateEdit = () => {
   return (
     <Box sx={{ p: 2, maxWidth: 800 }}>
       <Title title={`Чек-лист — ${template.name}`} />
+      <ViewModeAlert section="checklist_templates" />
       <TemplateMetaForm template={template} onSaved={onChanged} />
       <ItemsEditor
         templateId={template.id}

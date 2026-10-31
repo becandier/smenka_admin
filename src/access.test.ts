@@ -67,10 +67,13 @@ describe('computeOrgAccess', () => {
 });
 
 describe('actionLevel', () => {
-  it('карточка сотрудника и настройки открываются на просмотр', () => {
+  it('карточка сотрудника, настройки и справочники открываются на просмотр', () => {
     expect(actionLevel('members', 'edit')).toBe('view');
     expect(actionLevel('settings', 'edit')).toBe('view');
-    expect(actionLevel('roles', 'edit')).toBe('manage');
+    expect(actionLevel('roles', 'edit')).toBe('view');
+    expect(actionLevel('work-schedules', 'edit')).toBe('view');
+    expect(actionLevel('access-profiles', 'edit')).toBe('manage');
+    expect(actionLevel('roles', 'create')).toBe('manage');
     expect(actionLevel('members', 'delete')).toBe('manage');
     expect(actionLevel('roles', 'list')).toBe('view');
   });

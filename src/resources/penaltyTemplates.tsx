@@ -29,6 +29,7 @@ import { FeatureLockButton, PremiumRequiredScreen } from '../subscription/Featur
 import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
 import { useHasFeature } from '../subscription/SubscriptionContext';
 import { OrganizationTimeText } from '../components/TimeText';
+import { ViewModeAlert } from '../components/ViewModeAlert';
 
 // Шаблоны штрафов — раздел «Штрафы» (access_profiles): список — penalties:view, запись —
 // penalties:manage; маршруты режет RequireAccess (App.tsx). super_admin штрафы конкретной
@@ -177,6 +178,9 @@ export const PenaltyTemplateCreate = () => {
 // через TariffAwareToolbar (read-only скрывает целиком, !fines — замок + диалог).
 export const PenaltyTemplateEdit = () => (
   <Edit mutationMode="pessimistic" redirect="list">
-    <TemplateForm toolbar={<TariffAwareToolbar feature="fines" featureLabel="Штрафы" />} />
+    <ViewModeAlert section="penalties" />
+    <TemplateForm
+      toolbar={<TariffAwareToolbar feature="fines" featureLabel="Штрафы" section="penalties" />}
+    />
   </Edit>
 );

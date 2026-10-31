@@ -18,6 +18,7 @@ import {
 import { useSectionReadOnly } from '../utils/useOrgAccess';
 import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
 import { OrganizationTimeText } from '../components/TimeText';
+import { ViewModeAlert } from '../components/ViewModeAlert';
 
 const roleFilters = [<SearchInput key="q" source="q" alwaysOn />];
 
@@ -67,9 +68,10 @@ export const RoleList = () => {
 // в отличие от MemberEdit, где «выйти из организации» — явное исключение read-only.
 export const RoleEdit = () => (
   <Edit mutationMode="pessimistic" redirect="list">
+    <ViewModeAlert section="roles" />
     <SimpleForm
       toolbar={
-        <TariffAwareToolbar>
+        <TariffAwareToolbar section="roles">
           <DeleteButton mutationMode="pessimistic" />
         </TariffAwareToolbar>
       }

@@ -212,10 +212,22 @@ export const canAccessTarget = (
 };
 
 // Действия react-admin, которым хватает чтения; остальные (create/edit/delete/clone/…) —
-// управление. Исключение — «карточки», где edit-страница служит и просмотром: карточка
-// сотрудника (действия внутри гейтятся отдельно) и singleton-настройки.
+// управление. Исключение — ресурсы, где edit-страница служит и просмотром: карточка
+// сотрудника (действия внутри гейтятся отдельно), singleton-настройки и справочники.
 const VIEW_ACTIONS = new Set(['list', 'show', 'export', 'read']);
-const VIEW_EDIT_RESOURCES = new Set(['members', 'settings']);
+const VIEW_EDIT_RESOURCES = new Set([
+  'members',
+  'settings',
+  // Формы справочников открываются и на просмотр: сохранение прячет TariffAwareToolbar/
+  // useSectionReadOnly, сверху — ViewModeAlert.
+  'roles',
+  'work-locations',
+  'work-schedules',
+  'checklist-templates',
+  'penalty-templates',
+  'adjustment-categories',
+  'test-templates',
+]);
 
 export const actionLevel = (resource: string, action: string): AccessLevel => {
   if (VIEW_ACTIONS.has(action)) return 'view';

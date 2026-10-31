@@ -44,8 +44,9 @@ import {
 import { LocationMapField } from '../components/LocationMapField';
 import { checklistLocationErrorMessage, pluralizeChecklists } from '../utils/format';
 import { findIntersectingLocations, type WorkLocationGeo } from '../utils/geo';
-import { useSectionReadOnly } from '../utils/useOrgAccess';
+import { useOrgAccess, useSectionReadOnly } from '../utils/useOrgAccess';
 import { OrganizationTimeText } from '../components/TimeText';
+import { ViewModeAlert } from '../components/ViewModeAlert';
 
 const locationFilters = [<SearchInput key="q" source="q" alwaysOn />];
 
@@ -207,7 +208,17 @@ const LocationEditToolbar = () => {
 
 // Секция «Чек-листы точки» на карточке точки — обратный срез к секции «Точки» на карточке
 // шаблона (checklistTemplates.tsx): обе стороны пишут в одну и ту же связь (backend.md, §3/4).
+// Привязка шаблонов к точке на бэке — раздел «Шаблоны чек-листов» (чтение — view, замена —
+// manage, access_profiles): без права на раздел блок не показываем (иначе 403 на заходе),
+// без «управления» — только текущие привязки.
 const LocationChecklistsSection = () => {
+  const { can } = useOrgAccess();
+  if (!can('checklist_templates')) return null;
+  return <LocationChecklistsCard />;
+};
+
+const LocationChecklistsCard = () => {
+  const readOnly = useSectionReadOnly('checklist_templates');
   const record = useRecordContext<any>();
   const dataProvider = useDataProvider();
   const notify = useNotify();
@@ -312,6 +323,7 @@ const LocationChecklistsSection = () => {
                   <Checkbox
                     checked={selected.includes(String(t.id))}
                     onChange={() => toggle(String(t.id))}
+                    disabled={readOnly}
                   />
                 }
                 label={
@@ -322,11 +334,13 @@ const LocationChecklistsSection = () => {
                 }
               />
             ))}
-            <Box sx={{ mt: 1 }}>
-              <Button variant="contained" disabled={busy} onClick={() => void save()}>
-                Сохранить
-              </Button>
-            </Box>
+            {!readOnly && (
+              <Box sx={{ mt: 1 }}>
+                <Button variant="contained" disabled={busy} onClick={() => void save()}>
+                  Сохранить
+                </Button>
+              </Box>
+            )}
           </Stack>
         )}
       </CardContent>
@@ -368,6 +382,7 @@ export const WorkLocationList = () => (
 
 export const WorkLocationEdit = () => (
   <Edit mutationMode="pessimistic" redirect="list">
+    <ViewModeAlert section="work_locations" />
     <SimpleForm toolbar={<LocationEditToolbar />}>
       <LocationFields />
     </SimpleForm>

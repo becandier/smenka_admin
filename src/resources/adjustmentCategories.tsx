@@ -35,6 +35,7 @@ import {
   validateCategoryName,
   type AdjustmentCategory,
 } from './adjustmentCategoryUtils';
+import { ViewModeAlert } from '../components/ViewModeAlert';
 
 // Справочник «Категории начислений» (payroll_breakdown). Права — раздел «Зарплата»
 // (access_profiles): просмотр списка — payroll:view, запись — payroll:manage; маршруты
@@ -126,7 +127,8 @@ export const AdjustmentCategoryCreate = () => {
 export const AdjustmentCategoryEdit = () => {
   return (
     <Edit mutationMode="pessimistic" redirect="list">
-      <SimpleForm toolbar={<TariffAwareToolbar />}>
+      <ViewModeAlert section="payroll" />
+      <SimpleForm toolbar={<TariffAwareToolbar section="payroll" />}>
         <TextInput
           source="name"
           label="Название"

@@ -60,6 +60,7 @@ import {
 import { networkErrorMessage } from '../utils/networkError';
 import { useSectionReadOnly } from '../utils/useOrgAccess';
 import { persistWeeklyRulesAfterCreate, validateWeeklyRules, type WeeklyRule } from './weeklyRules';
+import { ViewModeAlert } from '../components/ViewModeAlert';
 
 const scheduleFilters = [
   <SearchInput key="q" source="q" alwaysOn />,
@@ -344,10 +345,13 @@ const RolesAssignment = ({
   scheduleId,
   roleIds,
   onChanged,
+  readOnly,
 }: {
   scheduleId: string;
   roleIds: string[];
   onChanged: () => void;
+  // Read-only подписки или нет schedules:manage — галочки только показывают текущее.
+  readOnly: boolean;
 }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
@@ -390,16 +394,22 @@ const RolesAssignment = ({
               <FormControlLabel
                 key={r.id}
                 control={
-                  <Checkbox checked={selected.includes(r.id)} onChange={() => toggle(r.id)} />
+                  <Checkbox
+                    checked={selected.includes(r.id)}
+                    onChange={() => toggle(r.id)}
+                    disabled={readOnly}
+                  />
                 }
                 label={r.name}
               />
             ))}
-            <Box sx={{ mt: 1 }}>
-              <Button variant="contained" disabled={busy} onClick={() => void save()}>
-                Сохранить роли
-              </Button>
-            </Box>
+            {!readOnly && (
+              <Box sx={{ mt: 1 }}>
+                <Button variant="contained" disabled={busy} onClick={() => void save()}>
+                  Сохранить роли
+                </Button>
+              </Box>
+            )}
           </Stack>
         )}
       </CardContent>
@@ -411,10 +421,13 @@ const LocationsAssignment = ({
   scheduleId,
   locationIds,
   onChanged,
+  readOnly,
 }: {
   scheduleId: string;
   locationIds: string[];
   onChanged: () => void;
+  // Read-only подписки или нет schedules:manage — галочки только показывают текущее.
+  readOnly: boolean;
 }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
@@ -461,16 +474,22 @@ const LocationsAssignment = ({
               <FormControlLabel
                 key={l.id}
                 control={
-                  <Checkbox checked={selected.includes(l.id)} onChange={() => toggle(l.id)} />
+                  <Checkbox
+                    checked={selected.includes(l.id)}
+                    onChange={() => toggle(l.id)}
+                    disabled={readOnly}
+                  />
                 }
                 label={l.name}
               />
             ))}
-            <Box sx={{ mt: 1 }}>
-              <Button variant="contained" disabled={busy} onClick={() => void save()}>
-                Сохранить точки
-              </Button>
-            </Box>
+            {!readOnly && (
+              <Box sx={{ mt: 1 }}>
+                <Button variant="contained" disabled={busy} onClick={() => void save()}>
+                  Сохранить точки
+                </Button>
+              </Box>
+            )}
           </Stack>
         )}
       </CardContent>
@@ -640,11 +659,13 @@ const PersonalOverrides = ({
   personalAdd,
   personalRemove,
   onChanged,
+  readOnly,
 }: {
   scheduleId: string;
   personalAdd: string[];
   personalRemove: string[];
   onChanged: () => void;
+  readOnly: boolean;
 }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
@@ -709,7 +730,7 @@ const PersonalOverrides = ({
                   <Select
                     size="small"
                     fullWidth
-                    disabled={busy}
+                    disabled={busy || readOnly}
                     value={current(m.user_id)}
                     onChange={(e) =>
                       void change(m.user_id, e.target.value as 'add' | 'remove' | 'none')
@@ -798,6 +819,9 @@ const ScheduleDeleteSection = ({ scheduleId }: { scheduleId: string }) => {
 export const WorkScheduleEdit = () => {
   const { id } = useParams();
   const dataProvider = useDataProvider();
+  // Назначения ролей/точек/персональные переопределения — тот же гейт, что у мета-формы и
+  // недельных правил: read-only подписки или нет schedules:manage (access_profiles).
+  const isReadOnly = useSectionReadOnly('schedules');
   const { data: schedule, isLoading, refetch } = useGetOne('work-schedules', { id: id ?? '' });
   const [assignments, setAssignments] = useState<any>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -838,6 +862,7 @@ export const WorkScheduleEdit = () => {
   return (
     <Box sx={{ p: 2, maxWidth: 800 }}>
       <Title title={`График — ${schedule.name}`} />
+      <ViewModeAlert section="schedules" />
       <ScheduleMetaForm schedule={schedule} onSaved={onChanged} />
       <WeeklyRulesEditor schedule={schedule} onSaved={onChanged} />
       <AssignmentExplainer />
@@ -845,17 +870,20 @@ export const WorkScheduleEdit = () => {
         scheduleId={schedule.id}
         roleIds={assignments?.role_ids ?? []}
         onChanged={onChanged}
+        readOnly={isReadOnly}
       />
       <LocationsAssignment
         scheduleId={schedule.id}
         locationIds={assignments?.work_location_ids ?? []}
         onChanged={onChanged}
+        readOnly={isReadOnly}
       />
       <PersonalOverrides
         scheduleId={schedule.id}
         personalAdd={assignments?.personal_add ?? []}
         personalRemove={assignments?.personal_remove ?? []}
         onChanged={onChanged}
+        readOnly={isReadOnly}
       />
       <Box sx={{ mt: 2 }}>
         <ScheduleDeleteSection scheduleId={schedule.id} />
