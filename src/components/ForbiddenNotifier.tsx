@@ -3,7 +3,9 @@ import { useNotificationContext, useNotify, type NotificationPayload } from 'rea
 import { subscribeForbiddenError } from '../providers/forbiddenErrorBus';
 
 // Повторы одного и того же 403 (ретраи запросов react-query, несколько запросов экрана)
-// схлопываем в одно уведомление в пределах окна.
+// схлопываем в одно уведомление в пределах окна. Окно фиксированное: отсчитывается от
+// фактического показа, а не от последнего события — иначе серия 403 (двойной «Сохранить»)
+// продлевала бы окно бесконечно и уведомление не появлялось бы вовсе.
 const DEDUPE_WINDOW_MS = 15000;
 // Метка «наше» уведомление — в messageArgs: прочие ключи NotificationOptions react-admin
 // пробрасывает в Snackbar как DOM-атрибуты.
@@ -13,31 +15,34 @@ const isOurs = (n: NotificationPayload): boolean =>
   Boolean(n.notificationOptions?.messageArgs?.[MARKER]);
 
 // Показывает текст бэка на 403 FORBIDDEN из dataProvider.request() (forbiddenErrorBus).
-// react-admin сам уведомляет об ошибках List/мутаций тем же текстом (error.message) — такие
-// дубли убираем из очереди уведомлений, чтобы человек не видел одно сообщение дважды подряд.
+// react-admin сам уведомляет об ошибках List/мутаций тем же текстом (error.message) — такой
+// дубль убираем из очереди, только пока наше уведомление с тем же текстом тоже в очереди.
 export const ForbiddenNotifier = () => {
   const notify = useNotify();
   const { notifications, setNotifications } = useNotificationContext();
-  const recent = useRef(new Map<string, number>());
+  const shownAt = useRef(new Map<string, number>());
 
   useEffect(
     () =>
       subscribeForbiddenError(({ message, at }) => {
-        const last = recent.current.get(message);
-        recent.current.set(message, at);
+        const last = shownAt.current.get(message);
         if (last !== undefined && at - last < DEDUPE_WINDOW_MS) return;
+        shownAt.current.set(message, at);
         notify(message, { type: 'error', messageArgs: { [MARKER]: true } });
       }),
     [notify],
   );
 
   useEffect(() => {
-    const now = Date.now();
-    const filtered = notifications.filter((n) => {
-      if (isOurs(n) || typeof n.message !== 'string') return true;
-      const seen = recent.current.get(n.message);
-      return seen === undefined || now - seen >= DEDUPE_WINDOW_MS;
-    });
+    const ours = new Set(
+      notifications
+        .filter((n) => isOurs(n) && typeof n.message === 'string')
+        .map((n) => n.message as string),
+    );
+    if (ours.size === 0) return;
+    const filtered = notifications.filter(
+      (n) => isOurs(n) || typeof n.message !== 'string' || !ours.has(n.message),
+    );
     if (filtered.length !== notifications.length) setNotifications(filtered);
   }, [notifications, setNotifications]);
 
