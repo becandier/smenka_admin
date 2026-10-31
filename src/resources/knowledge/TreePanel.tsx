@@ -46,6 +46,8 @@ interface TreePanelProps {
   onSelect: (nodeId: string) => void;
   // Дёргается после любой успешной мутации дерева (create/update/delete/reorder).
   onTreeChanged: () => void;
+  // Только просмотр (knowledge:view, access_profiles): без создания, меню узла и перетаскивания.
+  readOnly?: boolean;
 }
 
 // Сортировка детей по position на каждом уровне (бэкенд отдаёт уже сортированным,
@@ -219,6 +221,7 @@ interface NodeRowProps {
   onDragEnd: () => void;
   onDragOverNode: (e: React.DragEvent, node: NodeTreeItem) => void;
   onDropNode: (node: NodeTreeItem, parentId: string | null) => void;
+  readOnly: boolean;
 }
 
 const NodeRow = (props: NodeRowProps) => {
@@ -238,6 +241,7 @@ const NodeRow = (props: NodeRowProps) => {
     onDragEnd,
     onDragOverNode,
     onDropNode,
+    readOnly,
   } = props;
 
   const isSection = node.kind === 'section';
@@ -252,7 +256,7 @@ const NodeRow = (props: NodeRowProps) => {
   return (
     <>
       <Box
-        draggable
+        draggable={!readOnly}
         onDragStart={(e) => {
           e.stopPropagation();
           e.dataTransfer.effectAllowed = 'move';
@@ -347,17 +351,19 @@ const NodeRow = (props: NodeRowProps) => {
           sx={{ my: 0, minWidth: 0 }}
         />
 
-        <IconButton
-          className="node-actions"
-          size="small"
-          onClick={(e) => {
-            e.stopPropagation();
-            onMenu(e, node, parentId);
-          }}
-          sx={{ p: 0.25, opacity: 0, transition: 'opacity 0.15s', flexShrink: 0 }}
-        >
-          <MoreVertIcon fontSize="small" />
-        </IconButton>
+        {!readOnly && (
+          <IconButton
+            className="node-actions"
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMenu(e, node, parentId);
+            }}
+            sx={{ p: 0.25, opacity: 0, transition: 'opacity 0.15s', flexShrink: 0 }}
+          >
+            <MoreVertIcon fontSize="small" />
+          </IconButton>
+        )}
       </Box>
 
       {isSection && isExpanded && hasChildren && (
@@ -387,6 +393,7 @@ export const TreePanel = ({
   selectedId,
   onSelect,
   onTreeChanged,
+  readOnly = false,
 }: TreePanelProps) => {
   const { create, saving: creating } = useCreateNode();
   const { update, saving: updating } = useUpdateNode();
@@ -649,30 +656,32 @@ export const TreePanel = ({
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
           База знаний
         </Typography>
-        <Stack direction="row" spacing={0.5}>
-          <Tooltip title="Создать раздел в корне">
-            <span>
-              <IconButton
-                size="small"
-                disabled={busy}
-                onClick={() => setCreateTarget({ parentId: null, kind: 'section' })}
-              >
-                <CreateNewFolderOutlinedIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Tooltip title="Создать страницу в корне">
-            <span>
-              <IconButton
-                size="small"
-                disabled={busy}
-                onClick={() => setCreateTarget({ parentId: null, kind: 'page' })}
-              >
-                <NoteAddOutlinedIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-        </Stack>
+        {!readOnly && (
+          <Stack direction="row" spacing={0.5}>
+            <Tooltip title="Создать раздел в корне">
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={busy}
+                  onClick={() => setCreateTarget({ parentId: null, kind: 'section' })}
+                >
+                  <CreateNewFolderOutlinedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title="Создать страницу в корне">
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={busy}
+                  onClick={() => setCreateTarget({ parentId: null, kind: 'page' })}
+                >
+                  <NoteAddOutlinedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Stack>
+        )}
       </Box>
 
       {/* Тело дерева. */}
@@ -687,6 +696,12 @@ export const TreePanel = ({
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
             <CircularProgress size={24} />
+          </Box>
+        ) : sortedTree.length === 0 && readOnly ? (
+          <Box sx={{ p: 2, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              В базе знаний пока нет материалов
+            </Typography>
           </Box>
         ) : sortedTree.length === 0 ? (
           <Box sx={{ p: 2, textAlign: 'center' }}>
@@ -731,6 +746,7 @@ export const TreePanel = ({
               onDragEnd={onDragEnd}
               onDragOverNode={onDragOverNode}
               onDropNode={onDropNode}
+              readOnly={readOnly}
             />
           ))
         )}

@@ -18,6 +18,8 @@ import type {
   SubscriptionsSummary,
 } from '../subscription/SubscriptionContext';
 import { reportTariffGateError } from '../subscription/tariffErrorBus';
+import { reportForbiddenError } from './forbiddenErrorBus';
+import type { AccessLevel } from '../access';
 import type {
   AdminPaymentsTotals,
   BillingCheckoutRequest,
@@ -27,6 +29,15 @@ import type {
   PaymentListResult,
   PaymentRow,
 } from '../subscription/billingTypes';
+
+// Раздел каталога прав (GET /access-permissions, access_profiles) — строка ресурса
+// `access-permissions` (id = code).
+export interface AccessCatalogSection {
+  id: string;
+  code: string;
+  group: string;
+  levels: AccessLevel[];
+}
 
 // Категории ресурсов:
 //  - PLATFORM_SERVER — серверная пагинация через /admin/* ({items,total,limit,offset}).
@@ -43,6 +54,8 @@ const ORG_CLIENT = new Set([
   // Мягкое удаление как у шаблонов (SOFT_DELETE_CLIENT): по умолчанию getList отдаёт только
   // живые, удалённые — по filter.include_deleted (фильтр начислений по удалённой категории).
   'adjustment-categories',
+  // access_profiles: профили доступа организации — {items} без total, порядок name.
+  'access-profiles',
 ]);
 
 // Pydantic отдаёт error.validation[].field полным loc-путём запроса — "body.login",
@@ -56,7 +69,13 @@ const stripBodyPrefix = (field: string): string =>
 // Единая точка запроса: Bearer + разворачивание конверта {data, error}. Авторизация и тихий
 // retry протухшего access-токена — в fetchWithAuthRetry() (tokenRefresh.ts), здесь только
 // Content-Type/Accept и разбор {data,error}.
-const request = async (path: string, options: RequestInit = {}): Promise<any> => {
+// silentForbidden — необязательный под-запрос: его 403 FORBIDDEN вызывающий обрабатывает сам
+// (деградирует без данных), уведомление через forbiddenErrorBus не нужно.
+const request = async (
+  path: string,
+  options: RequestInit = {},
+  { silentForbidden = false }: { silentForbidden?: boolean } = {},
+): Promise<any> => {
   const headers = new Headers(options.headers ?? {});
   headers.set('Accept', 'application/json');
   // FormData (загрузка файла) — Content-Type с boundary браузер выставляет сам; не трогаем.
@@ -87,6 +106,9 @@ const request = async (path: string, options: RequestInit = {}): Promise<any> =>
     // TariffErrorAlert в Layout подписан и покажет ссылку на «Тариф» рядом со стандартным
     // toast'ом react-admin (который уже показывает этот же человекочитаемый текст с бэка).
     reportTariffGateError(err?.code, message);
+    // 403 FORBIDDEN (нет права профиля доступа) — уведомление с текстом бэка через шину
+    // (access_profiles/admin.md, «403 от API»); checkError на 403 не разлогинивает.
+    if (!silentForbidden) reportForbiddenError(res.status, err?.code, message);
     throw new HttpError(message, res.status, body);
   }
   return json ? json.data : null;
@@ -118,6 +140,8 @@ const clientListPath = (resource: string): string => {
       return `${orgBase()}/penalty-templates`;
     case 'adjustment-categories':
       return `${orgBase()}/adjustment-categories`;
+    case 'access-profiles':
+      return `${orgBase()}/access-profiles`;
     default:
       throw new Error(`Нет client-пути для ресурса: ${resource}`);
   }
@@ -145,6 +169,8 @@ const deleteOnePath = (resource: string, id: string): string => {
       return `${orgBase()}/test-templates/${id}`;
     case 'test-assignments':
       return `${orgBase()}/test-assignments/${id}`;
+    case 'access-profiles':
+      return `${orgBase()}/access-profiles/${id}`;
     default:
       throw new Error(`Удаление не поддержано для ресурса: ${resource}`);
   }
@@ -152,11 +178,55 @@ const deleteOnePath = (resource: string, id: string): string => {
 
 // member → добавляем плоский custom_role_id для SelectInput'а в форме и login (алиас
 // user_login, admin_created_accounts/backend.md) для editable LoginInput в MemberEdit.
+// access_mode/access_profile_id — плоские поля контрола «Доступ в кабинет» (access_profiles/
+// admin.md §2): 'full' — системная роль admin, 'profile' — employee с профилем доступа,
+// 'none' — обычный сотрудник без входа в кабинет.
+export type MemberAccessMode = 'none' | 'full' | 'profile';
+
+const memberAccessMode = (m: any): MemberAccessMode => {
+  if (m?.role === 'admin') return 'full';
+  return m?.access_profile?.id ? 'profile' : 'none';
+};
+
 const mapMember = (m: any): any => ({
   ...m,
   custom_role_id: m?.custom_role?.id ?? null,
   login: typeof m?.user_login === 'string' ? m.user_login : null,
+  access_mode: memberAccessMode(m),
+  access_profile_id: m?.access_profile?.id ?? null,
 });
+
+// Целевые системная роль и профиль по значению контрола «Доступ в кабинет».
+const accessTarget = (
+  mode: MemberAccessMode,
+  profileId: unknown,
+): { role: 'admin' | 'employee'; profileId: string | null } => {
+  if (mode === 'full') return { role: 'admin', profileId: null };
+  if (mode === 'profile') {
+    return {
+      role: 'employee',
+      profileId: typeof profileId === 'string' && profileId !== '' ? profileId : null,
+    };
+  }
+  return { role: 'employee', profileId: null };
+};
+
+const isAccessMode = (v: unknown): v is MemberAccessMode =>
+  v === 'none' || v === 'full' || v === 'profile';
+
+// Ошибки выдачи профиля (create/update members) по error.code (admin.md §2, «Ошибки»).
+const ACCESS_PROFILE_MEMBER_ERRORS = {
+  ACCESS_PROFILE_REQUIRES_EMPLOYEE: {
+    field: 'access_profile_id',
+    status: 409,
+    message: 'Профиль доступа можно выдать только сотруднику',
+  },
+  ACCESS_PROFILE_NOT_FOUND: {
+    field: 'access_profile_id',
+    status: 404,
+    message: 'Профиль доступа не найден — возможно, он удалён',
+  },
+};
 
 // members (create/update): LOGIN_TAKEN/EMAIL_TAKEN/INVALID_DISPLAY_NAME/
 // PASSWORD_RESET_NOT_ALLOWED приходят не как VALIDATION_ERROR, поэтому request() их сам
@@ -191,6 +261,25 @@ const SOFT_DELETE_CLIENT = new Set([
   'penalty-templates',
   'adjustment-categories',
 ]);
+
+// access-profiles (create/update): тело по контракту AccessProfile*Request. description —
+// пустая строка → null; permissions — объект {section: level} из матрицы прав.
+const buildAccessProfileBody = (d: any): Record<string, unknown> => ({
+  name: typeof d.name === 'string' ? d.name.trim() : d.name,
+  description:
+    typeof d.description === 'string' && d.description.trim() !== '' ? d.description.trim() : null,
+  permissions: d.permissions ?? {},
+});
+
+// 409 ACCESS_PROFILE_NAME_TAKEN → ошибка на поле «Название» (admin.md, «Ошибки»).
+const rethrowAccessProfileError = (e: any): never =>
+  rethrowMemberErrorAsField(e, {
+    ACCESS_PROFILE_NAME_TAKEN: {
+      field: 'name',
+      status: 409,
+      message: 'Профиль с таким названием уже есть',
+    },
+  });
 
 const loadClient = async (resource: string): Promise<any[]> => {
   const query = SOFT_DELETE_CLIENT.has(resource) ? '?include_deleted=true' : '';
@@ -470,6 +559,24 @@ export const dataProvider: DataProvider = {
       const path = resource === 'users' ? '/admin/users' : '/admin/organizations';
       const data = await request(`${path}?${buildQuery(params, { defaultSort: 'created_at' })}`);
       return { data: data?.items ?? [], total: data?.total ?? 0 };
+    }
+    if (resource === 'access-permissions') {
+      // Каталог разделов для матрицы прав профиля доступа (GET /access-permissions,
+      // access_profiles/backend.md «Каталог разделов»). Через getList — ради кэша react-query
+      // (useGetList + staleTime), как `plans`. id = code; порядок — как отдаёт бэк, без сортировки.
+      const data = await request('/access-permissions');
+      const raw: any[] = Array.isArray(data?.sections) ? data.sections : [];
+      const items: AccessCatalogSection[] = raw
+        .filter((sec) => typeof sec?.code === 'string')
+        .map((sec) => ({
+          id: sec.code,
+          code: sec.code,
+          group: typeof sec.group === 'string' ? sec.group : '',
+          levels: (Array.isArray(sec.levels) ? sec.levels : []).filter(
+            (l: unknown): l is AccessLevel => l === 'view' || l === 'manage',
+          ),
+        }));
+      return { data: items, total: items.length };
     }
     if (resource === 'plans') {
       // Витрина тарифов (tariffs/backend.md п.1) как read-only ресурс react-admin: нужна
@@ -821,9 +928,16 @@ export const dataProvider: DataProvider = {
       if (!shiftId || !instanceId) {
         throw new HttpError('Экземпляр чек-листа не найден', 404, { code: 'NOT_FOUND' });
       }
+      // Смена — необязательна: обладатель профиля с «Заполненными чек-листами», но без «Журнала
+      // смен» получает на неё 403 (access_profiles) — показываем деталь без полей смены.
       const [detail, shift] = await Promise.all([
         request(`/shifts/${shiftId}/checklists/${instanceId}`),
-        request(`${orgBase()}/shifts/${shiftId}`),
+        request(`${orgBase()}/shifts/${shiftId}`, {}, { silentForbidden: true }).catch(
+          (e: unknown) => {
+            if (e instanceof HttpError && e.status === 403) return null;
+            throw e;
+          },
+        ),
       ]);
       return {
         data: {
@@ -887,6 +1001,18 @@ export const dataProvider: DataProvider = {
           body: JSON.stringify({ name: d.name }),
         }),
       };
+    }
+    if (resource === 'access-profiles') {
+      try {
+        return {
+          data: await request(`${orgBase()}/access-profiles`, {
+            method: 'POST',
+            body: JSON.stringify(buildAccessProfileBody(d)),
+          }),
+        };
+      } catch (e: any) {
+        return rethrowAccessProfileError(e);
+      }
     }
     if (resource === 'work-locations') {
       const body = {
@@ -1036,7 +1162,7 @@ export const dataProvider: DataProvider = {
       // password_managed, которые остаются производными от member), чтобы MemberCreate достал
       // их из onSuccess мутации и показал в окне выдачи доступа; в кэш ресурса `members` они
       // не персистятся отдельным запросом (следующий getList/getOne их не вернёт).
-      const body = {
+      const body: Record<string, unknown> = {
         name: d.name,
         // trim + пустая строка → null: та же семантика, что normalizeDisplayName уже
         // реализует для display_name (utils/memberName) — переиспользуем вместо повтора.
@@ -1048,6 +1174,13 @@ export const dataProvider: DataProvider = {
         role_id: d.role_id ? d.role_id : null,
         display_name: normalizeDisplayName(d.display_name),
       };
+      // «Доступ в кабинет» (access_profiles): access_profile_id передаём только когда он есть —
+      // обладателю профиля с members:manage бэк запрещает само поле (403), даже null.
+      if (isAccessMode(d.access_mode)) {
+        const target = accessTarget(d.access_mode, d.access_profile_id);
+        body.role = target.role;
+        if (target.profileId) body.access_profile_id = target.profileId;
+      }
       let created: any;
       try {
         created = await request(`${orgBase()}/members`, {
@@ -1058,6 +1191,7 @@ export const dataProvider: DataProvider = {
         rethrowMemberErrorAsField(e, {
           LOGIN_TAKEN: { field: 'login', status: 409 },
           EMAIL_TAKEN: { field: 'email', status: 409 },
+          ...ACCESS_PROFILE_MEMBER_ERRORS,
         });
       }
       return {
@@ -1116,6 +1250,18 @@ export const dataProvider: DataProvider = {
       });
       return { data: updated ?? { ...data, id } };
     }
+    if (resource === 'access-profiles') {
+      // PATCH: permissions заменяется целиком (backend.md) — шлём полный набор из формы.
+      try {
+        const updated = await request(`${orgBase()}/access-profiles/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(buildAccessProfileBody(data)),
+        });
+        return { data: updated ?? { ...data, id } };
+      } catch (e: any) {
+        return rethrowAccessProfileError(e);
+      }
+    }
     if (resource === 'work-locations') {
       const body: Record<string, unknown> = {
         name: data.name,
@@ -1160,7 +1306,46 @@ export const dataProvider: DataProvider = {
         throw new HttpError('Не указан пользователь', 400, { code: 'VALIDATION_ERROR' });
       }
       let result: any = previousData;
-      if (data.role !== undefined && data.role !== previousData?.role) {
+      if (isAccessMode(data.access_mode)) {
+        // «Доступ в кабинет» (access_profiles/admin.md §2): сначала системная роль, потом
+        // профиль. «Полный → По профилю» = role:employee, затем access_profile_id;
+        // «По профилю → Полный» = только PATCH /role (бэк обнуляет профиль сам);
+        // «По профилю → Нет» = access_profile_id:null.
+        const target = accessTarget(data.access_mode, data.access_profile_id);
+        const prevRole = previousData?.role;
+        let currentProfile: string | null = previousData?.access_profile?.id ?? null;
+        let roleChanged = false;
+        try {
+          if (target.role !== prevRole) {
+            result = await request(`${orgBase()}/members/${userId}/role`, {
+              method: 'PATCH',
+              body: JSON.stringify({ role: target.role }),
+            });
+            roleChanged = true;
+            currentProfile = result?.access_profile?.id ?? null;
+          }
+          if (target.role === 'employee' && target.profileId !== currentProfile) {
+            result = await request(`${orgBase()}/members/${userId}/access-profile`, {
+              method: 'PATCH',
+              body: JSON.stringify({ access_profile_id: target.profileId }),
+            });
+          }
+        } catch (e: any) {
+          // «Полный → По профилю» неатомарен: роль уже сменилась, а профиль не выдан. Тихий
+          // откат формы к previousData скрыл бы это — отдаём явную ошибку с пометкой partial,
+          // MemberEdit покажет её и перечитает запись.
+          if (roleChanged) {
+            const code = e?.body?.code as keyof typeof ACCESS_PROFILE_MEMBER_ERRORS;
+            const reason =
+              ACCESS_PROFILE_MEMBER_ERRORS[code]?.message ?? e?.message ?? 'Ошибка запроса';
+            throw new HttpError(`Роль изменена, профиль не выдан: ${reason}`, e?.status ?? 500, {
+              ...(e?.body ?? {}),
+              partial: true,
+            });
+          }
+          rethrowMemberErrorAsField(e, ACCESS_PROFILE_MEMBER_ERRORS);
+        }
+      } else if (data.role !== undefined && data.role !== previousData?.role) {
         result = await request(`${orgBase()}/members/${userId}/role`, {
           method: 'PATCH',
           body: JSON.stringify({ role: data.role }),

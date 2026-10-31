@@ -67,9 +67,10 @@ import {
   PHOTO_SOURCE_CHOICES,
 } from '../utils/format';
 import { RestoreButton } from '../components/RestoreButton';
-import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { useSectionReadOnly } from '../utils/useOrgAccess';
 import { OrganizationTimeText } from '../components/TimeText';
 import { splitScheduleAssignments } from './checklistSchedule';
+import { ViewModeAlert } from '../components/ViewModeAlert';
 
 const typeChoices = [
   { id: 'shift_start', name: 'Начало смены' },
@@ -94,7 +95,7 @@ const ChecklistTemplateRowActions = ({ record }: { record: RaRecord }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const refresh = useRefresh();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('checklist_templates');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -176,7 +177,7 @@ const ChecklistTemplateRowActions = ({ record }: { record: RaRecord }) => {
 // дефолтным (FilterButton+CreateButton), и фильтр «Тип» (не alwaysOn — см. typeFilters)
 // был доступен всем; просмотр/фильтрация не мутация и read-only её не гейтит.
 const ChecklistTemplateListActions = () => {
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('checklist_templates');
   return (
     <TopToolbar>
       <FilterButton />
@@ -272,7 +273,7 @@ export const ChecklistTemplateCreate = () => {
 const TemplateMetaForm = ({ template, onSaved }: { template: any; onSaved: () => void }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('checklist_templates');
   const [name, setName] = useState<string>(template.name ?? '');
   const [type, setType] = useState<string>(template.type ?? 'shift_start');
   const [isRequired, setIsRequired] = useState<boolean>(Boolean(template.is_required));
@@ -1012,7 +1013,7 @@ export const ChecklistTemplateEdit = () => {
   // TemplateMetaForm уже гейтит свой Save (см. её собственный useIsReadOnly выше) — здесь тот
   // же флаг для пунктов/назначений ролей/точек/личных переопределений ниже: их мутирующие
   // контролы раньше не гейтились вовсе, хотя карточка «Шаблон» над ними уже была защищена.
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('checklist_templates');
   const { data: template, isLoading, refetch } = useGetOne('checklist-templates', { id: id ?? '' });
   const [assignments, setAssignments] = useState<any>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -1054,6 +1055,7 @@ export const ChecklistTemplateEdit = () => {
   return (
     <Box sx={{ p: 2, maxWidth: 800 }}>
       <Title title={`Чек-лист — ${template.name}`} />
+      <ViewModeAlert section="checklist_templates" />
       <TemplateMetaForm template={template} onSaved={onChanged} />
       <ItemsEditor
         templateId={template.id}

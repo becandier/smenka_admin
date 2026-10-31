@@ -12,7 +12,6 @@ import {
   useDataProvider,
   useNotify,
   useRefresh,
-  usePermissions,
 } from 'react-admin';
 import {
   Box,
@@ -26,14 +25,12 @@ import {
   Typography,
 } from '@mui/material';
 import { useCurrentOrg } from '../orgContext';
-import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
-import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useOrgAccess, useSectionReadOnly } from '../utils/useOrgAccess';
 import { scheduleErrorMessage } from '../utils/format';
 import { DEFAULT_ORG_TIMEZONE, TIMEZONE_CHOICES } from '../utils/timezones';
 import { validateChecklistGraceMinutes } from './settingsValidation';
 import type { CurrentOrg } from '../config';
-import type { Permissions } from '../providers/authProvider';
 
 const NAME_MAX_LENGTH = 255;
 
@@ -103,7 +100,7 @@ const OrgNameCard = ({ org }: { org: CurrentOrg }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const refresh = useRefresh();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('settings');
 
   const [name, setName] = useState(org.name);
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -194,7 +191,7 @@ const OrgNameCard = ({ org }: { org: CurrentOrg }) => {
 const OrgTimezoneCard = ({ org }: { org: CurrentOrg }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('settings');
   const { data: orgDetail, isLoading } = useGetOne('organizations', { id: org.id });
   const [timezone, setTimezone] = useState<string>(DEFAULT_ORG_TIMEZONE);
   // Значение с сервера, зафиксированное один раз при загрузке — точка сравнения для «изменено ли».
@@ -300,8 +297,7 @@ const SettingsSection = ({
 // id записи = org_id (dataProvider маппит organization_id → id).
 export const SettingsPage = () => {
   const { org } = useCurrentOrg();
-  const { permissions } = usePermissions<Permissions>();
-  const role = useMyOrgRole();
+  const { can } = useOrgAccess();
 
   if (!org) {
     return (
@@ -312,9 +308,11 @@ export const SettingsPage = () => {
     );
   }
 
-  // Переименование доступно owner/admin (бэк — ensure_admin_or_owner) и super_admin со сквозным
-  // доступом; карточку показываем только им, для прочих 403 остаётся страховкой на сабмите.
-  const canRename = permissions?.role === 'super_admin' || role === 'owner' || role === 'admin';
+  // Раздел «Настройки» (access_profiles): карточки названия/часового пояса и форма видны при
+  // settings:view, сохранение — только при settings:manage (кнопки прячет useSectionReadOnly
+  // внутри карточек и toolbar формы ниже). super_admin — сквозным доступом.
+  const canRename = can('settings');
+  const canSave = can('settings', 'manage');
 
   return (
     <>
@@ -327,7 +325,7 @@ export const SettingsPage = () => {
         redirect={false}
         title={`Настройки — ${org.name}`}
       >
-        <SimpleForm toolbar={<TariffAwareToolbar />}>
+        <SimpleForm toolbar={canSave ? <TariffAwareToolbar /> : false}>
           <SettingsSection
             title="Геопроверка и точки"
             description="Проверка местоположения сотрудника при старте смены."

@@ -14,6 +14,8 @@ import {
 } from 'recharts';
 import type { Permissions } from '../providers/authProvider';
 import { chartPalette } from '../brand';
+import { useCurrentOrg } from '../orgContext';
+import { computeOrgAccess, firstCabinetPath, isOrgManageable } from '../access';
 
 interface PlatformStats {
   users_total: number;
@@ -43,6 +45,7 @@ export const Dashboard = () => {
     refetch,
   } = usePermissions<Permissions>();
   const dataProvider = useDataProvider();
+  const { org } = useCurrentOrg();
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -96,13 +99,17 @@ export const Dashboard = () => {
     return <Navigate to="/login" replace />;
   }
 
-  // Не-super_admin: если есть управляемая орг — в кабинет; иначе явный экран «нет доступа».
+  // Не-super_admin: если есть управляемая орг (owner/admin или непустые права профиля,
+  // access_profiles) — в первый доступный раздел кабинета (полного администратора — по-прежнему
+  // в «Сотрудники»); иначе явный экран «нет доступа».
   if (!isSuper) {
-    const manageable = (permissions.organizations ?? []).filter(
-      (o) => o.my_role === 'owner' || o.my_role === 'admin',
-    );
+    const manageable = (permissions.organizations ?? []).filter(isOrgManageable);
     if (manageable.length > 0) {
-      return <Navigate to="/members" replace />;
+      const target = manageable.find((o) => o.id === org?.id) ?? manageable[0];
+      const path = firstCabinetPath(computeOrgAccess(permissions, target.id));
+      // '/' — у профиля только неизвестные админке разделы: редирект на себя дал бы пустой
+      // экран, поэтому показываем «Нет организаций для управления» ниже.
+      if (path !== '/') return <Navigate to={path} replace />;
     }
     return (
       <Box sx={{ p: 3 }}>
@@ -111,8 +118,9 @@ export const Dashboard = () => {
           Нет организаций для управления
         </Typography>
         <Typography color="text.secondary">
-          У вашей учётной записи нет организаций с ролью владельца или администратора. Веб-кабинет
-          доступен владельцам и администраторам организаций.
+          У вашей учётной записи нет организаций с ролью владельца или администратора и нет профиля
+          доступа. Веб-кабинет доступен владельцам, администраторам и сотрудникам с профилем
+          доступа.
         </Typography>
       </Box>
     );

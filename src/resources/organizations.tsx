@@ -12,6 +12,7 @@ import {
   SelectInput,
   useRecordContext,
   useRedirect,
+  useRefresh,
   required,
 } from 'react-admin';
 import { Button } from '@mui/material';
@@ -34,6 +35,8 @@ const OpenCabinetButton = () => {
   const record = useRecordContext();
   const { selectOrg } = useCurrentOrg();
   const redirect = useRedirect();
+  // refresh — как в OrgSwitcher.open: перечитать данные под новую организацию.
+  const refresh = useRefresh();
   if (!record) return null;
   return (
     <Button
@@ -43,6 +46,7 @@ const OpenCabinetButton = () => {
         e.stopPropagation();
         selectOrg({ id: String(record.id), name: String(record.name) });
         redirect('/members');
+        refresh();
       }}
     >
       Открыть кабинет

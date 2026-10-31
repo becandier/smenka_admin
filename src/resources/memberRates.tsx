@@ -32,7 +32,7 @@ import {
   parseRublesToMinor,
 } from '../utils/format';
 import { utcIsoToZonedInput, zonedInputToUtcIso } from '../utils/dates';
-import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useOrgAccess } from '../utils/useOrgAccess';
 import { useOrgTimezone } from '../utils/useOrgTimezone';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { OrganizationTimeText } from '../components/TimeText';
@@ -222,10 +222,12 @@ const RateDialog = ({
 };
 
 // Секция «Ставки» в карточке участника: история (effective_from DESC), действующая
-// запись подсвечена. Просмотр — owner и admin; правка — только org admin (ТЗ payroll).
+// запись подсвечена. Доступ — раздел «Зарплата» (access_profiles): просмотр — payroll:view,
+// правка — payroll:manage (бэк: полный администратор, включая owner, или профиль);
+// super_admin сквозным доступом не видит (исключение в access.can()).
 export const MemberRatesSection = () => {
   const record = useRecordContext();
-  const role = useMyOrgRole();
+  const { can } = useOrgAccess();
   const isReadOnly = useIsReadOnly();
   const dataProvider = useDataProvider();
   const notify = useNotify();
@@ -239,9 +241,9 @@ export const MemberRatesSection = () => {
   const [deleting, setDeleting] = useState<Rate | null>(null);
 
   const memberId = record?.id ? String(record.id) : null;
-  const canView = role === 'owner' || role === 'admin';
+  const canView = can('payroll');
   // Read-only (backend.md «Read-only режим»): ставки — не из исключений.
-  const canEdit = role === 'admin' && !isReadOnly;
+  const canEdit = can('payroll', 'manage') && !isReadOnly;
 
   const loadRates = useCallback(async () => {
     if (!memberId) return;
