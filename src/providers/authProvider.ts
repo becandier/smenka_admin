@@ -2,6 +2,16 @@ import { AuthProvider } from 'react-admin';
 import { API_BASE_URL, getAccessToken, getRefreshToken, setTokens, clearTokens } from '../config';
 import { postJsonRaw } from './httpJson';
 import { fetchWithAuthRetry } from './tokenRefresh';
+import { getCurrentOrgId } from '../config';
+import {
+  actionLevel,
+  canAccessTarget,
+  computeOrgAccess,
+  parseAccessProfileRef,
+  parseSectionPermissions,
+  type AccessProfileRef,
+  type SectionPermissions,
+} from '../access';
 
 // Ошибка авторизации с сохранённым кодом контракта (для маппинга по error.code)
 // и HTTP-статусом (checkError отличает 401-сессию от 5xx/сети именно по status).
@@ -103,10 +113,15 @@ export type LoginParams =
   | { oauthProvider: 'apple'; identityToken: string; email?: string; name?: string };
 
 // Роль + список организаций пользователя для RBAC-гейтинга и OrgSwitcher.
+// my_permissions/my_access_profile — эффективные права в организации (access_profiles,
+// backend.md «OrganizationResponse»): для owner/admin/super_admin — все разделы, для
+// сотрудника — права его профиля доступа или {}.
 export interface OrgPermission {
   id: string;
   name: string;
   my_role: string | null;
+  my_permissions: SectionPermissions;
+  my_access_profile: AccessProfileRef | null;
 }
 export interface Permissions {
   role: string;
@@ -123,11 +138,33 @@ const loadPermissions = async (): Promise<Permissions> => {
   try {
     const orgs = await authGet('/organizations');
     const items: any[] = orgs?.items ?? [];
-    organizations = items.map((o) => ({ id: o.id, name: o.name, my_role: o.my_role ?? null }));
+    organizations = items.map((o) => ({
+      id: o.id,
+      name: o.name,
+      my_role: o.my_role ?? null,
+      my_permissions: parseSectionPermissions(o.my_permissions),
+      my_access_profile: parseAccessProfileRef(o.my_access_profile),
+    }));
   } catch {
     organizations = [];
   }
   return { role, organizations };
+};
+
+// Последние загруженные права — для canAccess: react-admin вызывает его на каждую кнопку/
+// строку списка, ходить за /users/me + /organizations на каждый вызов нельзя. Кэш обновляется
+// при каждом getPermissions (react-admin перечитывает права после входа/refresh) и
+// сбрасывается на login/logout, чтобы права прошлого пользователя не пережили смену аккаунта.
+let permissionsCache: Promise<Permissions> | null = null;
+
+const loadPermissionsCached = (): Promise<Permissions> => {
+  const pending = loadPermissions();
+  permissionsCache = pending;
+  // Сбой не кэшируем: следующий вызов попробует снова.
+  pending.catch(() => {
+    if (permissionsCache === pending) permissionsCache = null;
+  });
+  return pending;
 };
 
 export const authProvider: AuthProvider = {
@@ -162,6 +199,7 @@ export const authProvider: AuthProvider = {
       throw new Error('Ошибка авторизации: сервер не вернул токены');
     }
     setTokens(data.access_token, data.refresh_token);
+    permissionsCache = null;
   },
 
   logout: async () => {
@@ -174,6 +212,7 @@ export const authProvider: AuthProvider = {
       }
     }
     clearTokens();
+    permissionsCache = null;
   },
 
   checkAuth: () =>
@@ -200,7 +239,7 @@ export const authProvider: AuthProvider = {
   getPermissions: async (): Promise<Permissions | null> => {
     if (!getAccessToken()) return null;
     try {
-      return await loadPermissions();
+      return await loadPermissionsCached();
     } catch (error) {
       // loadPermissions() дергает authGet(), которая уже тихо ретраила 401 один раз
       // (single-flight refresh) — если ошибка всё равно 401, refresh-токен тоже мёртв.
@@ -210,5 +249,22 @@ export const authProvider: AuthProvider = {
       if (status === 401) clearTokens();
       throw error;
     }
+  },
+
+  // Встроенный гейтинг react-admin 5 (CreateButton/EditButton/DeleteButton/BulkDeleteButton,
+  // rowClick списков, контроллеры List/Edit/Show) — поверх той же карты ресурс→раздел, что и
+  // меню/маршруты (src/access.ts): list/show/export → view, create/edit/delete → manage.
+  canAccess: async ({ resource, action }) => {
+    if (!getAccessToken()) return false;
+    let perms: Permissions;
+    try {
+      perms = await (permissionsCache ?? loadPermissionsCached());
+    } catch {
+      // Права не загрузились (сеть/5xx) — fail-open: бэк всё равно режет 403, а отказ здесь
+      // увёл бы пользователя на /access-denied из-за временного сбоя.
+      return true;
+    }
+    const access = computeOrgAccess(perms, getCurrentOrgId());
+    return canAccessTarget(access, resource, actionLevel(resource, action));
   },
 };
