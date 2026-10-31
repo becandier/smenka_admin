@@ -53,6 +53,39 @@ export const LEVEL_LABELS: Record<AccessLevel, string> = {
   manage: 'управление',
 };
 
+// Все ресурсы и custom-routes кабинета организации. App.tsx регистрирует экраны строго по
+// этим спискам (Record<OrgResource, …>), тест полноты проверяет, что у каждого есть раздел в
+// RESOURCE_SECTIONS или он в FULL_ONLY_TARGETS — новый ресурс без записи в карте иначе молча
+// получил бы доступ «для всех» (canAccessTarget пропускает неизвестные цели).
+export const ORG_RESOURCES = [
+  'members',
+  'roles',
+  'access-profiles',
+  'work-locations',
+  'checklist-templates',
+  'checklist-instances',
+  'work-schedules',
+  'org-shifts',
+  'overtime-requests',
+  'penalty-templates',
+  'adjustments',
+  'adjustment-categories',
+  'audit-logs',
+  'test-templates',
+  'test-assignments',
+] as const;
+export type OrgResource = (typeof ORG_RESOURCES)[number];
+
+export const ORG_CUSTOM_ROUTES = [
+  '/invite-code',
+  '/settings',
+  '/tariff',
+  '/org-stats',
+  '/payroll',
+  '/knowledge',
+] as const;
+export type OrgCustomRoute = (typeof ORG_CUSTOM_ROUTES)[number];
+
 // Ресурс react-admin / путь custom-route → раздел каталога.
 export const RESOURCE_SECTIONS: Record<string, string> = {
   'org-shifts': 'shifts',

@@ -73,7 +73,14 @@ import { PlatformSettingsPage } from './resources/platformSettings';
 import { OAUTH_LOGIN_ENABLED } from './config';
 import { queryClient } from './queryClient';
 import { RequireAccess } from './components/RequireAccess';
-import { actionLevel, type AccessLevel } from './access';
+import {
+  ORG_CUSTOM_ROUTES,
+  ORG_RESOURCES,
+  actionLevel,
+  type AccessLevel,
+  type OrgCustomRoute,
+  type OrgResource,
+} from './access';
 
 // Обёртка экрана в RequireAccess (access_profiles/admin.md, «Маршруты»). Компоненты создаются
 // один раз на уровне модуля — стабильная идентичность для react-router.
@@ -103,63 +110,89 @@ const guardResource = (target: string, views: Views): Views => ({
   edit: views.edit && guard(views.edit, target, actionLevel(target, 'edit')),
 });
 
-const MEMBERS = guardResource('members', {
-  list: MemberList,
-  edit: MemberEdit,
-  create: MemberCreate,
-});
-const ROLES = guardResource('roles', { list: RoleList, edit: RoleEdit, create: RoleCreate });
-const ACCESS_PROFILES = guardResource('access-profiles', {
-  list: AccessProfileList,
-  edit: AccessProfileEdit,
-  create: AccessProfileCreate,
-});
-const WORK_LOCATIONS = guardResource('work-locations', {
-  list: WorkLocationList,
-  edit: WorkLocationEdit,
-  create: WorkLocationCreate,
-});
-const CHECKLIST_TEMPLATES = guardResource('checklist-templates', {
-  list: ChecklistTemplateList,
-  create: ChecklistTemplateCreate,
-  edit: ChecklistTemplateEdit,
-});
-const CHECKLIST_INSTANCES = guardResource('checklist-instances', {
-  list: ChecklistInstanceList,
-  show: ChecklistInstanceShow,
-});
-const WORK_SCHEDULES = guardResource('work-schedules', {
-  list: WorkScheduleList,
-  create: WorkScheduleCreate,
-  edit: WorkScheduleEdit,
-});
-const ORG_SHIFTS = guardResource('org-shifts', { list: OrgShiftList, show: OrgShiftShow });
-const OVERTIME_REQUESTS = guardResource('overtime-requests', { list: OvertimeRequestList });
-const PENALTY_TEMPLATES = guardResource('penalty-templates', {
-  list: PenaltyTemplateList,
-  create: PenaltyTemplateCreate,
-  edit: PenaltyTemplateEdit,
-});
-const ADJUSTMENTS = guardResource('adjustments', { list: AdjustmentList });
-const ADJUSTMENT_CATEGORIES = guardResource('adjustment-categories', {
-  list: AdjustmentCategoryList,
-  create: AdjustmentCategoryCreate,
-  edit: AdjustmentCategoryEdit,
-});
-const AUDIT_LOGS = guardResource('audit-logs', { list: AuditLogList });
-const TEST_TEMPLATES = guardResource('test-templates', {
-  list: TestTemplateList,
-  create: TestTemplateCreate,
-  edit: TestTemplateEdit,
-});
-const TEST_ASSIGNMENTS = guardResource('test-assignments', { list: TestAssignmentList });
+// Экраны org-ресурсов. Record<OrgResource, …> — TypeScript требует запись ровно для каждого
+// ресурса из ORG_RESOURCES (src/access.ts), а тест полноты карты проверяет, что у каждого есть
+// раздел: регистрация, карта прав и тест не могут разойтись.
+const ORG_RESOURCE_VIEWS: Record<OrgResource, Views & { icon: ComponentType }> = {
+  members: { list: MemberList, edit: MemberEdit, create: MemberCreate, icon: GroupIcon },
+  roles: { list: RoleList, edit: RoleEdit, create: RoleCreate, icon: BadgeIcon },
+  // Профили доступа (access_profiles) — только полный администратор организации.
+  'access-profiles': {
+    list: AccessProfileList,
+    edit: AccessProfileEdit,
+    create: AccessProfileCreate,
+    icon: ManageAccountsIcon,
+  },
+  'work-locations': {
+    list: WorkLocationList,
+    edit: WorkLocationEdit,
+    create: WorkLocationCreate,
+    icon: PlaceIcon,
+  },
+  'checklist-templates': {
+    list: ChecklistTemplateList,
+    create: ChecklistTemplateCreate,
+    edit: ChecklistTemplateEdit,
+    icon: ChecklistIcon,
+  },
+  // Реестр экземпляров чек-листов (checklist_reports) — read-only, деталь через
+  // GET /shifts/{shift_id}/checklists/{instance_id} (см. dataProvider getOne).
+  'checklist-instances': {
+    list: ChecklistInstanceList,
+    show: ChecklistInstanceShow,
+    icon: FactCheckIcon,
+  },
+  'work-schedules': {
+    list: WorkScheduleList,
+    create: WorkScheduleCreate,
+    edit: WorkScheduleEdit,
+    icon: ScheduleIcon,
+  },
+  'org-shifts': { list: OrgShiftList, show: OrgShiftShow, icon: AccessTimeIcon },
+  'overtime-requests': { list: OvertimeRequestList, icon: MoreTimeIcon },
+  'penalty-templates': {
+    list: PenaltyTemplateList,
+    create: PenaltyTemplateCreate,
+    edit: PenaltyTemplateEdit,
+    icon: MoneyOffIcon,
+  },
+  adjustments: { list: AdjustmentList, icon: PaidIcon },
+  'adjustment-categories': {
+    list: AdjustmentCategoryList,
+    create: AdjustmentCategoryCreate,
+    edit: AdjustmentCategoryEdit,
+    icon: LocalOfferIcon,
+  },
+  'audit-logs': { list: AuditLogList, icon: HistoryIcon },
+  'test-templates': {
+    list: TestTemplateList,
+    create: TestTemplateCreate,
+    edit: TestTemplateEdit,
+    icon: QuizIcon,
+  },
+  'test-assignments': { list: TestAssignmentList, icon: PollIcon },
+};
 
-const InviteCodeRoute = guard(InviteCodePage, '/invite-code', 'view');
-const SettingsRoute = guard(SettingsPage, '/settings', 'view');
-const TariffRoute = guard(TariffPage, '/tariff', 'view');
-const OrgStatsRoute = guard(OrgStatsPage, '/org-stats', 'view');
-const PayrollRoute = guard(PayrollPage, '/payroll', 'view');
-const KnowledgeRoute = guard(KnowledgePage, '/knowledge', 'view');
+const GUARDED_ORG_RESOURCES = ORG_RESOURCES.map((name) => {
+  const { icon, ...views } = ORG_RESOURCE_VIEWS[name];
+  return { name, icon, ...guardResource(name, views) };
+});
+
+// Custom-routes кабинета: та же схема — Record<OrgCustomRoute, …> по ORG_CUSTOM_ROUTES.
+// «Тариф» (tariffs) — owner/admin (+ super_admin сквозным доступом); профилю не выдаётся.
+const ORG_ROUTE_PAGES: Record<OrgCustomRoute, ComponentType> = {
+  '/invite-code': InviteCodePage,
+  '/settings': SettingsPage,
+  '/tariff': TariffPage,
+  '/org-stats': OrgStatsPage,
+  '/payroll': PayrollPage,
+  '/knowledge': KnowledgePage,
+};
+
+const GUARDED_ORG_ROUTES = ORG_CUSTOM_ROUTES.map((path) => ({
+  path,
+  Page: guard(ORG_ROUTE_PAGES[path], path, 'view'),
+}));
 
 // Доступ к ресурсам: платформенные (users/organizations) — только super_admin;
 // org-ресурсы доступны при выбранной организации (owner/admin — свои; super_admin — любую).
@@ -208,34 +241,22 @@ export const App = () => (
 
           {/* Org-ресурсы: каждый экран обёрнут RequireAccess по разделу (access_profiles,
               карта ресурс→раздел в src/access.ts); кнопки внутри режет authProvider.canAccess. */}
-          <Resource name="members" {...MEMBERS} icon={GroupIcon} />
-          <Resource name="roles" {...ROLES} icon={BadgeIcon} />
-          {/* Профили доступа (access_profiles) — только полный администратор организации. */}
-          <Resource name="access-profiles" {...ACCESS_PROFILES} icon={ManageAccountsIcon} />
-          <Resource name="work-locations" {...WORK_LOCATIONS} icon={PlaceIcon} />
-          <Resource name="checklist-templates" {...CHECKLIST_TEMPLATES} icon={ChecklistIcon} />
-          {/* Реестр экземпляров чек-листов (checklist_reports) — read-only, деталь через
-              GET /shifts/{shift_id}/checklists/{instance_id} (см. dataProvider getOne). */}
-          <Resource name="checklist-instances" {...CHECKLIST_INSTANCES} icon={FactCheckIcon} />
-          <Resource name="work-schedules" {...WORK_SCHEDULES} icon={ScheduleIcon} />
-          <Resource name="org-shifts" {...ORG_SHIFTS} icon={AccessTimeIcon} />
-          <Resource name="overtime-requests" {...OVERTIME_REQUESTS} icon={MoreTimeIcon} />
-          <Resource name="penalty-templates" {...PENALTY_TEMPLATES} icon={MoneyOffIcon} />
-          <Resource name="adjustments" {...ADJUSTMENTS} icon={PaidIcon} />
-          <Resource name="adjustment-categories" {...ADJUSTMENT_CATEGORIES} icon={LocalOfferIcon} />
-          <Resource name="audit-logs" {...AUDIT_LOGS} icon={HistoryIcon} />
-          <Resource name="test-templates" {...TEST_TEMPLATES} icon={QuizIcon} />
-          <Resource name="test-assignments" {...TEST_ASSIGNMENTS} icon={PollIcon} />
+          {GUARDED_ORG_RESOURCES.map(({ name, icon, list, create, edit, show }) => (
+            <Resource
+              key={name}
+              name={name}
+              list={list}
+              create={create}
+              edit={edit}
+              show={show}
+              icon={icon}
+            />
+          ))}
 
           <CustomRoutes>
-            <Route path="/invite-code" element={<InviteCodeRoute />} />
-            <Route path="/settings" element={<SettingsRoute />} />
-            {/* Экран «Тариф» кабинета организации (tariffs) — owner/admin (+ super_admin
-                сквозным доступом, как остальные org-экраны); профилю не выдаётся. */}
-            <Route path="/tariff" element={<TariffRoute />} />
-            <Route path="/org-stats" element={<OrgStatsRoute />} />
-            <Route path="/payroll" element={<PayrollRoute />} />
-            <Route path="/knowledge" element={<KnowledgeRoute />} />
+            {GUARDED_ORG_ROUTES.map(({ path, Page }) => (
+              <Route key={path} path={path} element={<Page />} />
+            ))}
             {/* Раздел «Настройки платформы» (провайдеры входа) скрыт за OAUTH_LOGIN_ENABLED
                 вместе с пунктом меню; компонент PlatformSettingsPage сохранён. */}
             {OAUTH_LOGIN_ENABLED && (

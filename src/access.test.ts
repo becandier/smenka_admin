@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  FULL_ONLY_TARGETS,
+  MENU_ORDER,
+  ORG_CUSTOM_ROUTES,
+  ORG_RESOURCES,
+  RESOURCE_SECTIONS,
+  SECTION_LABELS,
+  SUPER_ONLY_TARGETS,
   actionLevel,
   canAccessTarget,
+  canSeePath,
+  pathTarget,
   computeOrgAccess,
   firstCabinetPath,
   isOrgManageable,
@@ -103,5 +112,82 @@ describe('parse/isOrgManageable', () => {
     expect(isOrgManageable(org({}))).toBe(false);
     expect(isOrgManageable(org({ my_permissions: { shifts: 'view' } }))).toBe(true);
     expect(isOrgManageable(org({ my_role: 'owner' }))).toBe(true);
+  });
+});
+
+describe('полнота карты прав', () => {
+  it('каждый org-ресурс и custom-route привязан к разделу или помечен «только полный админ»', () => {
+    for (const target of [...ORG_RESOURCES, ...ORG_CUSTOM_ROUTES]) {
+      const known = target in RESOURCE_SECTIONS || FULL_ONLY_TARGETS.has(target);
+      expect(known, `нет записи в RESOURCE_SECTIONS/FULL_ONLY_TARGETS: ${target}`).toBe(true);
+    }
+  });
+
+  it('разделы карты — коды каталога с русскими названиями', () => {
+    for (const section of Object.values(RESOURCE_SECTIONS)) {
+      expect(SECTION_LABELS[section], section).toBeDefined();
+    }
+  });
+
+  it('каждый пункт меню ведёт на зарегистрированную цель', () => {
+    const registered = new Set<string>([...ORG_RESOURCES, ...ORG_CUSTOM_ROUTES]);
+    for (const path of MENU_ORDER) {
+      expect(registered.has(pathTarget(path)), path).toBe(true);
+    }
+  });
+});
+
+describe('pathTarget', () => {
+  it('путь ресурса → имя ресурса, custom-route и полные цели — как есть', () => {
+    expect(pathTarget('/org-shifts')).toBe('org-shifts');
+    expect(pathTarget('/members')).toBe('members');
+    expect(pathTarget('/access-profiles')).toBe('access-profiles');
+    expect(pathTarget('/payroll')).toBe('/payroll');
+    expect(pathTarget('/tariff')).toBe('/tariff');
+  });
+});
+
+describe('canAccessTarget', () => {
+  const profile = computeOrgAccess(
+    perms('user', [org({ my_permissions: { members: 'view', roles: 'manage' } })]),
+    'o1',
+  );
+  const owner = computeOrgAccess(perms('user', [org({ my_role: 'owner' })]), 'o1');
+  const superAdmin = computeOrgAccess(perms('super_admin', []), 'o1');
+
+  it('платформенные цели — только super_admin', () => {
+    for (const target of SUPER_ONLY_TARGETS) {
+      expect(canAccessTarget(owner, target)).toBe(false);
+      expect(canAccessTarget(profile, target)).toBe(false);
+      expect(canAccessTarget(superAdmin, target)).toBe(true);
+    }
+  });
+
+  it('цели вне каталога — только полный администратор с выбранной организацией', () => {
+    for (const target of FULL_ONLY_TARGETS) {
+      expect(canAccessTarget(owner, target, 'manage')).toBe(true);
+      expect(canAccessTarget(superAdmin, target)).toBe(true);
+      expect(canAccessTarget(profile, target)).toBe(false);
+      expect(canAccessTarget(computeOrgAccess(perms('super_admin', []), null), target)).toBe(false);
+    }
+  });
+
+  it('уровни раздела: view/manage', () => {
+    expect(canAccessTarget(profile, 'members', actionLevel('members', 'edit'))).toBe(true);
+    expect(canAccessTarget(profile, 'members', actionLevel('members', 'create'))).toBe(false);
+    expect(canAccessTarget(profile, 'members', actionLevel('members', 'delete'))).toBe(false);
+    expect(canAccessTarget(profile, 'roles', actionLevel('roles', 'delete'))).toBe(true);
+    expect(canAccessTarget(profile, '/payroll')).toBe(false);
+  });
+
+  it('неизвестная вспомогательная цель — решает бэк', () => {
+    expect(canAccessTarget(profile, 'plans')).toBe(true);
+    expect(canAccessTarget(profile, 'access-permissions')).toBe(true);
+  });
+
+  it('видимость пунктов меню', () => {
+    expect(canSeePath(profile, '/members')).toBe(true);
+    expect(canSeePath(profile, '/access-profiles')).toBe(false);
+    expect(canSeePath(profile, '/org-shifts')).toBe(false);
   });
 });
