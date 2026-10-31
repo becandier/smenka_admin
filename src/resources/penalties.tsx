@@ -39,7 +39,7 @@ import {
   shiftStatusLabel,
 } from '../utils/format';
 import { utcIsoToZonedInput, zonedInputToUtcIso } from '../utils/dates';
-import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useOrgAccess } from '../utils/useOrgAccess';
 import { MemberNameCell } from '../components/MemberNameCell';
 import { RestoreButton } from '../components/RestoreButton';
 import { FeatureLockButton, LockedIconButton } from '../subscription/FeatureLock';
@@ -369,10 +369,12 @@ const PenaltyFormDialog = ({
 
 // Секция «Штрафы» в карточке участника (members Edit). Список активных штрафов
 // (occurred_at DESC) + назначение/удаление/восстановление/исправление (unified_soft_delete:
-// «снять» → «Удалить», единая терминология с остальными ресурсами фичи). Доступ — org owner/admin.
+// «снять» → «Удалить», единая терминология с остальными ресурсами фичи). Доступ — раздел
+// «Штрафы» (access_profiles): просмотр — penalties:view, правка — penalties:manage;
+// super_admin сквозным доступом штрафы не видит (исключение в access.can()).
 export const MemberPenaltiesSection = () => {
   const record = useRecordContext();
-  const role = useMyOrgRole();
+  const { can } = useOrgAccess();
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const isReadOnly = useIsReadOnly();
@@ -388,8 +390,8 @@ export const MemberPenaltiesSection = () => {
 
   const memberId = record?.id ? String(record.id) : null;
   const userId = record?.user_id ? String(record.user_id) : null;
-  const canView = role === 'owner' || role === 'admin';
-  const canEdit = role === 'owner' || role === 'admin';
+  const canView = can('penalties');
+  const canEdit = can('penalties', 'manage');
 
   const load = useCallback(async () => {
     if (!memberId) return;
@@ -583,15 +585,16 @@ export const MemberPenaltiesSection = () => {
 
 // Блок «Штраф» на детали орг-смены (org-shifts Show): кнопка «Оштрафовать за смену»
 // с зафиксированными member_id/shift_id. member_id выводим из shift.user_id через members.
-// Доступ — org owner/admin; super_admin (видит чужие смены, но штрафы не ведёт) → ничего.
+// Доступ — penalties:manage (access_profiles); super_admin (видит чужие смены, но штрафы не
+// ведёт) → ничего: исключение в access.can().
 export const ShiftPenaltySection = () => {
   const record = useRecordContext();
-  const role = useMyOrgRole();
+  const { can } = useOrgAccess();
   const isReadOnly = useIsReadOnly();
   const hasFines = useHasFeature('fines');
   const organizationTimezone = useOrgTimezone();
   const [open, setOpen] = useState(false);
-  const canManage = role === 'owner' || role === 'admin';
+  const canManage = can('penalties', 'manage');
 
   const { data: members, isPending } = useGetList(
     'members',

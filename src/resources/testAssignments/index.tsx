@@ -14,8 +14,7 @@ import {
 } from 'react-admin';
 import { Box, Button, Chip, Stack, Typography } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
-import { useMyOrgRole } from '../../utils/useMyOrgRole';
-import { useIsReadOnly } from '../../subscription/SubscriptionContext';
+import { useSectionReadOnly } from '../../utils/useOrgAccess';
 import { formatMemberNameFlat } from '../../utils/memberName';
 import { useOrgTimezone } from '../../utils/useOrgTimezone';
 import {
@@ -37,18 +36,9 @@ import {
   templateTitle,
 } from './fields';
 
-const NoAccess = () => (
-  <Box sx={{ p: 3 }}>
-    <Typography color="text.secondary">
-      Результаты тестов доступны владельцу и администратору организации.
-    </Typography>
-  </Box>
-);
-
-const useCanManage = (): boolean => {
-  const role = useMyOrgRole();
-  return role === 'owner' || role === 'admin';
-};
+// Тесты — раздел «Тесты» (access_profiles): просмотр — tests:view, запись — tests:manage;
+// маршруты режет RequireAccess (App.tsx). super_admin сюда не допускается даже сквозным
+// доступом — исключение учтено в access.can().
 
 // Кэшировать выбор фильтров подольше: список тестов/сотрудников организации меняется редко,
 // а фильтры и диалог «Назначить» (AssignDialog.tsx) дёргают ровно те же списки на каждой
@@ -141,7 +131,7 @@ const RowActions = ({
   onSelect: (record: RaRecord) => void;
   onUnassigned: () => void;
 }) => {
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('tests');
   return (
     <Stack direction="row" spacing={0.5} onClick={(e) => e.stopPropagation()}>
       <Button size="small" onClick={() => onSelect(record)}>
@@ -235,7 +225,7 @@ const TestAssignmentDatagrid = ({
   timeZone: string;
 }) => {
   const { isPending, data } = useListContext();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('tests');
   if (!isPending && (data ?? []).length === 0) return <TestAssignmentsEmpty />;
   return (
     <Datagrid
@@ -288,8 +278,5 @@ const TestAssignmentListInner = () => {
 };
 
 // «Результаты тестов» (admin.md): реестр назначений всей организации + переход к деталям
-// попытки. Доступ — owner/admin, как и конструктор тестов (не платформенная фича).
-export const TestAssignmentList = () => {
-  if (!useCanManage()) return <NoAccess />;
-  return <TestAssignmentListInner />;
-};
+// попытки. Доступ — раздел «Тесты» (RequireAccess в App.tsx), как и у конструктора тестов.
+export const TestAssignmentList = TestAssignmentListInner;

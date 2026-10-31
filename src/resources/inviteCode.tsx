@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Title, useDataProvider, useNotify, usePermissions } from 'react-admin';
+import { Title, useDataProvider, useNotify } from 'react-admin';
 import {
   Alert,
   Box,
@@ -22,9 +22,8 @@ import AutorenewIcon from '@mui/icons-material/Autorenew';
 import DownloadIcon from '@mui/icons-material/Download';
 import { QRCodeCanvas } from 'qrcode.react';
 import { useCurrentOrg } from '../orgContext';
-import { useMyOrgRole } from '../utils/useMyOrgRole';
-import { useIsReadOnly } from '../subscription/SubscriptionContext';
-import type { Permissions } from '../providers/authProvider';
+import { useOrgAccess, useSectionReadOnly } from '../utils/useOrgAccess';
+import { NoAccess } from '../components/NoAccess';
 import { WEB_APP_URL } from '../config';
 
 // Уровень коррекции ошибок QR — «средний» (M, ~15% восстановления), по требованию ТЗ
@@ -49,14 +48,14 @@ const buildInviteLink = (code: string): string => `${WEB_APP_URL}/invite/${code}
 // .../rotate-invite.
 export const InviteCodePage = () => {
   const { org } = useCurrentOrg();
-  const { permissions } = usePermissions<Permissions>();
-  const role = useMyOrgRole();
-  const isReadOnly = useIsReadOnly();
+  const { can } = useOrgAccess();
+  // Ротация — invites:manage (access_profiles) поверх read-only подписки.
+  const isReadOnly = useSectionReadOnly('invites');
   const dataProvider = useDataProvider();
   const notify = useNotify();
 
-  const isSuper = permissions?.role === 'super_admin';
-  const canManage = isSuper || role === 'owner' || role === 'admin';
+  // Просмотр кода — раздел «Инвайт-код» (invites:view); super_admin — сквозным доступом.
+  const canManage = can('invites');
 
   const [code, setCode] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -108,16 +107,7 @@ export const InviteCodePage = () => {
     );
   }
 
-  if (!canManage) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Title title="Инвайт-код" />
-        <Typography color="text.secondary">
-          Управление инвайт-кодом доступно владельцу и администратору организации.
-        </Typography>
-      </Box>
-    );
-  }
+  if (!canManage) return <NoAccess label="Инвайт-код" />;
 
   const copy = async (text: string, label: string): Promise<void> => {
     try {

@@ -62,7 +62,7 @@ import {
 import { formatMemberNameFlat } from '../utils/memberName';
 import { useAsync } from '../utils/useAsync';
 import { useOrgTimezone } from '../utils/useOrgTimezone';
-import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useOrgAccess } from '../utils/useOrgAccess';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { isDayRangeInvalid, utcIsoToZonedParts } from '../utils/dates';
 import { formatDateTime, resolveOrganizationTime } from '../utils/time';
@@ -247,12 +247,20 @@ const overtimeField = (r: RaRecord) => {
 // GET .../shifts/{id} на бэке безусловно фильтрует is_deleted=false (в отличие от списка,
 // который честно поддерживает include_deleted, A5) — деталь удалённой смены поэтому не
 // всегда открывается, а «Показывать удалённые» без работающего восстановления бесполезен.
+// Ручные правки/создание/удаление/восстановление смен — «Журнал смен · управление»
+// (access_profiles). super_admin исключён, как и раньше (бэк: manual_shifts
+// allow_super_admin=False) — пускаем его, только если он сам owner/admin организации.
+const useCanManualShiftEdit = (): boolean => {
+  const { can, isSuper, isOrgManager } = useOrgAccess();
+  return can('shifts', 'manage') && (!isSuper || isOrgManager);
+};
+
 const RestoreRowAction = ({ shift }: { shift: RaRecord }) => {
-  const role = useMyOrgRole();
+  const canManualEdit = useCanManualShiftEdit();
   const refresh = useRefresh();
   const isReadOnly = useIsReadOnly();
   // Read-only (backend.md «Read-only режим»): восстановление смены — не из исключений.
-  if (!shift.is_deleted || (role !== 'owner' && role !== 'admin') || isReadOnly) return null;
+  if (!shift.is_deleted || !canManualEdit || isReadOnly) return null;
   return <RestoreShiftButton shift={shift} onDone={refresh} size="small" />;
 };
 
@@ -320,12 +328,12 @@ const OrgShiftDatagrid = () => {
 // поверх списка (админ не теряет контекст фильтров). Видно только owner/admin — то же
 // правило доступа, что у всех пишущих действий этой фичи (R8 backend.md).
 const OrgShiftListActions = () => {
-  const role = useMyOrgRole();
+  const canManualEdit = useCanManualShiftEdit();
   const refresh = useRefresh();
   const isReadOnly = useIsReadOnly();
   const [open, setOpen] = useState(false);
   // Read-only (backend.md «Read-only режим»): создание ручной смены — не из исключений.
-  if ((role !== 'owner' && role !== 'admin') || isReadOnly) return null;
+  if (!canManualEdit || isReadOnly) return null;
   return (
     <TopToolbar>
       <Button startIcon={<AddIcon />} onClick={() => setOpen(true)}>
@@ -397,7 +405,7 @@ type ShiftDialogKind = 'edit' | 'finish' | 'delete' | 'copy' | null;
 
 const ShiftManualActionsBar = () => {
   const record = useRecordContext();
-  const role = useMyOrgRole();
+  const canManualEdit = useCanManualShiftEdit();
   const refresh = useRefresh();
   const tz = useOrgTimezone();
   const isReadOnly = useIsReadOnly();
@@ -406,7 +414,7 @@ const ShiftManualActionsBar = () => {
   // восстановить смену вручную — не из исключений (в отличие от employee-эндпоинта
   // POST /shifts/{id}/finish — здесь PATCH .../organizations/{org}/shifts/{id}, другой
   // маршрут, под общее правило read-only).
-  if (!record || (role !== 'owner' && role !== 'admin') || isReadOnly) return null;
+  if (!record || !canManualEdit || isReadOnly) return null;
 
   const isOpenShift = record.status === 'active' || record.status === 'paused';
   const done = (): void => {
@@ -520,11 +528,12 @@ const ManualEditsCard = () => {
 // в ShiftPenaltySection.
 const ShiftAdjustmentAction = () => {
   const record = useRecordContext();
-  const role = useMyOrgRole();
+  const { can } = useOrgAccess();
   const refresh = useRefresh();
   const organizationTimezone = useOrgTimezone();
   const [open, setOpen] = useState(false);
-  const canManage = role === 'owner' || role === 'admin';
+  // Начисление — payroll:manage (super_admin исключён в access.can(), бэк ему запрещает).
+  const canManage = can('payroll', 'manage');
   const { data: members, isPending } = useGetList(
     'members',
     { pagination: { page: 1, perPage: 500 }, sort: { field: 'user_name', order: 'ASC' } },
@@ -847,7 +856,9 @@ const ShiftPlanSection = () => {
   const record = useRecordContext();
   const refresh = useRefresh();
   const tz = useOrgTimezone();
-  const isReadOnly = useIsReadOnly();
+  // «Изменить график» у смены — раздел «Графики работы» (schedules:manage, access_profiles).
+  const { can } = useOrgAccess();
+  const isReadOnly = useIsReadOnly() || !can('schedules', 'manage');
   const [dialogOpen, setDialogOpen] = useState(false);
   if (!record) return null;
 

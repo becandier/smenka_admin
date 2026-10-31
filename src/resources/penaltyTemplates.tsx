@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react';
+import type { ReactElement } from 'react';
 import {
   List,
   Datagrid,
@@ -21,29 +21,18 @@ import {
   useRefresh,
   type RaRecord,
 } from 'react-admin';
-import { Box, Typography } from '@mui/material';
 import { formatMoneyMinor, parseRublesToMinor } from '../utils/format';
-import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useSectionReadOnly } from '../utils/useOrgAccess';
+import { NoAccess } from '../components/NoAccess';
 import { RestoreButton } from '../components/RestoreButton';
 import { FeatureLockButton, PremiumRequiredScreen } from '../subscription/FeatureLock';
 import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
-import { useHasFeature, useIsReadOnly } from '../subscription/SubscriptionContext';
+import { useHasFeature } from '../subscription/SubscriptionContext';
 import { OrganizationTimeText } from '../components/TimeText';
 
-// Шаблоны штрафов ведут только org owner/admin. super_admin штрафы конкретной
-// организации не ведёт (ТЗ fines) — для него экран закрыт (не полагаемся только на 403 бэка).
-const NoAccess = ({ text }: { text?: ReactNode }) => (
-  <Box sx={{ p: 3 }}>
-    <Typography color="text.secondary">
-      {text ?? 'Управление шаблонами штрафов доступно владельцу и администратору организации.'}
-    </Typography>
-  </Box>
-);
-
-const useCanManage = (): boolean => {
-  const role = useMyOrgRole();
-  return role === 'owner' || role === 'admin';
-};
+// Шаблоны штрафов — раздел «Штрафы» (access_profiles): список — penalties:view, запись —
+// penalties:manage; маршруты режет RequireAccess (App.tsx). super_admin штрафы конкретной
+// организации не ведёт (ТЗ fines) — исключение учтено в access.can().
 
 // Сумма хранится в копейках (amount_minor); в списке показываем рубли.
 const amountField = (r: RaRecord) => formatMoneyMinor(r.amount_minor);
@@ -80,7 +69,7 @@ const PenaltyTemplateRowActions = ({ record }: { record: RaRecord }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const refresh = useRefresh();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('penalties');
   const hasFines = useHasFeature('fines');
 
   const handleRestore = async (): Promise<void> => {
@@ -113,7 +102,7 @@ const PenaltyTemplateRowActions = ({ record }: { record: RaRecord }) => {
 // «Добавить шаблон» — гейтится и тарифом (fines, замок + диалог), и read-only (скрыт целиком,
 // admin.md «Read-only режим»: создание в скоупе организации не входит в список исключений).
 const PenaltyTemplateListActions = () => {
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('penalties');
   const hasFines = useHasFeature('fines');
   if (isReadOnly) return null;
   return (
@@ -126,8 +115,6 @@ const PenaltyTemplateListActions = () => {
 };
 
 export const PenaltyTemplateList = () => {
-  // Хук вызывается безусловно (первой строкой) — затем ветвимся по результату.
-  if (!useCanManage()) return <NoAccess />;
   return (
     <List
       filters={penaltyTemplateFilters}
@@ -173,10 +160,8 @@ const TemplateForm = ({ toolbar }: { toolbar?: ReactElement }) => (
 // «доступно на Премиуме» вместо формы (admin.md, «Раздел «Штрафы» … на экране вместо
 // таблицы — заглушка»), а не задизейбленную кнопку Save внутри пустой формы.
 export const PenaltyTemplateCreate = () => {
-  const canManage = useCanManage();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('penalties');
   const hasFines = useHasFeature('fines');
-  if (!canManage) return <NoAccess />;
   if (isReadOnly) {
     return <NoAccess text="Организация в режиме только для чтения — создание недоступно." />;
   }
@@ -190,12 +175,8 @@ export const PenaltyTemplateCreate = () => {
 
 // Edit — маршрут остаётся доступен (GET не гейтится, admin.md/backend.md), а Save —
 // через TariffAwareToolbar (read-only скрывает целиком, !fines — замок + диалог).
-export const PenaltyTemplateEdit = () => {
-  const canManage = useCanManage();
-  if (!canManage) return <NoAccess />;
-  return (
-    <Edit mutationMode="pessimistic" redirect="list">
-      <TemplateForm toolbar={<TariffAwareToolbar feature="fines" featureLabel="Штрафы" />} />
-    </Edit>
-  );
-};
+export const PenaltyTemplateEdit = () => (
+  <Edit mutationMode="pessimistic" redirect="list">
+    <TemplateForm toolbar={<TariffAwareToolbar feature="fines" featureLabel="Штрафы" />} />
+  </Edit>
+);

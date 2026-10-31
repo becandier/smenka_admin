@@ -58,7 +58,7 @@ import {
   scheduleErrorMessage,
 } from '../utils/format';
 import { networkErrorMessage } from '../utils/networkError';
-import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { useSectionReadOnly } from '../utils/useOrgAccess';
 import { persistWeeklyRulesAfterCreate, validateWeeklyRules, type WeeklyRule } from './weeklyRules';
 
 const scheduleFilters = [
@@ -117,7 +117,7 @@ const AudienceCell = (props: { label?: string }) => {
 // Read-only (backend.md «Read-only режим») прячет создание графика — не входит
 // в список исключений.
 const WorkScheduleListActions = () => {
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('schedules');
   if (isReadOnly) return null;
   return (
     <TopToolbar>
@@ -131,7 +131,7 @@ const WorkScheduleListActions = () => {
 // реальные DELETE-запросы (бэк отклонит каждый 402, но незачем позволять их слать —
 // как и остальные мутации в этом файле, см. WorkScheduleListActions выше).
 export const WorkScheduleList = () => {
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('schedules');
   return (
     <List
       filters={scheduleFilters}
@@ -236,7 +236,7 @@ const WorkScheduleCreateFields = ({ onRulesChange }: { onRulesChange: (rules: We
 const ScheduleMetaForm = ({ schedule, onSaved }: { schedule: any; onSaved: () => void }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('schedules');
   const [name, setName] = useState<string>(schedule.name ?? '');
   const [startTime, setStartTime] = useState<string>(schedule.start_time ?? '');
   const [endTime, setEndTime] = useState<string>(schedule.end_time ?? '');
@@ -511,7 +511,7 @@ const WeeklyRulesEditor = ({
 }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('schedules');
   const [rules, setRules] = useState<Record<number, WeeklyRule>>({});
   const [saving, setSaving] = useState(false);
 
@@ -734,7 +734,7 @@ const ScheduleDeleteSection = ({ scheduleId }: { scheduleId: string }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const redirect = useRedirect();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('schedules');
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 

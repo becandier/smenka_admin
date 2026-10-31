@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Title, useDataProvider, useNotify, usePermissions } from 'react-admin';
+import { Title, useDataProvider, useNotify } from 'react-admin';
 import {
   Alert,
   Box,
@@ -20,8 +20,8 @@ import {
 } from '@mui/material';
 import { SUPPORT_CONTACT } from '../../config';
 import { useCurrentOrg } from '../../orgContext';
-import { useMyOrgRole } from '../../utils/useMyOrgRole';
-import type { Permissions } from '../../providers/authProvider';
+import { useOrgAccess } from '../../utils/useOrgAccess';
+import { NoAccess } from '../../components/NoAccess';
 import type { OrgSubscription, PlanRow } from '../../subscription/SubscriptionContext';
 import type {
   BillingCheckoutRequest,
@@ -196,12 +196,11 @@ const HowToPayCard = () => {
 // GET .../subscription от super_admin — ensure_admin_or_owner(allow_super_admin=true)).
 export const TariffPage = () => {
   const { org } = useCurrentOrg();
-  const { permissions } = usePermissions<Permissions>();
-  const role = useMyOrgRole();
+  const { isFull, isOrgManager } = useOrgAccess();
   const dataProvider = useDataProvider();
 
-  const isSuper = permissions?.role === 'super_admin';
-  const canView = isSuper || role === 'owner' || role === 'admin';
+  // «Тариф» вне каталога профилей — только полный администратор (access_profiles).
+  const canView = isFull;
 
   const [subscription, setSubscription] = useState<OrgSubscription | null>(null);
   const [plans, setPlans] = useState<PlanRow[]>([]);
@@ -215,7 +214,7 @@ export const TariffPage = () => {
   // Расхождение с таблицей RBAC admin.md («История платежей организации» — да у super_admin)
   // разобрано в STATUS.md, «Открытые вопросы к аналитику»: super_admin получает то же самое
   // через реестр «Платежи» с фильтром по организации.
-  const canPay = role === 'owner' || role === 'admin';
+  const canPay = isOrgManager;
 
   const [billingConfig, setBillingConfig] = useState<BillingConfig | null>(null);
   const [billingOptions, setBillingOptions] = useState<BillingOptions | null>(null);
@@ -378,16 +377,7 @@ export const TariffPage = () => {
     );
   }
 
-  if (!canView) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Title title="Тариф" />
-        <Typography color="text.secondary">
-          Тариф организации доступен владельцу и администратору.
-        </Typography>
-      </Box>
-    );
-  }
+  if (!canView) return <NoAccess label="Тариф" />;
 
   return (
     <Box sx={{ p: 2, maxWidth: 720 }}>

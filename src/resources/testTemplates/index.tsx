@@ -34,31 +34,20 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AssignmentIndIcon from '@mui/icons-material/AssignmentInd';
 import InboxIcon from '@mui/icons-material/Inbox';
-import { useMyOrgRole } from '../../utils/useMyOrgRole';
+import { useSectionReadOnly } from '../../utils/useOrgAccess';
 import { testErrorMessage } from '../../utils/format';
 import { RestoreButton } from '../../components/RestoreButton';
 import { FeatureLockButton } from '../../subscription/FeatureLock';
 import { TariffAwareToolbar } from '../../subscription/TariffAwareToolbar';
-import { useHasFeature, useIsReadOnly } from '../../subscription/SubscriptionContext';
+import { useHasFeature } from '../../subscription/SubscriptionContext';
 import { TestTemplateFields } from './TemplateForm';
 import { getTestTemplateDefaultValues, validateTestTemplate } from './validation';
 import { ImportTestTemplateDialog } from './ImportDialog';
 import { AssignTestDialog } from './AssignDialog';
 
-// Тесты — фича org owner/admin, не платформенная (admin.md, «Права доступа»): super_admin
-// сюда не допускается даже сквозным доступом (в отличие от базы знаний/чек-листов).
-const NoAccess = () => (
-  <Box sx={{ p: 3 }}>
-    <Typography color="text.secondary">
-      Управление тестами доступно владельцу и администратору организации.
-    </Typography>
-  </Box>
-);
-
-const useCanManage = (): boolean => {
-  const role = useMyOrgRole();
-  return role === 'owner' || role === 'admin';
-};
+// Тесты — раздел «Тесты» (access_profiles): просмотр — tests:view, запись — tests:manage;
+// маршруты режет RequireAccess (App.tsx). super_admin сюда не допускается даже сквозным
+// доступом — исключение учтено в access.can().
 
 // Баннер серверной ошибки создания/сохранения (TEST_TEMPLATE_INVALID/TEST_TEMPLATE_DELETED
 // и т.п.) — общий для Create и Edit форм, которые отличаются только текстом фолбэка.
@@ -87,7 +76,7 @@ const testTemplateFilters = [
 // «Создать тест» замком не накрывается, admin.md «Гейтинг функций тарифа»).
 const TestTemplateListActions = () => {
   const [importOpen, setImportOpen] = useState(false);
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('tests');
   const hasImport = useHasFeature('test_import');
   if (isReadOnly) return null;
   return (
@@ -110,7 +99,7 @@ const TestTemplateListActions = () => {
 // Тот же гейтинг, что и в TestTemplateListActions.
 const TestTemplateEmpty = () => {
   const [importOpen, setImportOpen] = useState(false);
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('tests');
   const hasImport = useHasFeature('test_import');
   return (
     <Box sx={{ textAlign: 'center', mt: 8, mb: 4 }}>
@@ -157,7 +146,7 @@ const RowActions = ({
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const refresh = useRefresh();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('tests');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -294,10 +283,7 @@ const TestTemplateListInner = () => {
   );
 };
 
-export const TestTemplateList = () => {
-  if (!useCanManage()) return <NoAccess />;
-  return <TestTemplateListInner />;
-};
+export const TestTemplateList = TestTemplateListInner;
 
 // Предупреждение в форме редактирования удалённого шаблона: PATCH метаданных/вопросов
 // вернёт TEST_TEMPLATE_DELETED (backend.md) — предупреждаем до попытки сохранить.
@@ -332,10 +318,7 @@ const TestTemplateCreateForm = () => {
   );
 };
 
-export const TestTemplateCreate = () => {
-  if (!useCanManage()) return <NoAccess />;
-  return <TestTemplateCreateForm />;
-};
+export const TestTemplateCreate = TestTemplateCreateForm;
 
 const TestTemplateEditForm = () => {
   const [serverError, setServerError] = useState<string | null>(null);
@@ -356,7 +339,4 @@ const TestTemplateEditForm = () => {
   );
 };
 
-export const TestTemplateEdit = () => {
-  if (!useCanManage()) return <NoAccess />;
-  return <TestTemplateEditForm />;
-};
+export const TestTemplateEdit = TestTemplateEditForm;

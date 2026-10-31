@@ -49,12 +49,11 @@ import {
 import { utcIsoToZonedParts, zonedDayStartToUtcIso } from '../utils/dates';
 import { formatMemberNameFlat } from '../utils/memberName';
 import { useOrgTimezone } from '../utils/useOrgTimezone';
-import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useSectionReadOnly } from '../utils/useOrgAccess';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { DateRangeAlert } from '../components/DateRangeAlert';
 import { MemberNameCell } from '../components/MemberNameCell';
 import { RestoreButton } from '../components/RestoreButton';
-import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { wideDatagridScrollSx } from '../theme';
 import { OrganizationTimeText } from '../components/TimeText';
 import { formatDateTime, resolveOrganizationTime } from '../utils/time';
@@ -598,7 +597,7 @@ const AdjustmentRowActions = ({ record }: { record: Adjustment }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const refresh = useRefresh();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('payroll');
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -777,7 +776,7 @@ const adjustmentFilters = [
 
 const AdjustmentListActions = () => {
   const refresh = useRefresh();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('payroll');
   const [open, setOpen] = useState(false);
   if (isReadOnly) return <TopToolbar />;
   return (
@@ -799,18 +798,11 @@ const AdjustmentListActions = () => {
   );
 };
 
-// Ресурс «Начисления» (§4.1): owner/admin своей организации, super_admin — «нет доступа»
-// (как штрафы/зарплата, R8 backend.md).
+// Ресурс «Начисления» (§4.1): раздел «Зарплата» (access_profiles) — просмотр payroll:view,
+// запись payroll:manage; маршрут режет RequireAccess, super_admin — «нет доступа» (как
+// штрафы/зарплата, R8 backend.md; исключение в access.can()).
 export const AdjustmentList = () => {
-  const role = useMyOrgRole();
   const timeZone = useOrgTimezone();
-  if (role !== 'owner' && role !== 'admin') {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Typography color="text.secondary">Нет доступа к разделу «Начисления».</Typography>
-      </Box>
-    );
-  }
   return (
     <List
       filters={adjustmentFilters}

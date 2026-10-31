@@ -44,7 +44,7 @@ import {
 import { LocationMapField } from '../components/LocationMapField';
 import { checklistLocationErrorMessage, pluralizeChecklists } from '../utils/format';
 import { findIntersectingLocations, type WorkLocationGeo } from '../utils/geo';
-import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { useSectionReadOnly } from '../utils/useOrgAccess';
 import { OrganizationTimeText } from '../components/TimeText';
 
 const locationFilters = [<SearchInput key="q" source="q" alwaysOn />];
@@ -178,7 +178,7 @@ const LocationDeleteWarning = () => {
 // прячем кнопку целиком, в обоих вариантах.
 const WorkLocationDeleteButton = ({ variant }: { variant: 'row' | 'toolbar' }) => {
   const notify = useNotify();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('work_locations');
   if (isReadOnly) return null;
   return (
     <DeleteWithConfirmButton
@@ -195,7 +195,7 @@ const WorkLocationDeleteButton = ({ variant }: { variant: 'row' | 'toolbar' }) =
 };
 
 const LocationEditToolbar = () => {
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('work_locations');
   if (isReadOnly) return null;
   return (
     <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -335,7 +335,7 @@ const LocationChecklistsSection = () => {
 };
 
 const WorkLocationListActions = () => {
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('work_locations');
   return (
     <TopToolbar>
       <FilterButton />
@@ -379,7 +379,7 @@ export const WorkLocationEdit = () => (
 // маршрут /work-locations/create остаётся доступен по прямой ссылке независимо от того,
 // откуда открыт (кнопка в списке скрыта, но URL никто не защищает).
 export const WorkLocationCreate = () => {
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('work_locations');
   if (isReadOnly) {
     return (
       <Box sx={{ p: 3 }}>

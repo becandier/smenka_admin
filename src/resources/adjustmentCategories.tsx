@@ -26,8 +26,8 @@ import {
   Typography,
 } from '@mui/material';
 import { adjustmentErrorMessage } from '../utils/format';
-import { useMyOrgRole } from '../utils/useMyOrgRole';
-import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { useSectionReadOnly } from '../utils/useOrgAccess';
+import { NoAccess } from '../components/NoAccess';
 import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
 import {
   CATEGORY_NAME_MAX,
@@ -36,27 +36,15 @@ import {
   type AdjustmentCategory,
 } from './adjustmentCategoryUtils';
 
-// Справочник «Категории начислений» (payroll_breakdown). Права — как у «Начислений»:
-// owner/admin своей организации; super_admin сквозным доступом не ведёт. Запись гейтится
-// read-only так же, как создание начисления (backend.md: та же проверка подписки).
-
-const useCanManage = (): boolean => {
-  const role = useMyOrgRole();
-  return role === 'owner' || role === 'admin';
-};
-
-const NoAccess = ({ text }: { text?: string }) => (
-  <Box sx={{ p: 3 }}>
-    <Typography color="text.secondary">
-      {text ?? 'Категории начислений доступны владельцу и администратору организации.'}
-    </Typography>
-  </Box>
-);
+// Справочник «Категории начислений» (payroll_breakdown). Права — раздел «Зарплата»
+// (access_profiles): просмотр списка — payroll:view, запись — payroll:manage; маршруты
+// режет RequireAccess (App.tsx), super_admin сквозным доступом не ведёт (access.can()).
+// Запись гейтится и read-only подпиской (backend.md: та же проверка, что у начислений).
 
 const nameValidators = [validateCategoryName];
 
 const CategoryListActions = () => {
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('payroll');
   if (isReadOnly) return <TopToolbar />;
   return (
     <TopToolbar>
@@ -67,7 +55,7 @@ const CategoryListActions = () => {
 
 // «Удалить» (ADR-003): под капотом soft-delete, начисления сохраняют категорию.
 const CategoryRowActions = ({ record }: { record: RaRecord }) => {
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('payroll');
   if (isReadOnly) return null;
   return (
     <DeleteWithConfirmButton
@@ -79,7 +67,7 @@ const CategoryRowActions = ({ record }: { record: RaRecord }) => {
 };
 
 const CategoriesEmpty = () => {
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('payroll');
   return (
     <Box sx={{ textAlign: 'center', m: 6, color: 'text.secondary' }}>
       <Typography variant="h6" gutterBottom>
@@ -94,7 +82,6 @@ const CategoriesEmpty = () => {
 };
 
 export const AdjustmentCategoryList = () => {
-  if (!useCanManage()) return <NoAccess />;
   return (
     <List
       sort={{ field: 'name', order: 'ASC' }}
@@ -117,9 +104,7 @@ export const AdjustmentCategoryList = () => {
 };
 
 export const AdjustmentCategoryCreate = () => {
-  const canManage = useCanManage();
-  const isReadOnly = useIsReadOnly();
-  if (!canManage) return <NoAccess />;
+  const isReadOnly = useSectionReadOnly('payroll');
   if (isReadOnly) {
     return <NoAccess text="Организация в режиме только для чтения — создание недоступно." />;
   }
@@ -139,7 +124,6 @@ export const AdjustmentCategoryCreate = () => {
 };
 
 export const AdjustmentCategoryEdit = () => {
-  if (!useCanManage()) return <NoAccess />;
   return (
     <Edit mutationMode="pessimistic" redirect="list">
       <SimpleForm toolbar={<TariffAwareToolbar />}>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Title, usePermissions } from 'react-admin';
+import { Title } from 'react-admin';
 import {
   Box,
   Breadcrumbs,
@@ -13,8 +13,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useCurrentOrg } from '../../orgContext';
-import { useMyOrgRole } from '../../utils/useMyOrgRole';
-import type { Permissions } from '../../providers/authProvider';
+import { useOrgAccess } from '../../utils/useOrgAccess';
 import { TreePanel } from './TreePanel';
 import { BlockEditor } from './BlockEditor';
 import { AccessPanel } from './AccessPanel';
@@ -27,14 +26,6 @@ import type { Breadcrumb, KnowledgeBlock, NodeDetail } from './types';
 // доступна для этих ролей всегда (к ним ACL не применяется — управляют доступом employee).
 
 // --- Заглушки доступа / выбора организации -------------------------------
-
-const NoAccess = () => (
-  <Box sx={{ p: 3 }}>
-    <Typography color="text.secondary">
-      База знаний доступна владельцу и администратору организации.
-    </Typography>
-  </Box>
-);
 
 const PickOrg = () => (
   <Box sx={{ p: 3 }}>
@@ -73,9 +64,10 @@ const NodeBreadcrumbs = ({ items }: { items: Breadcrumb[] }) => {
 interface ContentTabProps {
   node: NodeDetail;
   onSaved: () => void;
+  readOnly: boolean;
 }
 
-const ContentTab = ({ node, onSaved }: ContentTabProps) => {
+const ContentTab = ({ node, onSaved, readOnly }: ContentTabProps) => {
   const { update, saving } = useUpdateNode();
   // Буфер изменений редактора; null — после монтирования/сохранения (нет несохранённых правок).
   const [draft, setDraft] = useState<KnowledgeBlock[] | null>(null);
@@ -101,6 +93,11 @@ const ContentTab = ({ node, onSaved }: ContentTabProps) => {
     }
   }, [dirty, draft, node.id, update, onSaved]);
 
+  // Только просмотр (knowledge:view) — редактор без правки и без «Сохранить».
+  if (readOnly) {
+    return <BlockEditor key={node.id} value={node.content} onChange={handleChange} readOnly />;
+  }
+
   return (
     <Box>
       <Stack direction="row" justifyContent="flex-end" sx={{ mb: 1 }}>
@@ -123,19 +120,21 @@ const ContentTab = ({ node, onSaved }: ContentTabProps) => {
 
 interface NodeDetailPaneProps {
   nodeId: string;
+  readOnly: boolean;
 }
 
 type DetailTab = 'content' | 'access';
 
-const NodeDetailPane = ({ nodeId }: NodeDetailPaneProps) => {
+const NodeDetailPane = ({ nodeId, readOnly }: NodeDetailPaneProps) => {
   const { node, loading, error, refetch } = useKnowledgeNode(nodeId);
   const [tab, setTab] = useState<DetailTab>('content');
 
-  // Для раздела вкладки контента нет — держим access активной.
+  // Для раздела вкладки контента нет — держим access активной. Без права «управление»
+  // вкладки «Доступ» нет (ACL узлов — knowledge:manage на бэке).
   useEffect(() => {
-    if (node?.kind === 'section') setTab('access');
+    if (node?.kind === 'section' && !readOnly) setTab('access');
     else setTab('content');
-  }, [node?.kind, node?.id]);
+  }, [node?.kind, node?.id, readOnly]);
 
   if (loading) {
     return (
@@ -188,14 +187,18 @@ const NodeDetailPane = ({ nodeId }: NodeDetailPaneProps) => {
         </Typography>
       </Stack>
 
-      <Tabs value={tab} onChange={(_, v: DetailTab) => setTab(v)} sx={{ mb: 1 }}>
-        {isPage && <Tab value="content" label="Контент" />}
-        <Tab value="access" label="Доступ" />
-      </Tabs>
+      {!readOnly && (
+        <Tabs value={tab} onChange={(_, v: DetailTab) => setTab(v)} sx={{ mb: 1 }}>
+          {isPage && <Tab value="content" label="Контент" />}
+          <Tab value="access" label="Доступ" />
+        </Tabs>
+      )}
       <Divider sx={{ mb: 2 }} />
 
-      {tab === 'content' && isPage && <ContentTab node={node} onSaved={refetch} />}
-      {tab === 'access' && (
+      {tab === 'content' && isPage && (
+        <ContentTab node={node} onSaved={refetch} readOnly={readOnly} />
+      )}
+      {tab === 'access' && !readOnly && (
         // breadcrumbs включают сам узел последним элементом — предки это всё, кроме него.
         <AccessPanel nodeId={node.id} ancestors={node.breadcrumbs.slice(0, -1)} />
       )}
@@ -205,7 +208,7 @@ const NodeDetailPane = ({ nodeId }: NodeDetailPaneProps) => {
 
 // --- Основной экран -------------------------------------------------------
 
-const KnowledgeWorkspace = () => {
+const KnowledgeWorkspace = ({ readOnly }: { readOnly: boolean }) => {
   const { tree, loading, refetch } = useKnowledgeTree();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -250,11 +253,12 @@ const KnowledgeWorkspace = () => {
           selectedId={selectedId}
           onSelect={handleSelect}
           onTreeChanged={refetch}
+          readOnly={readOnly}
         />
       </Box>
       <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
         {selectedId ? (
-          <NodeDetailPane nodeId={selectedId} />
+          <NodeDetailPane nodeId={selectedId} readOnly={readOnly} />
         ) : (
           <Box sx={{ p: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <Typography color="text.secondary">
@@ -267,20 +271,18 @@ const KnowledgeWorkspace = () => {
   );
 };
 
+// Доступ к экрану режет RequireAccess (раздел «База знаний», App.tsx); здесь только уровень:
+// knowledge:manage — полноценный редактор, knowledge:view — чтение дерева и страниц.
 export const KnowledgePage = () => {
-  const { permissions } = usePermissions<Permissions>();
   const { org } = useCurrentOrg();
-  const myRole = useMyOrgRole();
-
-  const isSuper = permissions?.role === 'super_admin';
-  const canManage = isSuper || myRole === 'owner' || myRole === 'admin';
+  const { can } = useOrgAccess();
+  const readOnly = !can('knowledge', 'manage');
 
   // super_admin без выбранной org тоже должен сперва выбрать организацию (сквозной
-  // доступ работает через OrgSwitcher → org_id в путях). canManage уже учитывает super_admin.
+  // доступ работает через OrgSwitcher → org_id в путях).
   let body: JSX.Element;
   if (!org) body = <PickOrg />;
-  else if (!canManage) body = <NoAccess />;
-  else body = <KnowledgeWorkspace />;
+  else body = <KnowledgeWorkspace readOnly={readOnly} />;
 
   return (
     <Box sx={{ p: 2 }}>

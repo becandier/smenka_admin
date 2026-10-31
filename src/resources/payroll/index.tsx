@@ -16,7 +16,8 @@ import {
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import { useCurrentOrg } from '../../orgContext';
-import { useMyOrgRole } from '../../utils/useMyOrgRole';
+import { useOrgAccess } from '../../utils/useOrgAccess';
+import { NoAccess } from '../../components/NoAccess';
 import { saveBlob } from '../../utils/files';
 import { isDayRangeInvalid } from '../../utils/dates';
 import { formatDate, organizationTime, utcBoundsForCalendarDay } from '../../utils/time';
@@ -54,7 +55,7 @@ const errorMessage = (
 // выгрузкой в Excel. Только просмотр; доступ — org owner/admin (super_admin не гейтится).
 export const PayrollPage = () => {
   const { org } = useCurrentOrg();
-  const role = useMyOrgRole();
+  const { can } = useOrgAccess();
   const dataProvider = useDataProvider();
   const notify = useNotify();
   const tz = useOrgTimezone();
@@ -74,7 +75,9 @@ export const PayrollPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  const allowed = role === 'owner' || role === 'admin';
+  // Раздел «Зарплата» (access_profiles): payroll:view; маршрут дополнительно режет
+  // RequireAccess, здесь — чтобы не слать запрос отчёта без права.
+  const allowed = can('payroll');
   const rangeInvalid = isDayRangeInvalid(dateFrom, dateTo);
   const calendarContext = useMemo(() => organizationTime(tz), [tz]);
 
@@ -171,14 +174,7 @@ export const PayrollPage = () => {
     );
   }
 
-  if (!allowed) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Title title="Зарплата" />
-        <Typography color="text.secondary">Нет доступа к отчёту по зарплате.</Typography>
-      </Box>
-    );
-  }
+  if (!allowed) return <NoAccess label="Зарплата" />;
 
   const periodLabel = report
     ? report.period.date_from || report.period.date_to

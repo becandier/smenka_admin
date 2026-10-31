@@ -5,7 +5,6 @@ import {
   FunctionField,
   SelectInput,
   DateInput,
-  Title,
   useDataProvider,
   useListContext,
   useNotify,
@@ -37,8 +36,7 @@ import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { MemberNameCell } from '../components/MemberNameCell';
 import { DateRangeAlert } from '../components/DateRangeAlert';
 import { isDayRangeInvalid } from '../utils/dates';
-import { useMyOrgRole } from '../utils/useMyOrgRole';
-import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { useSectionReadOnly } from '../utils/useOrgAccess';
 import { OrganizationTimeText } from '../components/TimeText';
 import { useOrgTimezone } from '../utils/useOrgTimezone';
 
@@ -208,7 +206,7 @@ const OvertimeEmpty = () => (
 // перестаёт показывать действия (admin.md: «После рассмотрения кнопки исчезают»).
 const RowActions = ({ record }: { record: RaRecord }) => {
   const refresh = useRefresh();
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('overtime');
   const [dialog, setDialog] = useState<'approved' | 'rejected' | null>(null);
   // Read-only (backend.md «Read-only режим»): рассмотрение заявки — не из исключений.
   if (record.status !== 'pending' || isReadOnly) return null;
@@ -269,21 +267,11 @@ const OvertimeDatagrid = () => {
   );
 };
 
-const NoAccess = () => (
-  <Box sx={{ p: 3 }}>
-    <Title title="Переработки" />
-    <Typography color="text.secondary">
-      Раздел доступен владельцу и администратору организации.
-    </Typography>
-  </Box>
-);
-
-// Реестр заявок на переработку (owner/admin — admin.md, «Заявки на переработку»). По умолчанию
-// открывается на pending; серверная пагинация/фильтры. Согласование/отклонение — по строке.
+// Реестр заявок на переработку (раздел «Заявки на переработку», access_profiles: просмотр —
+// overtime:view, согласование/отклонение — overtime:manage; маршрут режет RequireAccess).
+// По умолчанию открывается на pending; серверная пагинация/фильтры.
 export const OvertimeRequestList = () => {
-  const role = useMyOrgRole();
   const timeZone = useOrgTimezone();
-  if (role !== 'owner' && role !== 'admin') return <NoAccess />;
   return (
     <List
       filters={overtimeFilters}

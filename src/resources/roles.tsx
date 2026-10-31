@@ -15,7 +15,7 @@ import {
   BulkDeleteButton,
   required,
 } from 'react-admin';
-import { useIsReadOnly } from '../subscription/SubscriptionContext';
+import { useSectionReadOnly } from '../utils/useOrgAccess';
 import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
 import { OrganizationTimeText } from '../components/TimeText';
 
@@ -24,7 +24,7 @@ const roleFilters = [<SearchInput key="q" source="q" alwaysOn />];
 // Read-only (backend.md «Read-only режим») прячет создание кастомной роли — не входит
 // в список исключений.
 const RoleListActions = () => {
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('roles');
   return (
     <TopToolbar>
       <FilterButton />
@@ -38,7 +38,7 @@ const RoleListActions = () => {
 // bulkActionButtons (BulkDeleteButton) — восстанавливаем его вне read-only вместо
 // прежнего безусловного `false`, который тайком убирал удаление ролей вообще для всех.
 export const RoleList = () => {
-  const isReadOnly = useIsReadOnly();
+  const isReadOnly = useSectionReadOnly('roles');
   return (
     <List
       filters={roleFilters}
