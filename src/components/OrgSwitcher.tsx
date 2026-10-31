@@ -4,12 +4,15 @@ import { Box, Button, Chip, MenuItem, Select } from '@mui/material';
 import { useCurrentOrg } from '../orgContext';
 import { getCurrentOrg, type CurrentOrg } from '../config';
 import type { Permissions } from '../providers/authProvider';
+import { computeOrgAccess, firstCabinetPath, isOrgManageable } from '../access';
 
 // Текст/иконки на синем AppBar = primary.contrastText (см. theme.ts). Без хардкода белого.
 const ON_BAR = 'primary.contrastText';
 
 // Переключатель организации в app-баре.
-//  - owner/admin: выпадающий список своих орг (owner|admin), авто-выбор единственной.
+//  - owner/admin/обладатель профиля доступа: выпадающий список «управляемых» орг (owner|admin
+//    или непустые my_permissions, access_profiles), авто-выбор единственной; рядом — чип
+//    с названием профиля, чтобы было понятно, почему меню короткое.
 //  - super_admin: показывает открытый кабинет (открывается из раздела «Организации») с кнопкой «Закрыть».
 export const OrgSwitcher = () => {
   const { permissions } = usePermissions<Permissions>();
@@ -21,10 +24,7 @@ export const OrgSwitcher = () => {
   const role = permissions?.role;
   const userId = identity?.id ? String(identity.id) : null;
   const myOrgs = useMemo(
-    () =>
-      (permissions?.organizations ?? []).filter(
-        (o) => o.my_role === 'owner' || o.my_role === 'admin',
-      ),
+    () => (permissions?.organizations ?? []).filter(isOrgManageable),
     [permissions],
   );
 
@@ -42,7 +42,7 @@ export const OrgSwitcher = () => {
     if ((stored?.id ?? null) !== (org?.id ?? null)) selectOrg(stored);
   }, [userId, org, selectOrg]);
 
-  // (2) Держим выбранную org консистентной с правами owner/admin: если выбранная org не
+  // (2) Держим выбранную org консистентной с правами (owner/admin или профиль доступа): если выбранная org не
   // входит в мои организации — выбираем единственную доступную либо сбрасываем. super_admin
   // исключён намеренно: его «кабинет» открывается из раздела «Организации» и допускает любую
   // org (сквозной доступ), членства owner/admin у него может не быть.
@@ -57,9 +57,11 @@ export const OrgSwitcher = () => {
 
   if (!permissions) return null;
 
+  // При смене организации — в первый доступный раздел её кабинета (у обладателя профиля
+  // «Сотрудники» может быть недоступен).
   const open = (next: CurrentOrg | null) => {
     selectOrg(next);
-    redirect(next ? '/members' : '/');
+    redirect(next ? firstCabinetPath(computeOrgAccess(permissions, next.id)) : '/');
     refresh();
   };
 
@@ -81,32 +83,44 @@ export const OrgSwitcher = () => {
 
   if (myOrgs.length === 0) return null;
 
+  const profile = org ? (myOrgs.find((o) => o.id === org.id)?.my_access_profile ?? null) : null;
+
   return (
-    <Box sx={{ minWidth: 220, mr: 2 }}>
-      <Select
-        size="small"
-        value={org?.id ?? ''}
-        displayEmpty
-        fullWidth
-        sx={{
-          color: ON_BAR,
-          '.MuiSvgIcon-root': { color: ON_BAR },
-          '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.5)' },
-        }}
-        onChange={(e) => {
-          const sel = myOrgs.find((o) => o.id === e.target.value);
-          if (sel) open({ id: sel.id, name: sel.name });
-        }}
-      >
-        <MenuItem value="" disabled>
-          Выберите организацию
-        </MenuItem>
-        {myOrgs.map((o) => (
-          <MenuItem key={o.id} value={o.id}>
-            {o.name}
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
+      {profile && (
+        <Chip
+          variant="outlined"
+          size="small"
+          label={`Профиль: ${profile.name}`}
+          sx={{ color: ON_BAR, borderColor: 'rgba(255,255,255,0.7)' }}
+        />
+      )}
+      <Box sx={{ minWidth: 220 }}>
+        <Select
+          size="small"
+          value={org?.id ?? ''}
+          displayEmpty
+          fullWidth
+          sx={{
+            color: ON_BAR,
+            '.MuiSvgIcon-root': { color: ON_BAR },
+            '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.5)' },
+          }}
+          onChange={(e) => {
+            const sel = myOrgs.find((o) => o.id === e.target.value);
+            if (sel) open({ id: sel.id, name: sel.name });
+          }}
+        >
+          <MenuItem value="" disabled>
+            Выберите организацию
           </MenuItem>
-        ))}
-      </Select>
+          {myOrgs.map((o) => (
+            <MenuItem key={o.id} value={o.id}>
+              {o.name}
+            </MenuItem>
+          ))}
+        </Select>
+      </Box>
     </Box>
   );
 };

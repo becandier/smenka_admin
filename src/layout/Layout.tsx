@@ -53,7 +53,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { OrgSwitcher } from '../components/OrgSwitcher';
 import { OAUTH_LOGIN_ENABLED } from '../config';
 import { useCurrentOrg } from '../orgContext';
-import { useMyOrgRole } from '../utils/useMyOrgRole';
+import { useOrgAccess } from '../utils/useOrgAccess';
+import { canSeePath } from '../access';
 import type { Permissions } from '../providers/authProvider';
 import { SubscriptionProvider } from '../subscription/SubscriptionContext';
 import { SubscriptionBannerBar } from '../subscription/SubscriptionBanner';
@@ -264,23 +265,63 @@ const MyMenu = () => {
   const { permissions } = usePermissions<Permissions>();
   const { org } = useCurrentOrg();
   const [sidebarOpen] = useSidebarState();
+  const access = useOrgAccess();
   const isSuper = permissions?.role === 'super_admin';
-  // org-меню показываем, только если в текущей орг роль owner/admin (super_admin — сквозной доступ).
-  const myRole = useMyOrgRole();
-  const canManage = isSuper || myRole === 'owner' || myRole === 'admin';
-  const orgOpen = Boolean(org) && canManage;
-  // Зарплата — только фактическим owner/admin организации; super_admin сквозным
-  // доступом её не видит (не его рабочий инструмент, ТЗ payroll).
-  const isOrgManager = myRole === 'owner' || myRole === 'admin';
+  // Кабинет открыт при выбранной организации и наличии в ней хоть каких-то прав: полный
+  // администратор (super_admin/owner/admin) или обладатель профиля с непустыми правами
+  // (access_profiles/admin.md §3). Каждый пункт — по праву на свой раздел (src/access.ts);
+  // прежние исключения super_admin (переработки, тесты, финансы) учтены в access.can().
+  const orgOpen = Boolean(org) && access.hasCabinet;
+  const see = (path: string): boolean => orgOpen && canSeePath(access, path);
 
-  // Видимость секций. Пустая секция не монтируется целиком (вместе с подзаголовком
-  // и разделителем) — критерий приёмки №3 admin_menu_grouping.
+  // Видимость пунктов по группам. Пустая группа/секция не монтируется целиком (вместе с
+  // подзаголовком и разделителем) — критерий приёмки №3 admin_menu_grouping.
+  const shiftsItems = {
+    shifts: see('/org-shifts'),
+    overtime: see('/overtime-requests'),
+    schedules: see('/work-schedules'),
+  };
+  const staffItems = {
+    members: see('/members'),
+    roles: see('/roles'),
+    profiles: see('/access-profiles'),
+  };
+  const checklistItems = {
+    instances: see('/checklist-instances'),
+    templates: see('/checklist-templates'),
+  };
+  const testItems = {
+    templates: see('/test-templates'),
+    assignments: see('/test-assignments'),
+  };
+  const financeItems = {
+    payroll: see('/payroll'),
+    penaltyTemplates: see('/penalty-templates'),
+    adjustments: see('/adjustments'),
+    categories: see('/adjustment-categories'),
+  };
+  const opsSingles = { stats: see('/org-stats'), knowledge: see('/knowledge') };
+  const orgItems = {
+    locations: see('/work-locations'),
+    invite: see('/invite-code'),
+    settings: see('/settings'),
+    tariff: see('/tariff'),
+    audit: see('/audit-logs'),
+  };
+  const any = (items: Record<string, boolean>): boolean => Object.values(items).some(Boolean);
+  const showShifts = any(shiftsItems);
+  const showStaff = any(staffItems);
+  const showChecklists = any(checklistItems);
+  const showTests = any(testItems);
+  const showFinance = any(financeItems);
+
   const showPlatform = isSuper;
-  const showOps = orgOpen;
-  const showOrg = orgOpen;
+  const showOps =
+    showShifts || showStaff || showChecklists || showTests || showFinance || any(opsSingles);
+  const showOrg = any(orgItems);
 
   // Состояние сворачиваемых подгрупп «Операционки». Хуки вызываются безусловно
-  // (правило хуков) — видимость самих групп по RBAC решается уже в JSX ниже.
+  // (правило хуков) — видимость самих групп по правам решается уже в JSX ниже.
   const [shiftsOpen, setShiftsOpen, shiftsActive] = useGroupOpen([
     '/org-shifts',
     '/overtime-requests',
@@ -347,87 +388,108 @@ const MyMenu = () => {
             </ListSubheader>
           )}
 
-          {/* Смены: сама смена, переработки (только owner/admin), графики работы. */}
-          <SubMenu
-            name="Смены"
-            icon={<AccessTimeIcon />}
-            open={shiftsOpen}
-            onToggle={() => setShiftsOpen((o) => !o)}
-            sidebarOpen={sidebarOpen}
-            isActive={shiftsActive}
-          >
-            {/* Было «Смены» — тавтология с названием группы (ТЗ п.5). */}
-            <Menu.Item
-              to="/org-shifts"
-              primaryText="Журнал смен"
-              leftIcon={<AccessTimeIcon />}
-              sx={childItemIconSx}
-            />
-            {isOrgManager && <OvertimeMenuItem />}
-            <Menu.Item
-              to="/work-schedules"
-              primaryText="Графики работы"
-              leftIcon={<ScheduleIcon />}
-              sx={childItemIconSx}
-            />
-          </SubMenu>
+          {/* Смены: журнал, переработки, графики работы. */}
+          {showShifts && (
+            <SubMenu
+              name="Смены"
+              icon={<AccessTimeIcon />}
+              open={shiftsOpen}
+              onToggle={() => setShiftsOpen((o) => !o)}
+              sidebarOpen={sidebarOpen}
+              isActive={shiftsActive}
+            >
+              {/* Было «Смены» — тавтология с названием группы (ТЗ п.5). */}
+              {shiftsItems.shifts && (
+                <Menu.Item
+                  to="/org-shifts"
+                  primaryText="Журнал смен"
+                  leftIcon={<AccessTimeIcon />}
+                  sx={childItemIconSx}
+                />
+              )}
+              {shiftsItems.overtime && <OvertimeMenuItem />}
+              {shiftsItems.schedules && (
+                <Menu.Item
+                  to="/work-schedules"
+                  primaryText="Графики работы"
+                  leftIcon={<ScheduleIcon />}
+                  sx={childItemIconSx}
+                />
+              )}
+            </SubMenu>
+          )}
 
-          {/* Персонал: сотрудники и роли (роли — перенос из секции «Организация»). */}
-          <SubMenu
-            name="Персонал"
-            icon={<GroupIcon />}
-            open={staffOpen}
-            onToggle={() => setStaffOpen((o) => !o)}
-            sidebarOpen={sidebarOpen}
-            isActive={staffActive}
-          >
-            <Menu.Item
-              to="/members"
-              primaryText="Сотрудники"
-              leftIcon={<GroupIcon />}
-              sx={childItemIconSx}
-            />
-            <Menu.Item
-              to="/roles"
-              primaryText="Роли"
-              leftIcon={<BadgeIcon />}
-              sx={childItemIconSx}
-            />
-            <Menu.Item
-              to="/access-profiles"
-              primaryText="Профили доступа"
-              leftIcon={<ManageAccountsIcon />}
-              sx={childItemIconSx}
-            />
-          </SubMenu>
+          {/* Персонал: сотрудники, роли, профили доступа. */}
+          {showStaff && (
+            <SubMenu
+              name="Персонал"
+              icon={<GroupIcon />}
+              open={staffOpen}
+              onToggle={() => setStaffOpen((o) => !o)}
+              sidebarOpen={sidebarOpen}
+              isActive={staffActive}
+            >
+              {staffItems.members && (
+                <Menu.Item
+                  to="/members"
+                  primaryText="Сотрудники"
+                  leftIcon={<GroupIcon />}
+                  sx={childItemIconSx}
+                />
+              )}
+              {staffItems.roles && (
+                <Menu.Item
+                  to="/roles"
+                  primaryText="Роли"
+                  leftIcon={<BadgeIcon />}
+                  sx={childItemIconSx}
+                />
+              )}
+              {/* access_profiles: только полный администратор организации. */}
+              {staffItems.profiles && (
+                <Menu.Item
+                  to="/access-profiles"
+                  primaryText="Профили доступа"
+                  leftIcon={<ManageAccountsIcon />}
+                  sx={childItemIconSx}
+                />
+              )}
+            </SubMenu>
+          )}
 
           {/* Чек-листы: реестр экземпляров (checklist_reports) и шаблоны. */}
-          <SubMenu
-            name="Чек-листы"
-            icon={<FactCheckIcon />}
-            open={checklistsOpen}
-            onToggle={() => setChecklistsOpen((o) => !o)}
-            sidebarOpen={sidebarOpen}
-            isActive={checklistsActive}
-          >
-            {/* Было «Чек-листы» — тавтология с названием группы (ТЗ п.5). */}
-            <Menu.Item
-              to="/checklist-instances"
-              primaryText="Заполненные чек-листы"
-              leftIcon={<FactCheckIcon />}
-              sx={childItemIconSx}
-            />
-            <Menu.Item
-              to="/checklist-templates"
-              primaryText="Шаблоны чек-листов"
-              leftIcon={<ChecklistIcon />}
-              sx={childItemIconSx}
-            />
-          </SubMenu>
+          {showChecklists && (
+            <SubMenu
+              name="Чек-листы"
+              icon={<FactCheckIcon />}
+              open={checklistsOpen}
+              onToggle={() => setChecklistsOpen((o) => !o)}
+              sidebarOpen={sidebarOpen}
+              isActive={checklistsActive}
+            >
+              {/* Было «Чек-листы» — тавтология с названием группы (ТЗ п.5). */}
+              {checklistItems.instances && (
+                <Menu.Item
+                  to="/checklist-instances"
+                  primaryText="Заполненные чек-листы"
+                  leftIcon={<FactCheckIcon />}
+                  sx={childItemIconSx}
+                />
+              )}
+              {checklistItems.templates && (
+                <Menu.Item
+                  to="/checklist-templates"
+                  primaryText="Шаблоны чек-листов"
+                  leftIcon={<ChecklistIcon />}
+                  sx={childItemIconSx}
+                />
+              )}
+            </SubMenu>
+          )}
 
-          {/* Тесты (employee_tests) — только owner/admin, как зарплата и штрафы
-              (не платформенная фича, super_admin сквозным доступом не видит). */}
-          {isOrgManager && (
+          {/* Тесты (employee_tests) — не платформенная фича: super_admin сквозным доступом
+              не видит (исключение учтено в access.can()). */}
+          {showTests && (
             <SubMenu
               name="Тесты"
               icon={<QuizIcon />}
@@ -437,24 +499,28 @@ const MyMenu = () => {
               isActive={testsActive}
             >
               {/* Было «Тесты» — тавтология с названием группы (ТЗ п.5). */}
-              <Menu.Item
-                to="/test-templates"
-                primaryText="Шаблоны тестов"
-                leftIcon={<QuizIcon />}
-                sx={childItemIconSx}
-              />
-              <Menu.Item
-                to="/test-assignments"
-                primaryText="Результаты тестов"
-                leftIcon={<PollIcon />}
-                sx={childItemIconSx}
-              />
+              {testItems.templates && (
+                <Menu.Item
+                  to="/test-templates"
+                  primaryText="Шаблоны тестов"
+                  leftIcon={<QuizIcon />}
+                  sx={childItemIconSx}
+                />
+              )}
+              {testItems.assignments && (
+                <Menu.Item
+                  to="/test-assignments"
+                  primaryText="Результаты тестов"
+                  leftIcon={<PollIcon />}
+                  sx={childItemIconSx}
+                />
+              )}
             </SubMenu>
           )}
 
-          {/* Финансы — только owner/admin (super_admin не ведёт штрафы/зарплату
-              конкретной организации). */}
-          {isOrgManager && (
+          {/* Финансы — super_admin не ведёт штрафы/зарплату конкретной организации
+              (исключение учтено в access.can()). */}
+          {showFinance && (
             <SubMenu
               name="Финансы"
               icon={<CurrencyRubleIcon />}
@@ -463,39 +529,49 @@ const MyMenu = () => {
               sidebarOpen={sidebarOpen}
               isActive={financeActive}
             >
-              <Menu.Item
-                to="/payroll"
-                primaryText="Зарплата"
-                leftIcon={<CurrencyRubleIcon />}
-                sx={childItemIconSx}
-              />
-              <Menu.Item
-                to="/penalty-templates"
-                primaryText="Шаблоны штрафов"
-                leftIcon={<MoneyOffIcon />}
-                sx={childItemIconSx}
-              />
+              {financeItems.payroll && (
+                <Menu.Item
+                  to="/payroll"
+                  primaryText="Зарплата"
+                  leftIcon={<CurrencyRubleIcon />}
+                  sx={childItemIconSx}
+                />
+              )}
+              {financeItems.penaltyTemplates && (
+                <Menu.Item
+                  to="/penalty-templates"
+                  primaryText="Шаблоны штрафов"
+                  leftIcon={<MoneyOffIcon />}
+                  sx={childItemIconSx}
+                />
+              )}
               {/* manual_time_entry §4.1: рядом с «Зарплата» и «Шаблоны штрафов». */}
-              <Menu.Item
-                to="/adjustments"
-                primaryText="Начисления"
-                leftIcon={<PaidIcon />}
-                sx={childItemIconSx}
-              />
+              {financeItems.adjustments && (
+                <Menu.Item
+                  to="/adjustments"
+                  primaryText="Начисления"
+                  leftIcon={<PaidIcon />}
+                  sx={childItemIconSx}
+                />
+              )}
               {/* payroll_breakdown: справочник категорий — рядом с «Начислениями». */}
-              <Menu.Item
-                to="/adjustment-categories"
-                primaryText="Категории начислений"
-                leftIcon={<LocalOfferIcon />}
-                sx={childItemIconSx}
-              />
+              {financeItems.categories && (
+                <Menu.Item
+                  to="/adjustment-categories"
+                  primaryText="Категории начислений"
+                  leftIcon={<LocalOfferIcon />}
+                  sx={childItemIconSx}
+                />
+              )}
             </SubMenu>
           )}
 
-          <Menu.Item to="/org-stats" primaryText="Статистика" leftIcon={<BarChartIcon />} />
-          {/* База знаний — owner/admin своей org + super_admin (сквозной доступ);
-              видимость совпадает с гейтингом showOps (org выбрана и роль управляющая). */}
-          <Menu.Item to="/knowledge" primaryText="База знаний" leftIcon={<MenuBookIcon />} />
+          {opsSingles.stats && (
+            <Menu.Item to="/org-stats" primaryText="Статистика" leftIcon={<BarChartIcon />} />
+          )}
+          {opsSingles.knowledge && (
+            <Menu.Item to="/knowledge" primaryText="База знаний" leftIcon={<MenuBookIcon />} />
+          )}
         </>
       )}
 
@@ -511,14 +587,23 @@ const MyMenu = () => {
               Организация
             </ListSubheader>
           )}
-          <Menu.Item to="/work-locations" primaryText="Точки" leftIcon={<PlaceIcon />} />
-          <Menu.Item to="/invite-code" primaryText="Инвайт-код" leftIcon={<VpnKeyIcon />} />
-          <Menu.Item to="/settings" primaryText="Настройки" leftIcon={<SettingsIcon />} />
-          {/* Экран «Тариф» (tariffs/admin.md): текущий тариф, использование, сравнение
-              тарифов, «Как оплатить». Видимость — та же, что у остальных пунктов этой
-              секции (owner/admin своей org + super_admin сквозным доступом). */}
-          <Menu.Item to="/tariff" primaryText="Тариф" leftIcon={<WorkspacePremiumIcon />} />
-          <Menu.Item to="/audit-logs" primaryText="Аудит" leftIcon={<HistoryIcon />} />
+          {orgItems.locations && (
+            <Menu.Item to="/work-locations" primaryText="Точки" leftIcon={<PlaceIcon />} />
+          )}
+          {orgItems.invite && (
+            <Menu.Item to="/invite-code" primaryText="Инвайт-код" leftIcon={<VpnKeyIcon />} />
+          )}
+          {orgItems.settings && (
+            <Menu.Item to="/settings" primaryText="Настройки" leftIcon={<SettingsIcon />} />
+          )}
+          {/* Экран «Тариф» (tariffs/admin.md) — только полный администратор организации
+              (owner/admin + super_admin сквозным доступом); профилю доступа не выдаётся. */}
+          {orgItems.tariff && (
+            <Menu.Item to="/tariff" primaryText="Тариф" leftIcon={<WorkspacePremiumIcon />} />
+          )}
+          {orgItems.audit && (
+            <Menu.Item to="/audit-logs" primaryText="Аудит" leftIcon={<HistoryIcon />} />
+          )}
         </>
       )}
     </Menu>
