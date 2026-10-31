@@ -923,6 +923,19 @@ const ShiftPlanSection = () => {
   );
 };
 
+// Чек-листы чужой смены на бэке — раздел «Заполненные чек-листы» (access_profiles): обладатель
+// только «Журнала смен» видит деталь без этого блока (иначе каждый заход давал бы 403).
+// Полному администратору блок показываем как раньше.
+const ShiftChecklistsSection = () => {
+  const { isFull, can } = useOrgAccess();
+  if (!isFull && !can('checklist_instances')) return null;
+  return (
+    <SectionCard title="Чек-листы">
+      <ShiftChecklists />
+    </SectionCard>
+  );
+};
+
 // Деталь чужой орг-смены: шапка (+ ручные действия §3.1) + ручные правки (§3.2) + старт без
 // гео (shift_geo_photo_fallback) + план + штраф + начисление (§3.4) + паузы + чек-листы.
 export const OrgShiftShow = () => (
@@ -941,9 +954,7 @@ export const OrgShiftShow = () => (
       <SectionCard title="Паузы">
         <PausesBlock />
       </SectionCard>
-      <SectionCard title="Чек-листы">
-        <ShiftChecklists />
-      </SectionCard>
+      <ShiftChecklistsSection />
     </Box>
   </Show>
 );
