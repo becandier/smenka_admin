@@ -107,7 +107,9 @@ export const Dashboard = () => {
     if (manageable.length > 0) {
       const target = manageable.find((o) => o.id === org?.id) ?? manageable[0];
       const path = firstCabinetPath(computeOrgAccess(permissions, target.id));
-      return <Navigate to={path} replace />;
+      // '/' — у профиля только неизвестные админке разделы: редирект на себя дал бы пустой
+      // экран, поэтому показываем «Нет организаций для управления» ниже.
+      if (path !== '/') return <Navigate to={path} replace />;
     }
     return (
       <Box sx={{ p: 3 }}>
