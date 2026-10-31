@@ -18,6 +18,7 @@ import QuizIcon from '@mui/icons-material/Quiz';
 import PollIcon from '@mui/icons-material/Poll';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
 import PaymentsIcon from '@mui/icons-material/Payments';
+import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
 import { dataProvider } from './providers/dataProvider';
 import { authProvider, type Permissions } from './providers/authProvider';
 import { i18nProvider } from './i18n';
@@ -30,6 +31,11 @@ import { UserList, UserEdit, UserShow } from './resources/users';
 import { OrganizationList, OrganizationCreate } from './resources/organizations';
 import { MemberList, MemberEdit, MemberCreate } from './resources/members';
 import { RoleList, RoleEdit, RoleCreate } from './resources/roles';
+import {
+  AccessProfileList,
+  AccessProfileCreate,
+  AccessProfileEdit,
+} from './resources/accessProfiles';
 import { WorkLocationList, WorkLocationEdit, WorkLocationCreate } from './resources/workLocations';
 import {
   ChecklistTemplateList,
@@ -125,6 +131,14 @@ export const App = () => (
             edit={RoleEdit}
             create={RoleCreate}
             icon={BadgeIcon}
+          />
+          {/* Профили доступа (access_profiles) — только полный администратор организации. */}
+          <Resource
+            name="access-profiles"
+            list={AccessProfileList}
+            edit={AccessProfileEdit}
+            create={AccessProfileCreate}
+            icon={ManageAccountsIcon}
           />
           <Resource
             name="work-locations"

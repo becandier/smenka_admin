@@ -18,6 +18,14 @@ import type {
   SubscriptionsSummary,
 } from '../subscription/SubscriptionContext';
 import { reportTariffGateError } from '../subscription/tariffErrorBus';
+import type { AccessLevel } from '../access';
+
+export interface AccessCatalogSection {
+  id: string;
+  code: string;
+  group: string;
+  levels: AccessLevel[];
+}
 import type {
   AdminPaymentsTotals,
   BillingCheckoutRequest,
@@ -43,6 +51,8 @@ const ORG_CLIENT = new Set([
   // Мягкое удаление как у шаблонов (SOFT_DELETE_CLIENT): по умолчанию getList отдаёт только
   // живые, удалённые — по filter.include_deleted (фильтр начислений по удалённой категории).
   'adjustment-categories',
+  // access_profiles: профили доступа организации — {items} без total, порядок name.
+  'access-profiles',
 ]);
 
 // Pydantic отдаёт error.validation[].field полным loc-путём запроса — "body.login",
@@ -118,6 +128,8 @@ const clientListPath = (resource: string): string => {
       return `${orgBase()}/penalty-templates`;
     case 'adjustment-categories':
       return `${orgBase()}/adjustment-categories`;
+    case 'access-profiles':
+      return `${orgBase()}/access-profiles`;
     default:
       throw new Error(`Нет client-пути для ресурса: ${resource}`);
   }
@@ -145,6 +157,8 @@ const deleteOnePath = (resource: string, id: string): string => {
       return `${orgBase()}/test-templates/${id}`;
     case 'test-assignments':
       return `${orgBase()}/test-assignments/${id}`;
+    case 'access-profiles':
+      return `${orgBase()}/access-profiles/${id}`;
     default:
       throw new Error(`Удаление не поддержано для ресурса: ${resource}`);
   }
@@ -191,6 +205,25 @@ const SOFT_DELETE_CLIENT = new Set([
   'penalty-templates',
   'adjustment-categories',
 ]);
+
+// access-profiles (create/update): тело по контракту AccessProfile*Request. description —
+// пустая строка → null; permissions — объект {section: level} из матрицы прав.
+const buildAccessProfileBody = (d: any): Record<string, unknown> => ({
+  name: typeof d.name === 'string' ? d.name.trim() : d.name,
+  description:
+    typeof d.description === 'string' && d.description.trim() !== '' ? d.description.trim() : null,
+  permissions: d.permissions ?? {},
+});
+
+// 409 ACCESS_PROFILE_NAME_TAKEN → ошибка на поле «Название» (admin.md, «Ошибки»).
+const rethrowAccessProfileError = (e: any): never =>
+  rethrowMemberErrorAsField(e, {
+    ACCESS_PROFILE_NAME_TAKEN: {
+      field: 'name',
+      status: 409,
+      message: 'Профиль с таким названием уже есть',
+    },
+  });
 
 const loadClient = async (resource: string): Promise<any[]> => {
   const query = SOFT_DELETE_CLIENT.has(resource) ? '?include_deleted=true' : '';
@@ -470,6 +503,24 @@ export const dataProvider: DataProvider = {
       const path = resource === 'users' ? '/admin/users' : '/admin/organizations';
       const data = await request(`${path}?${buildQuery(params, { defaultSort: 'created_at' })}`);
       return { data: data?.items ?? [], total: data?.total ?? 0 };
+    }
+    if (resource === 'access-permissions') {
+      // Каталог разделов для матрицы прав профиля доступа (GET /access-permissions,
+      // access_profiles/backend.md «Каталог разделов»). Через getList — ради кэша react-query
+      // (useGetList + staleTime), как `plans`. id = code; порядок — как отдаёт бэк, без сортировки.
+      const data = await request('/access-permissions');
+      const raw: any[] = Array.isArray(data?.sections) ? data.sections : [];
+      const items: AccessCatalogSection[] = raw
+        .filter((sec) => typeof sec?.code === 'string')
+        .map((sec) => ({
+          id: sec.code,
+          code: sec.code,
+          group: typeof sec.group === 'string' ? sec.group : '',
+          levels: (Array.isArray(sec.levels) ? sec.levels : []).filter(
+            (l: unknown): l is AccessLevel => l === 'view' || l === 'manage',
+          ),
+        }));
+      return { data: items, total: items.length };
     }
     if (resource === 'plans') {
       // Витрина тарифов (tariffs/backend.md п.1) как read-only ресурс react-admin: нужна
@@ -888,6 +939,18 @@ export const dataProvider: DataProvider = {
         }),
       };
     }
+    if (resource === 'access-profiles') {
+      try {
+        return {
+          data: await request(`${orgBase()}/access-profiles`, {
+            method: 'POST',
+            body: JSON.stringify(buildAccessProfileBody(d)),
+          }),
+        };
+      } catch (e: any) {
+        return rethrowAccessProfileError(e);
+      }
+    }
     if (resource === 'work-locations') {
       const body = {
         name: d.name,
@@ -1115,6 +1178,18 @@ export const dataProvider: DataProvider = {
         body: JSON.stringify({ name: data.name }),
       });
       return { data: updated ?? { ...data, id } };
+    }
+    if (resource === 'access-profiles') {
+      // PATCH: permissions заменяется целиком (backend.md) — шлём полный набор из формы.
+      try {
+        const updated = await request(`${orgBase()}/access-profiles/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(buildAccessProfileBody(data)),
+        });
+        return { data: updated ?? { ...data, id } };
+      } catch (e: any) {
+        return rethrowAccessProfileError(e);
+      }
     }
     if (resource === 'work-locations') {
       const body: Record<string, unknown> = {

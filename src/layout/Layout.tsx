@@ -47,6 +47,7 @@ import PollIcon from '@mui/icons-material/Poll';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
+import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { OrgSwitcher } from '../components/OrgSwitcher';
@@ -285,7 +286,11 @@ const MyMenu = () => {
     '/overtime-requests',
     '/work-schedules',
   ]);
-  const [staffOpen, setStaffOpen, staffActive] = useGroupOpen(['/members', '/roles']);
+  const [staffOpen, setStaffOpen, staffActive] = useGroupOpen([
+    '/members',
+    '/roles',
+    '/access-profiles',
+  ]);
   const [checklistsOpen, setChecklistsOpen, checklistsActive] = useGroupOpen([
     '/checklist-instances',
     '/checklist-templates',
@@ -386,6 +391,12 @@ const MyMenu = () => {
               to="/roles"
               primaryText="Роли"
               leftIcon={<BadgeIcon />}
+              sx={childItemIconSx}
+            />
+            <Menu.Item
+              to="/access-profiles"
+              primaryText="Профили доступа"
+              leftIcon={<ManageAccountsIcon />}
               sx={childItemIconSx}
             />
           </SubMenu>
