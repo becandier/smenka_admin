@@ -18,6 +18,7 @@ import type {
   SubscriptionsSummary,
 } from '../subscription/SubscriptionContext';
 import { reportTariffGateError } from '../subscription/tariffErrorBus';
+import { reportForbiddenError } from './forbiddenErrorBus';
 import type { AccessLevel } from '../access';
 
 export interface AccessCatalogSection {
@@ -97,6 +98,9 @@ const request = async (path: string, options: RequestInit = {}): Promise<any> =>
     // TariffErrorAlert в Layout подписан и покажет ссылку на «Тариф» рядом со стандартным
     // toast'ом react-admin (который уже показывает этот же человекочитаемый текст с бэка).
     reportTariffGateError(err?.code, message);
+    // 403 FORBIDDEN (нет права профиля доступа) — уведомление с текстом бэка через шину
+    // (access_profiles/admin.md, «403 от API»); checkError на 403 не разлогинивает.
+    reportForbiddenError(res.status, err?.code, message);
     throw new HttpError(message, res.status, body);
   }
   return json ? json.data : null;
