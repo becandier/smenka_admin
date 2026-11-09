@@ -53,9 +53,21 @@ export class TableLayoutStore {
   private generation = 0;
   private errorShown = false;
   private readonly delayMs: number;
+  private readonly storage: LocalStorageLike | null;
+  private api: PreferencesApi;
+  private onSaveError: () => void;
 
-  constructor(private readonly options: TableLayoutStoreOptions) {
+  constructor(options: TableLayoutStoreOptions) {
     this.delayMs = options.delayMs ?? SAVE_DELAY_MS;
+    this.storage = options.storage;
+    this.api = options.api;
+    this.onSaveError = options.onSaveError;
+  }
+
+  // Обновить API и обработчик ошибки (React-обёртка передаёт свежие dataProvider/notify).
+  connect(api: PreferencesApi, onSaveError: () => void): void {
+    this.api = api;
+    this.onSaveError = onSaveError;
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -98,15 +110,15 @@ export class TableLayoutStore {
     this.schedule(tableId);
   }
 
+  // Отложенные записи отменяются: изменение за секунду до ухода может не сохраниться (admin.md).
   dispose(): void {
     this.cancelTimers();
-    this.listeners.clear();
   }
 
   private async load(generation: number): Promise<void> {
     let preferences: Record<string, unknown>;
     try {
-      preferences = await this.options.api.load(PREFERENCE_PREFIX);
+      preferences = await this.api.load(PREFERENCE_PREFIX);
     } catch {
       return;
     }
@@ -141,12 +153,12 @@ export class TableLayoutStore {
     const key = PREFERENCE_PREFIX + tableId;
     const value = this.layouts[tableId];
     try {
-      if (value === undefined) await this.options.api.remove(key);
-      else await this.options.api.save(key, value);
+      if (value === undefined) await this.api.remove(key);
+      else await this.api.save(key, value);
     } catch {
       if (generation === this.generation && !this.errorShown) {
         this.errorShown = true;
-        this.options.onSaveError();
+        this.onSaveError();
       }
       return;
     }
@@ -166,7 +178,7 @@ export class TableLayoutStore {
   }
 
   private readLocal(userId: string): Layouts {
-    const storage = this.options.storage;
+    const storage = this.storage;
     if (storage === null) return {};
     try {
       const raw = storage.getItem(LOCAL_STORAGE_KEY);
@@ -180,7 +192,7 @@ export class TableLayoutStore {
   }
 
   private writeLocal(): void {
-    const storage = this.options.storage;
+    const storage = this.storage;
     if (storage === null || this.userId === null) return;
     const copy: LocalCopy = { userId: this.userId, layouts: this.layouts };
     try {
