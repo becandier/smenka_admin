@@ -498,3 +498,89 @@ describe('TableLayoutStore: порядок запросов одного клю�
     expect(onSaveError).not.toHaveBeenCalled();
   });
 });
+
+// После dispose() (размонтирование Layout при разлогине) хранилище ничего не делает.
+describe('TableLayoutStore: dispose', () => {
+  it.each([
+    ['ошибка', () => Promise.reject(new Error('401'))],
+    ['заглушка {data: {}}', () => Promise.resolve(LOGOUT_STUB)],
+  ])(
+    'запись в пути завершилась после dispose (%s) — без уведомления и повторов',
+    async (_name, outcome) => {
+      const api = makeApi();
+      const put = deferred<unknown>();
+      api.save.mockImplementationOnce(() => put.promise);
+      const onSaveError = vi.fn();
+      const store = makeStore(api, { onSaveError });
+      store.setUser('u1');
+      await vi.runAllTimersAsync();
+
+      store.set('org-shifts', LAYOUT_A);
+      store.set('members', LAYOUT_B);
+      await vi.advanceTimersByTimeAsync(1000);
+      const callsBefore = api.save.mock.calls.length + api.remove.mock.calls.length;
+
+      store.dispose();
+      outcome().then(put.resolve, put.reject);
+      await vi.advanceTimersByTimeAsync(2 * 60000);
+
+      expect(onSaveError).not.toHaveBeenCalled();
+      expect(api.save.mock.calls.length + api.remove.mock.calls.length).toBe(callsBefore);
+      expect(api.load).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('отложенная запись не уходит после dispose', async () => {
+    const api = makeApi();
+    const store = makeStore(api);
+    store.setUser('u1');
+    await vi.runAllTimersAsync();
+
+    store.set('org-shifts', LAYOUT_A);
+    store.dispose();
+    store.set('org-shifts', LAYOUT_B);
+    await vi.advanceTimersByTimeAsync(2 * 60000);
+    expect(api.save).not.toHaveBeenCalled();
+  });
+
+  it('ответ загрузки после dispose не трогает localStorage и слушателей', async () => {
+    const storage = memoryStorage();
+    const load = deferred<unknown>();
+    const api = { ...makeApi(), load: vi.fn(() => load.promise) };
+    const store = makeStore(api, { storage });
+    store.setUser('u1');
+
+    store.dispose();
+    // Тем временем вошёл другой пользователь — его локальная копия не должна пострадать.
+    const otherCopy = JSON.stringify({ userId: 'u2', layouts: { members: LAYOUT_C } });
+    storage.data[LOCAL_STORAGE_KEY] = otherCopy;
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    load.resolve(loaded({ 'admin.table.org-shifts': LAYOUT_A }));
+    await vi.advanceTimersByTimeAsync(2 * 60000);
+    expect(storage.data[LOCAL_STORAGE_KEY]).toBe(otherCopy);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('dispose, затем setUser с тем же id — хранилище поднимается заново (StrictMode)', async () => {
+    const storage = memoryStorage({
+      [LOCAL_STORAGE_KEY]: JSON.stringify({ userId: 'u1', layouts: { members: LAYOUT_B } }),
+    });
+    const api = makeApi({ 'admin.table.members': LAYOUT_B });
+    const store = makeStore(api, { storage });
+
+    store.setUser('u1');
+    store.dispose();
+    store.setUser('u1');
+    expect(store.get('members')).toEqual(LAYOUT_B);
+    await vi.runAllTimersAsync();
+    expect(api.load).toHaveBeenCalledTimes(2);
+    expect(store.get('members')).toEqual(LAYOUT_B);
+
+    store.set('org-shifts', LAYOUT_A);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(api.save).toHaveBeenCalledWith('admin.table.org-shifts', LAYOUT_A);
+    expect(JSON.parse(storage.data[LOCAL_STORAGE_KEY]).layouts['org-shifts']).toEqual(LAYOUT_A);
+  });
+});

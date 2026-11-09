@@ -112,17 +112,11 @@ export class TableLayoutStore {
 
   // Установление сессии пользователя: локальная копия этого пользователя сразу, затем загрузка
   // с сервера. Повторный вызов с тем же id ничего не делает.
+  // После dispose() хранилище без пользователя, поэтому setUser поднимает его заново даже
+  // с тем же id (React.StrictMode в dev: «смонтировать → очистить → смонтировать»).
   setUser(userId: string | null): void {
     if (userId === this.userId) return;
-    this.cancelTimers();
-    this.unsaved.clear();
-    this.edited.clear();
-    this.versions.clear();
-    this.inFlight.clear();
-    this.queued.clear();
-    this.retryAttempt = 0;
-    this.errorShown = false;
-    this.generation += 1;
+    this.endSession();
     this.userId = userId;
     this.layouts = userId === null ? {} : this.readLocal(userId);
     this.emit();
@@ -147,8 +141,28 @@ export class TableLayoutStore {
 
   // Отложенные записи и автоповтор отменяются: изменение за секунду до ухода может не
   // сохраниться (admin.md).
+  //
+  // После dispose() хранилище ничего не делает: ни запросов, ни уведомлений, ни автоповторов,
+  // ни записи в localStorage, ни оповещения слушателей — даже когда завершаются запросы,
+  // начатые до него (их продолжения отсекает смена поколения). Иначе после разлогина старое
+  // хранилище могло бы записать раскладку прежнего пользователя под токеном нового.
   dispose(): void {
+    this.endSession();
+    this.userId = null;
+  }
+
+  // Завершить сессию текущего пользователя: таймеры, очереди и пометки сбрасываются, ответы
+  // запросов, начатых до этого, отбрасываются (generation).
+  private endSession(): void {
     this.cancelTimers();
+    this.unsaved.clear();
+    this.edited.clear();
+    this.versions.clear();
+    this.inFlight.clear();
+    this.queued.clear();
+    this.retryAttempt = 0;
+    this.errorShown = false;
+    this.generation += 1;
   }
 
   private async load(generation: number): Promise<void> {
