@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import {
   List,
-  Datagrid,
   TextField,
   EmailField,
   FunctionField,
@@ -85,6 +84,7 @@ import {
 import { AdjustmentFormDialog } from './adjustments';
 import { GeoFallbackChip, ShiftGeoFallbackSection } from './shiftGeoFallback';
 import { wideDatagridScrollSx } from '../theme';
+import { ColumnsDatagrid, TableColumns, TableColumnsButton } from '../tableColumns/TableColumns';
 
 const statusChoices = [
   { id: 'active', name: 'Активна' },
@@ -267,6 +267,53 @@ const RestoreRowAction = ({ shift }: { shift: RaRecord }) => {
 // Тело списка. Пустоту обрабатываем сами через useListContext: проп <List empty>
 // в react-admin v5 НЕ рендерится при активных фильтрах, а ТЗ требует кастомный
 // empty-state и для отфильтрованного результата (фильтр по сотруднику без смен).
+// Столбцы журнала смен (table_column_settings): key — идентификатор столбца в раскладке,
+// без key — служебный столбец (всегда в конце).
+const shiftFields = [
+  <FunctionField key="employee" label="Сотрудник" render={nameField} sortable={false} />,
+  <EmailField key="email" source="user_email" label="Email" emptyText="—" sortable={false} />,
+  <FunctionField key="role" label="Роль" render={roleField} />,
+  <TextField
+    key="custom_role"
+    source="custom_role_name"
+    label="Кастомная роль"
+    emptyText="—"
+    sortable={false}
+  />,
+  <FunctionField key="status" label="Статус" render={statusField} />,
+  // manual_time_entry §1.3: чипы «Ручная»/«Изменена»/«Удалена» — Tooltip с manual_note
+  // и кто правил.
+  <FunctionField key="marks" label="Пометки" render={ShiftManualChips} sortable={false} />,
+  // shift_geo_photo_fallback: бейдж «Без гео» с причиной в tooltip; у обычных смен
+  // колонка пустая.
+  <FunctionField key="geo" label="Гео" render={GeoFallbackChip} sortable={false} />,
+  <FunctionField
+    key="started_at"
+    label="Начало"
+    render={(record: RaRecord) => (
+      <OrganizationTimeText value={record.started_at} timeZone={record.organization_timezone} />
+    )}
+  />,
+  <FunctionField
+    key="finished_at"
+    label="Конец"
+    render={(record: RaRecord) => (
+      <OrganizationTimeText value={record.finished_at} timeZone={record.organization_timezone} />
+    )}
+  />,
+  <FunctionField key="worked" label="Отработано" render={durationField} />,
+  <FunctionField key="work_location" label="Точка" render={workLocationName} sortable={false} />,
+  <FunctionField key="checklists" label="Чек-листы" render={checklistsSummaryCell} />,
+  <FunctionField key="schedule" label="График" render={scheduleField} sortable={false} />,
+  <FunctionField key="late" label="Опоздание" render={lateField} sortable={false} />,
+  <FunctionField key="overtime" label="Переработка" render={overtimeField} sortable={false} />,
+  <FunctionField
+    label=""
+    render={(r: RaRecord) => <RestoreRowAction shift={r} />}
+    sortable={false}
+  />,
+];
+
 const OrgShiftDatagrid = () => {
   const { isPending, data, filterValues } = useListContext();
   // При невалидном диапазоне запрос заблокирован (см. DateRangeAlert) — не показываем
@@ -274,7 +321,7 @@ const OrgShiftDatagrid = () => {
   if (isDayRangeInvalid(filterValues?.date_from, filterValues?.date_to)) return null;
   if (!isPending && (data ?? []).length === 0) return <ShiftsEmpty />;
   return (
-    <Datagrid
+    <ColumnsDatagrid
       bulkActionButtons={false}
       rowClick="show"
       // manual_time_entry §1.3: удалённые строки (include_deleted=true) визуально погашены.
@@ -285,42 +332,7 @@ const OrgShiftDatagrid = () => {
       // Datagrid (ломает sticky-шапку) и что делает wideDatagridScrollSx — см. комментарий
       // у RaDatagrid в theme.ts.
       sx={wideDatagridScrollSx}
-    >
-      <FunctionField label="Сотрудник" render={nameField} sortable={false} />
-      <EmailField source="user_email" label="Email" emptyText="—" sortable={false} />
-      <FunctionField label="Роль" render={roleField} />
-      <TextField source="custom_role_name" label="Кастомная роль" emptyText="—" sortable={false} />
-      <FunctionField label="Статус" render={statusField} />
-      {/* manual_time_entry §1.3: чипы «Ручная»/«Изменена»/«Удалена» — Tooltip с manual_note
-          и кто правил. */}
-      <FunctionField label="Пометки" render={ShiftManualChips} sortable={false} />
-      {/* shift_geo_photo_fallback: бейдж «Без гео» с причиной в tooltip; у обычных смен
-          колонка пустая. */}
-      <FunctionField label="Гео" render={GeoFallbackChip} sortable={false} />
-      <FunctionField
-        label="Начало"
-        render={(record: RaRecord) => (
-          <OrganizationTimeText value={record.started_at} timeZone={record.organization_timezone} />
-        )}
-      />
-      <FunctionField
-        label="Конец"
-        render={(record: RaRecord) => (
-          <OrganizationTimeText value={record.finished_at} timeZone={record.organization_timezone} />
-        )}
-      />
-      <FunctionField label="Отработано" render={durationField} />
-      <FunctionField label="Точка" render={workLocationName} sortable={false} />
-      <FunctionField label="Чек-листы" render={checklistsSummaryCell} />
-      <FunctionField label="График" render={scheduleField} sortable={false} />
-      <FunctionField label="Опоздание" render={lateField} sortable={false} />
-      <FunctionField label="Переработка" render={overtimeField} sortable={false} />
-      <FunctionField
-        label=""
-        render={(r: RaRecord) => <RestoreRowAction shift={r} />}
-        sortable={false}
-      />
-    </Datagrid>
+    />
   );
 };
 
@@ -333,13 +345,16 @@ const OrgShiftListActions = () => {
   const isReadOnly = useIsReadOnly();
   const [open, setOpen] = useState(false);
   // Read-only (backend.md «Read-only режим»): создание ручной смены — не из исключений.
-  if (!canManualEdit || isReadOnly) return null;
+  // «Столбцы» (table_column_settings) — всегда, даже когда добавлять смену нельзя.
+  const canAdd = canManualEdit && !isReadOnly;
   return (
     <TopToolbar>
-      <Button startIcon={<AddIcon />} onClick={() => setOpen(true)}>
-        Добавить смену
-      </Button>
-      {open && (
+      {canAdd && (
+        <Button startIcon={<AddIcon />} onClick={() => setOpen(true)}>
+          Добавить смену
+        </Button>
+      )}
+      {canAdd && open && (
         <ManualShiftCreateDialog
           onClose={() => setOpen(false)}
           onDone={() => {
@@ -348,6 +363,7 @@ const OrgShiftListActions = () => {
           }}
         />
       )}
+      <TableColumnsButton />
     </TopToolbar>
   );
 };
@@ -358,17 +374,19 @@ const OrgShiftListActions = () => {
 export const OrgShiftList = () => {
   const timeZone = useOrgTimezone();
   return (
-    <List
-      filters={shiftFilters}
-      filter={{ __organization_timezone: timeZone }}
-      sort={{ field: 'started_at', order: 'DESC' }}
-      exporter={false}
-      empty={false}
-      actions={<OrgShiftListActions />}
-    >
-      <DateRangeAlert />
-      <OrgShiftDatagrid />
-    </List>
+    <TableColumns tableId="org-shifts" fields={shiftFields}>
+      <List
+        filters={shiftFilters}
+        filter={{ __organization_timezone: timeZone }}
+        sort={{ field: 'started_at', order: 'DESC' }}
+        exporter={false}
+        empty={false}
+        actions={<OrgShiftListActions />}
+      >
+        <DateRangeAlert />
+        <OrgShiftDatagrid />
+      </List>
+    </TableColumns>
   );
 };
 

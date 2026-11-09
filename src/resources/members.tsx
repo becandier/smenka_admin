@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import {
   List,
-  Datagrid,
   TextField,
   Edit,
   Create,
@@ -46,6 +45,8 @@ import { MemberNameCell } from '../components/MemberNameCell';
 import { NoAccess } from '../components/NoAccess';
 import { OrganizationTimeText } from '../components/TimeText';
 import { ResetPasswordDialog, useIssuedCredentials } from './memberCredentials';
+import { ColumnsDatagrid, TableColumns, TableColumnsButton } from '../tableColumns/TableColumns';
+import { unavailableColumn } from '../tableColumns/fields';
 
 // Управление сотрудниками (кнопка «Добавить», смена пароля, правка логина, удаление) —
 // право «Сотрудники · управление» (access_profiles/admin.md §2): полный администратор или
@@ -194,6 +195,7 @@ const MemberListActions = () => {
     <TopToolbar>
       <FilterButton />
       {canManage && !isReadOnly && <CreateButton label="Добавить сотрудника" />}
+      <TableColumnsButton />
     </TopToolbar>
   );
 };
@@ -202,26 +204,36 @@ export const MemberList = () => {
   const { isFull, can } = useOrgAccess();
   // current_rate бэк заполняет полному администратору или при payroll:view.
   const showRate = isFull || can('payroll');
+  // Столбцы (table_column_settings): key — идентификатор столбца в раскладке. «Ставка» без
+  // права — unavailableColumn: не видна ни в таблице, ни в меню, но место в раскладке хранит.
+  const fields = [
+    <FunctionField key="name" label="Имя" render={nameField} sortBy="user_name" />,
+    <TextField key="login" source="user_login" label="Логин" emptyText="—" />,
+    <FunctionField key="email" label="Email" render={emailField} />,
+    <FunctionField key="access" label="Доступ в кабинет" render={accessField} sortBy="role" />,
+    <TextField key="custom_role" source="custom_role.name" label="Кастомная роль" emptyText="—" />,
+    showRate ? (
+      <FunctionField key="rate" label="Ставка" render={rateField} />
+    ) : (
+      unavailableColumn('rate')
+    ),
+    <FunctionField
+      key="joined_at"
+      label="Присоединился"
+      render={(record: RaRecord) => <OrganizationTimeText value={record.joined_at} />}
+    />,
+  ];
   return (
-    <List
-      filters={memberFilters}
-      sort={{ field: 'joined_at', order: 'DESC' }}
-      exporter={false}
-      actions={<MemberListActions />}
-    >
-      <Datagrid rowClick="edit" bulkActionButtons={false}>
-        <FunctionField label="Имя" render={nameField} sortBy="user_name" />
-        <TextField source="user_login" label="Логин" emptyText="—" />
-        <FunctionField label="Email" render={emailField} />
-        <FunctionField label="Доступ в кабинет" render={accessField} sortBy="role" />
-        <TextField source="custom_role.name" label="Кастомная роль" emptyText="—" />
-        {showRate && <FunctionField label="Ставка" render={rateField} />}
-        <FunctionField
-          label="Присоединился"
-          render={(record: RaRecord) => <OrganizationTimeText value={record.joined_at} />}
-        />
-      </Datagrid>
-    </List>
+    <TableColumns tableId="members" fields={fields}>
+      <List
+        filters={memberFilters}
+        sort={{ field: 'joined_at', order: 'DESC' }}
+        exporter={false}
+        actions={<MemberListActions />}
+      >
+        <ColumnsDatagrid rowClick="edit" bulkActionButtons={false} />
+      </List>
+    </TableColumns>
   );
 };
 
