@@ -1811,22 +1811,15 @@ export const dataProvider: DataProvider = {
   // возвращает график к базовым временам для всех дней.
   setScheduleWeeklyRules: (
     scheduleId: string,
-    rules: {
-      weekday: number;
-      is_enabled: boolean;
-      start_time: string | null;
-      end_time: string | null;
-    }[],
+    rules: { weekday: number; is_enabled: boolean; start_time: string | null; end_time: string | null }[],
   ) =>
     request(`${orgBase()}/work-schedules/${scheduleId}/weekly-rules`, {
       method: 'PUT',
-      body: JSON.stringify({
-        rules: rules.map((rule) => ({
-          ...rule,
-          start_time: rule.is_enabled ? rule.start_time : null,
-          end_time: rule.is_enabled ? rule.end_time : null,
-        })),
-      }),
+      body: JSON.stringify({ rules: rules.map((rule) => ({
+        ...rule,
+        start_time: rule.is_enabled ? rule.start_time : null,
+        end_time: rule.is_enabled ? rule.end_time : null,
+      })) }),
     }),
   // Личные переопределения сотрудника: контракт бэка заменяет ВЕСЬ список переопределений
   // сотрудника по ВСЕМ графикам сразу (PUT .../members/{user_id}/schedule-overrides), в отличие
