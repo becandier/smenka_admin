@@ -4,21 +4,30 @@
 // синхронизирует их с сервером (/users/me/preferences) и с локальной копией в браузере.
 //
 // - Загрузка: один раз на пользователя (setUser) — GET по префиксу admin.table.; UI её не ждёт,
-//   до ответа работает локальная копия. Ответ заменяет локальную копию; таблицы, изменённые
-//   пользователем, пока ответ был в пути, сохраняют локальное значение.
+//   до ответа работает локальная копия. Ответ применяется, только если в нём есть объект
+//   настроек ({preferences: {...}}); иначе — как ошибка загрузки (молча, локальная копия не
+//   меняется). Таблицы, изменённые пользователем после старта загрузки, ответ не трогает —
+//   успела их запись завершиться или нет.
 // - Запись: изменение применяется сразу, на сервер уходит через delayMs после последнего
 //   изменения этой таблицы (серия шагов перетаскивания → один PUT). null → DELETE ключа.
-// - Ошибка записи: локальное значение остаётся, onSaveError вызывается один раз, пока
-//   какая-нибудь запись не пройдёт; следующее изменение повторяет попытку. Ошибка загрузки —
-//   молча.
+//   На один ключ одновременно не больше одного запроса: следующий стартует после текущего и
+//   несёт последнее значение (промежуточные схлопываются). Запись успешна, только если пришёл
+//   ответ сервера (у PUT есть key, у DELETE — deleted), а не заглушка ra-core после разлогина.
+// - Ошибка записи: локальное значение остаётся, таблица помечается несохранённой и уходит
+//   повторно сама — после следующей успешной записи любой таблицы, при следующем изменении
+//   любой таблицы и автоповтором с растущей паузой (retryDelaysMs). Уведомление onSaveError —
+//   одно на серию: снова покажется, только когда все таблицы сохранились и запись снова упала.
+//   Ошибка устаревшего запроса не уведомляет, если за ним уже стоит более новая запись ключа.
 // - Локальная копия помечена id пользователя и чужому пользователю не применяется.
 
 export const PREFERENCE_PREFIX = 'admin.table.';
 export const LOCAL_STORAGE_KEY = 'smenka.tableLayouts';
 export const SAVE_DELAY_MS = 1000;
+export const RETRY_DELAYS_MS: readonly number[] = [5000, 15000, 60000];
 
+// Методы dataProvider; ответы — как пришли (их форма проверяется здесь).
 export interface PreferencesApi {
-  load: (prefix: string) => Promise<Record<string, unknown>>;
+  load: (prefix: string) => Promise<unknown>;
   save: (key: string, value: unknown) => Promise<unknown>;
   remove: (key: string) => Promise<unknown>;
 }
@@ -30,9 +39,11 @@ export interface TableLayoutStoreOptions {
   storage: LocalStorageLike | null;
   onSaveError: () => void;
   delayMs?: number;
+  retryDelaysMs?: readonly number[];
 }
 
 type Layouts = Record<string, unknown>;
+type Timer = ReturnType<typeof setTimeout>;
 
 interface LocalCopy {
   userId: string;
@@ -42,23 +53,40 @@ interface LocalCopy {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const isSaveResponse = (value: unknown): boolean =>
+  isRecord(value) && typeof value.key === 'string';
+
+const isDeleteResponse = (value: unknown): boolean =>
+  isRecord(value) && typeof value.deleted === 'number';
+
 export class TableLayoutStore {
   private userId: string | null = null;
   private layouts: Layouts = {};
-  // Таблицы, изменённые локально и ещё не подтверждённые сервером.
-  private readonly dirty = new Set<string>();
-  private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+  // Таблицы, значение которых сервер ещё не подтвердил.
+  private readonly unsaved = new Set<string>();
+  // Таблицы, изменённые пользователем после старта загрузки: её ответ их не трогает.
+  private readonly edited = new Set<string>();
+  // Номер последнего изменения таблицы: по нему видно, что запрос нёс устаревшее значение.
+  private readonly versions = new Map<string, number>();
+  private readonly debounce = new Map<string, Timer>();
+  private readonly inFlight = new Set<string>();
+  // Ключи, которые нужно записать ещё раз сразу после завершения текущего запроса.
+  private readonly queued = new Set<string>();
   private readonly listeners = new Set<() => void>();
+  private retryTimer: Timer | null = null;
+  private retryAttempt = 0;
   // Растёт при смене пользователя: ответы, начатые для прошлого пользователя, отбрасываются.
   private generation = 0;
   private errorShown = false;
   private readonly delayMs: number;
+  private readonly retryDelaysMs: readonly number[];
   private readonly storage: LocalStorageLike | null;
   private api: PreferencesApi;
   private onSaveError: () => void;
 
   constructor(options: TableLayoutStoreOptions) {
     this.delayMs = options.delayMs ?? SAVE_DELAY_MS;
+    this.retryDelaysMs = options.retryDelaysMs ?? RETRY_DELAYS_MS;
     this.storage = options.storage;
     this.api = options.api;
     this.onSaveError = options.onSaveError;
@@ -87,7 +115,12 @@ export class TableLayoutStore {
   setUser(userId: string | null): void {
     if (userId === this.userId) return;
     this.cancelTimers();
-    this.dirty.clear();
+    this.unsaved.clear();
+    this.edited.clear();
+    this.versions.clear();
+    this.inFlight.clear();
+    this.queued.clear();
+    this.retryAttempt = 0;
     this.errorShown = false;
     this.generation += 1;
     this.userId = userId;
@@ -106,28 +139,33 @@ export class TableLayoutStore {
     this.layouts = next;
     this.writeLocal();
     this.emit();
-    this.dirty.add(tableId);
+    this.unsaved.add(tableId);
+    this.edited.add(tableId);
+    this.versions.set(tableId, (this.versions.get(tableId) ?? 0) + 1);
     this.schedule(tableId);
   }
 
-  // Отложенные записи отменяются: изменение за секунду до ухода может не сохраниться (admin.md).
+  // Отложенные записи и автоповтор отменяются: изменение за секунду до ухода может не
+  // сохраниться (admin.md).
   dispose(): void {
     this.cancelTimers();
   }
 
   private async load(generation: number): Promise<void> {
-    let preferences: Record<string, unknown>;
+    let result: unknown;
     try {
-      preferences = await this.api.load(PREFERENCE_PREFIX);
+      result = await this.api.load(PREFERENCE_PREFIX);
     } catch {
       return;
     }
-    if (generation !== this.generation || !isRecord(preferences)) return;
+    if (generation !== this.generation) return;
+    // Не ответ сервера (например, заглушка {data: {}} после разлогина) — как ошибка загрузки.
+    if (!isRecord(result) || !isRecord(result.preferences)) return;
     const next: Layouts = {};
-    for (const [key, value] of Object.entries(preferences)) {
+    for (const [key, value] of Object.entries(result.preferences)) {
       if (key.startsWith(PREFERENCE_PREFIX)) next[key.slice(PREFERENCE_PREFIX.length)] = value;
     }
-    for (const tableId of this.dirty) {
+    for (const tableId of this.edited) {
       if (tableId in this.layouts) next[tableId] = this.layouts[tableId];
       else delete next[tableId];
     }
@@ -137,40 +175,90 @@ export class TableLayoutStore {
   }
 
   private schedule(tableId: string): void {
-    const existing = this.timers.get(tableId);
+    const existing = this.debounce.get(tableId);
     if (existing !== undefined) clearTimeout(existing);
-    const generation = this.generation;
-    this.timers.set(
+    this.debounce.set(
       tableId,
       setTimeout(() => {
-        this.timers.delete(tableId);
-        void this.flush(tableId, generation);
+        this.debounce.delete(tableId);
+        this.request(tableId);
+        // Изменение любой таблицы — повод заодно отправить несохранённые остальные.
+        this.retryUnsaved();
       }, this.delayMs),
     );
   }
 
-  private async flush(tableId: string, generation: number): Promise<void> {
-    const key = PREFERENCE_PREFIX + tableId;
-    const value = this.layouts[tableId];
-    try {
-      if (value === undefined) await this.api.remove(key);
-      else await this.api.save(key, value);
-    } catch {
-      if (generation === this.generation && !this.errorShown) {
-        this.errorShown = true;
-        this.onSaveError();
-      }
+  // Записать таблицу сейчас или, если запрос этого ключа в пути, сразу после него.
+  private request(tableId: string): void {
+    if (this.inFlight.has(tableId)) {
+      this.queued.add(tableId);
       return;
     }
+    void this.send(tableId);
+  }
+
+  private retryUnsaved(): void {
+    for (const tableId of this.unsaved) {
+      if (!this.debounce.has(tableId) && !this.inFlight.has(tableId)) this.request(tableId);
+    }
+  }
+
+  private async send(tableId: string): Promise<void> {
+    const generation = this.generation;
+    const version = this.versions.get(tableId) ?? 0;
+    const key = PREFERENCE_PREFIX + tableId;
+    const value = this.layouts[tableId];
+    this.inFlight.add(tableId);
+    let ok: boolean;
+    try {
+      ok =
+        value === undefined
+          ? isDeleteResponse(await this.api.remove(key))
+          : isSaveResponse(await this.api.save(key, value));
+    } catch {
+      ok = false;
+    }
     if (generation !== this.generation) return;
-    this.errorShown = false;
-    // Пока запрос был в пути, могло прийти новое изменение — оно запишется своим таймером.
-    if (!this.timers.has(tableId) && this.layouts[tableId] === value) this.dirty.delete(tableId);
+    this.inFlight.delete(tableId);
+
+    if (ok && (this.versions.get(tableId) ?? 0) === version) this.unsaved.delete(tableId);
+    // Есть более новая запись этого ключа — её исход и решает, сохранена ли таблица.
+    const superseded = this.queued.has(tableId) || this.debounce.has(tableId);
+    if (this.queued.delete(tableId)) void this.send(tableId);
+
+    if (ok) this.onWriteSuccess();
+    else if (!superseded) this.onWriteFailure();
+  }
+
+  private onWriteSuccess(): void {
+    this.retryAttempt = 0;
+    if (this.retryTimer !== null) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    if (this.unsaved.size === 0) this.errorShown = false;
+    else this.retryUnsaved();
+  }
+
+  private onWriteFailure(): void {
+    if (!this.errorShown) {
+      this.errorShown = true;
+      this.onSaveError();
+    }
+    if (this.retryTimer !== null || this.retryAttempt >= this.retryDelaysMs.length) return;
+    const delay = this.retryDelaysMs[this.retryAttempt];
+    this.retryAttempt += 1;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      this.retryUnsaved();
+    }, delay);
   }
 
   private cancelTimers(): void {
-    for (const timer of this.timers.values()) clearTimeout(timer);
-    this.timers.clear();
+    for (const timer of this.debounce.values()) clearTimeout(timer);
+    this.debounce.clear();
+    if (this.retryTimer !== null) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
   }
 
   private emit(): void {

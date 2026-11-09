@@ -1561,11 +1561,12 @@ export const dataProvider: DataProvider = {
 
   // --- Личные настройки пользователя (table_column_settings/backend.md) ---
   // Значения непрозрачны для бэка; формат раскладки таблиц — src/tableColumns/layout.ts.
-  getPreferences: async (prefix?: string): Promise<Record<string, unknown>> => {
+  // Ответ возвращается как есть ({preferences: {...}}): его форму проверяет вызывающий —
+  // обёртка useDataProvider после разлогина подменяет ответ заглушкой {data: {}}, и её нельзя
+  // принять за пустой набор настроек (src/tableColumns/store.ts).
+  getPreferences: (prefix?: string): Promise<unknown> => {
     const query = prefix ? `?prefix=${encodeURIComponent(prefix)}` : '';
-    const data = await request(`/users/me/preferences${query}`);
-    const preferences = data?.preferences;
-    return typeof preferences === 'object' && preferences !== null ? preferences : {};
+    return request(`/users/me/preferences${query}`);
   },
   putPreference: (key: string, value: Record<string, unknown>) =>
     request(`/users/me/preferences/${encodeURIComponent(key)}`, {
