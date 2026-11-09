@@ -1,6 +1,5 @@
 import {
   List,
-  Datagrid,
   TextField,
   FunctionField,
   Edit,
@@ -19,6 +18,7 @@ import { useSectionReadOnly } from '../utils/useOrgAccess';
 import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
 import { OrganizationTimeText } from '../components/TimeText';
 import { ViewModeAlert } from '../components/ViewModeAlert';
+import { ColumnsDatagrid, TableColumns, TableColumnsButton } from '../tableColumns/TableColumns';
 
 const roleFilters = [<SearchInput key="q" source="q" alwaysOn />];
 
@@ -30,9 +30,20 @@ const RoleListActions = () => {
     <TopToolbar>
       <FilterButton />
       {!isReadOnly && <CreateButton />}
+      <TableColumnsButton />
     </TopToolbar>
   );
 };
+
+// Столбцы списка (table_column_settings): key — идентификатор столбца в раскладке.
+const roleFields = [
+  <TextField key="name" source="name" label="Название" />,
+  <FunctionField
+    key="created_at"
+    label="Создана"
+    render={(record) => <OrganizationTimeText value={record.created_at} />}
+  />,
+];
 
 // Read-only (backend.md «Read-only режим») прячет и bulk-удаление ролей — та же логика,
 // что и для CreateButton в RoleListActions выше. До фичи «Тарифы» здесь был дефолтный
@@ -41,23 +52,19 @@ const RoleListActions = () => {
 export const RoleList = () => {
   const isReadOnly = useSectionReadOnly('roles');
   return (
-    <List
-      filters={roleFilters}
-      sort={{ field: 'created_at', order: 'DESC' }}
-      exporter={false}
-      actions={<RoleListActions />}
-    >
-      <Datagrid
-        rowClick="edit"
-        bulkActionButtons={isReadOnly ? false : <BulkDeleteButton mutationMode="pessimistic" />}
+    <TableColumns tableId="roles" fields={roleFields}>
+      <List
+        filters={roleFilters}
+        sort={{ field: 'created_at', order: 'DESC' }}
+        exporter={false}
+        actions={<RoleListActions />}
       >
-        <TextField source="name" label="Название" />
-        <FunctionField
-          label="Создана"
-          render={(record) => <OrganizationTimeText value={record.created_at} />}
+        <ColumnsDatagrid
+          rowClick="edit"
+          bulkActionButtons={isReadOnly ? false : <BulkDeleteButton mutationMode="pessimistic" />}
         />
-      </Datagrid>
-    </List>
+      </List>
+    </TableColumns>
   );
 };
 

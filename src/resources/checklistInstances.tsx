@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
   List,
-  Datagrid,
   EmailField,
   FunctionField,
   SelectInput,
@@ -28,6 +27,11 @@ import { ChecklistItemPhotos } from '../components/ChecklistItemPhotos';
 import { useCurrentOrg } from '../orgContext';
 import { OrganizationTimeText } from '../components/TimeText';
 import { useOrgTimezone } from '../utils/useOrgTimezone';
+import {
+  ColumnsDatagrid,
+  ListActionsWithColumns,
+  TableColumns,
+} from '../tableColumns/TableColumns';
 
 const typeChoices = [
   { id: 'shift_start', name: 'Начало смены' },
@@ -206,41 +210,44 @@ const photosCountCell = (r: RaRecord) => {
   );
 };
 
+// Столбцы реестра (table_column_settings): key — идентификатор столбца в раскладке.
+const instanceFields = [
+  <FunctionField key="name" label="Чек-лист" render={nameCell} />,
+  <FunctionField key="employee" label="Сотрудник" render={nameField} sortable={false} />,
+  <EmailField key="email" source="user_email" label="Email" emptyText="—" sortable={false} />,
+  <FunctionField
+    key="shift_started_at"
+    source="shift_started_at"
+    label="Смена"
+    render={(record: RaRecord) => (
+      <OrganizationTimeText
+        value={record.shift_started_at}
+        timeZone={record.organization_timezone}
+      />
+    )}
+  />,
+  <FunctionField key="work_location" label="Точка" render={workLocationName} />,
+  <FunctionField key="status" label="Статус" render={statusChip} />,
+  <FunctionField key="is_required" label="Обязательный" render={requiredChip} />,
+  <FunctionField key="items" label="Пункты" render={itemsSummaryCell} />,
+  <FunctionField key="photos" label="Фото" render={photosCountCell} />,
+  <FunctionField
+    key="completed_at"
+    source="completed_at"
+    label="Заполнен"
+    render={(record: RaRecord) => (
+      <OrganizationTimeText value={record.completed_at} timeZone={record.organization_timezone} />
+    )}
+  />,
+];
+
 const ChecklistInstanceDatagrid = () => {
   const { isPending, data, filterValues } = useListContext();
   // При невалидном диапазоне запрос заблокирован (см. DateRangeAlert) — не показываем
   // вводящий в заблуждение empty-state/устаревшие данные под баннером ошибки.
   if (isDayRangeInvalid(filterValues?.date_from, filterValues?.date_to)) return null;
   if (!isPending && (data ?? []).length === 0) return <ChecklistInstancesEmpty />;
-  return (
-    <Datagrid bulkActionButtons={false} rowClick="show">
-      <FunctionField label="Чек-лист" render={nameCell} />
-      <FunctionField label="Сотрудник" render={nameField} sortable={false} />
-      <EmailField source="user_email" label="Email" emptyText="—" sortable={false} />
-      <FunctionField
-        source="shift_started_at"
-        label="Смена"
-        render={(record: RaRecord) => (
-          <OrganizationTimeText
-            value={record.shift_started_at}
-            timeZone={record.organization_timezone}
-          />
-        )}
-      />
-      <FunctionField label="Точка" render={workLocationName} />
-      <FunctionField label="Статус" render={statusChip} />
-      <FunctionField label="Обязательный" render={requiredChip} />
-      <FunctionField label="Пункты" render={itemsSummaryCell} />
-      <FunctionField label="Фото" render={photosCountCell} />
-      <FunctionField
-        source="completed_at"
-        label="Заполнен"
-        render={(record: RaRecord) => (
-          <OrganizationTimeText value={record.completed_at} timeZone={record.organization_timezone} />
-        )}
-      />
-    </Datagrid>
-  );
+  return <ColumnsDatagrid bulkActionButtons={false} rowClick="show" />;
 };
 
 // Реестр экземпляров чек-листов организации: серверная пагинация через
@@ -248,17 +255,20 @@ const ChecklistInstanceDatagrid = () => {
 export const ChecklistInstanceList = () => {
   const timeZone = useOrgTimezone();
   return (
-    <List
-      filters={checklistInstanceFilters}
-      filter={{ __organization_timezone: timeZone }}
-      sort={{ field: 'shift_started_at', order: 'DESC' }}
-      exporter={false}
-      empty={false}
-    >
-      <ResetEntityFiltersOnOrgChange />
-      <DateRangeAlert />
-      <ChecklistInstanceDatagrid />
-    </List>
+    <TableColumns tableId="checklist-instances" fields={instanceFields}>
+      <List
+        filters={checklistInstanceFilters}
+        filter={{ __organization_timezone: timeZone }}
+        sort={{ field: 'shift_started_at', order: 'DESC' }}
+        exporter={false}
+        empty={false}
+        actions={<ListActionsWithColumns />}
+      >
+        <ResetEntityFiltersOnOrgChange />
+        <DateRangeAlert />
+        <ChecklistInstanceDatagrid />
+      </List>
+    </TableColumns>
   );
 };
 

@@ -1,7 +1,6 @@
 import { useState, type MouseEvent } from 'react';
 import {
   List,
-  Datagrid,
   TextField,
   NumberField,
   BooleanField,
@@ -45,6 +44,7 @@ import { getTestTemplateDefaultValues, validateTestTemplate } from './validation
 import { ImportTestTemplateDialog } from './ImportDialog';
 import { AssignTestDialog } from './AssignDialog';
 import { ViewModeAlert } from '../../components/ViewModeAlert';
+import { ColumnsDatagrid, TableColumns, TableColumnsButton } from '../../tableColumns/TableColumns';
 
 // Тесты — раздел «Тесты» (access_profiles): просмотр — tests:view, запись — tests:manage;
 // маршруты режет RequireAccess (App.tsx). super_admin сюда не допускается даже сквозным
@@ -79,16 +79,21 @@ const TestTemplateListActions = () => {
   const [importOpen, setImportOpen] = useState(false);
   const isReadOnly = useSectionReadOnly('tests');
   const hasImport = useHasFeature('test_import');
-  if (isReadOnly) return null;
+  // «Столбцы» (table_column_settings) — всегда, в том числе в read-only.
   return (
     <TopToolbar>
-      <FeatureLockButton locked={!hasImport} featureLabel="Импорт теста из JSON">
-        <Button size="small" startIcon={<UploadFileIcon />} onClick={() => setImportOpen(true)}>
-          Импорт из JSON
-        </Button>
-      </FeatureLockButton>
-      <CreateButton label="Создать тест" />
-      <ImportTestTemplateDialog open={importOpen} onClose={() => setImportOpen(false)} />
+      {!isReadOnly && (
+        <>
+          <FeatureLockButton locked={!hasImport} featureLabel="Импорт теста из JSON">
+            <Button size="small" startIcon={<UploadFileIcon />} onClick={() => setImportOpen(true)}>
+              Импорт из JSON
+            </Button>
+          </FeatureLockButton>
+          <CreateButton label="Создать тест" />
+          <ImportTestTemplateDialog open={importOpen} onClose={() => setImportOpen(false)} />
+        </>
+      )}
+      <TableColumnsButton />
     </TopToolbar>
   );
 };
@@ -237,21 +242,20 @@ const RowActions = ({
   );
 };
 
-const TestTemplateDatagrid = ({ onAssign }: { onAssign: (record: RaRecord) => void }) => (
-  <Datagrid rowClick="edit" bulkActionButtons={false}>
-    <TextField source="title" label="Название" />
-    <NumberField source="question_count" label="Вопросов" sortable={false} />
-    <NumberField source="total_points" label="Баллов" sortable={false} />
-    <NumberField source="max_attempts" label="Попыток" sortable={false} />
-    <FunctionField label="Порог" render={thresholdField} sortable={false} />
-    <BooleanField source="is_deleted" label="Удалён" sortable={false} />
-    <FunctionField
-      label=""
-      render={(r: RaRecord) => <RowActions record={r} onAssign={onAssign} />}
-      sortable={false}
-    />
-  </Datagrid>
-);
+// Столбцы списка (table_column_settings): key — идентификатор столбца, без key — служебный.
+const testTemplateFields = (onAssign: (record: RaRecord) => void) => [
+  <TextField key="title" source="title" label="Название" />,
+  <NumberField key="question_count" source="question_count" label="Вопросов" sortable={false} />,
+  <NumberField key="total_points" source="total_points" label="Баллов" sortable={false} />,
+  <NumberField key="max_attempts" source="max_attempts" label="Попыток" sortable={false} />,
+  <FunctionField key="threshold" label="Порог" render={thresholdField} sortable={false} />,
+  <BooleanField key="is_deleted" source="is_deleted" label="Удалён" sortable={false} />,
+  <FunctionField
+    label=""
+    render={(r: RaRecord) => <RowActions record={r} onAssign={onAssign} />}
+    sortable={false}
+  />,
+];
 
 // Один экземпляр AssignTestDialog на весь список (не по одному на строку — иначе каждая
 // видимая строка держала бы собственный useGetList('members', ...) диалога вхолостую).
@@ -262,15 +266,17 @@ const TestTemplateListInner = () => {
 
   return (
     <>
-      <List
-        filters={testTemplateFilters}
-        sort={{ field: 'created_at', order: 'DESC' }}
-        exporter={false}
-        actions={<TestTemplateListActions />}
-        empty={<TestTemplateEmpty />}
-      >
-        <TestTemplateDatagrid onAssign={setAssignTarget} />
-      </List>
+      <TableColumns tableId="test-templates" fields={testTemplateFields(setAssignTarget)}>
+        <List
+          filters={testTemplateFilters}
+          sort={{ field: 'created_at', order: 'DESC' }}
+          exporter={false}
+          actions={<TestTemplateListActions />}
+          empty={<TestTemplateEmpty />}
+        >
+          <ColumnsDatagrid rowClick="edit" bulkActionButtons={false} />
+        </List>
+      </TableColumns>
       {assignTarget && (
         <AssignTestDialog
           templateId={String(assignTarget.id)}

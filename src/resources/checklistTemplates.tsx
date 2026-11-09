@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState, type MouseEvent } from 'react';
 import { useParams, Link as RouterLink } from 'react-router-dom';
 import {
   List,
-  Datagrid,
   TextField,
   BooleanField,
   NumberField,
@@ -71,6 +70,7 @@ import { useSectionReadOnly } from '../utils/useOrgAccess';
 import { OrganizationTimeText } from '../components/TimeText';
 import { splitScheduleAssignments } from './checklistSchedule';
 import { ViewModeAlert } from '../components/ViewModeAlert';
+import { ColumnsDatagrid, TableColumns, TableColumnsButton } from '../tableColumns/TableColumns';
 
 const typeChoices = [
   { id: 'shift_start', name: 'Начало смены' },
@@ -182,34 +182,41 @@ const ChecklistTemplateListActions = () => {
     <TopToolbar>
       <FilterButton />
       {!isReadOnly && <CreateButton />}
+      <TableColumnsButton />
     </TopToolbar>
   );
 };
 
+// Столбцы списка (table_column_settings): key — идентификатор столбца, без key — служебный.
+const templateFields = [
+  <TextField key="name" source="name" label="Название" />,
+  <SelectField key="type" source="type" label="Тип" choices={typeChoices} />,
+  <BooleanField key="is_required" source="is_required" label="Обязательный" />,
+  <NumberField key="items_count" source="items_count" label="Пунктов" />,
+  <BooleanField key="is_deleted" source="is_deleted" label="Удалён" />,
+  <FunctionField
+    key="created_at"
+    label="Создан"
+    render={(record: RaRecord) => <OrganizationTimeText value={record.created_at} />}
+  />,
+  <FunctionField
+    label=""
+    render={(r: RaRecord) => <ChecklistTemplateRowActions record={r} />}
+    sortable={false}
+  />,
+];
+
 export const ChecklistTemplateList = () => (
-  <List
-    filters={typeFilters}
-    sort={{ field: 'created_at', order: 'DESC' }}
-    exporter={false}
-    actions={<ChecklistTemplateListActions />}
-  >
-    <Datagrid rowClick="edit" bulkActionButtons={false}>
-      <TextField source="name" label="Название" />
-      <SelectField source="type" label="Тип" choices={typeChoices} />
-      <BooleanField source="is_required" label="Обязательный" />
-      <NumberField source="items_count" label="Пунктов" />
-      <BooleanField source="is_deleted" label="Удалён" />
-      <FunctionField
-        label="Создан"
-        render={(record: RaRecord) => <OrganizationTimeText value={record.created_at} />}
-      />
-      <FunctionField
-        label=""
-        render={(r: RaRecord) => <ChecklistTemplateRowActions record={r} />}
-        sortable={false}
-      />
-    </Datagrid>
-  </List>
+  <TableColumns tableId="checklist-templates" fields={templateFields}>
+    <List
+      filters={typeFilters}
+      sort={{ field: 'created_at', order: 'DESC' }}
+      exporter={false}
+      actions={<ChecklistTemplateListActions />}
+    >
+      <ColumnsDatagrid rowClick="edit" bulkActionButtons={false} />
+    </List>
+  </TableColumns>
 );
 
 export const ChecklistTemplateCreate = () => {
