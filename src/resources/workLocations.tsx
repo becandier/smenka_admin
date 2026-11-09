@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import {
   List,
-  Datagrid,
   TextField,
   NumberField,
   FunctionField,
@@ -47,6 +46,7 @@ import { findIntersectingLocations, type WorkLocationGeo } from '../utils/geo';
 import { useOrgAccess, useSectionReadOnly } from '../utils/useOrgAccess';
 import { OrganizationTimeText } from '../components/TimeText';
 import { ViewModeAlert } from '../components/ViewModeAlert';
+import { ColumnsDatagrid, TableColumns, TableColumnsButton } from '../tableColumns/TableColumns';
 
 const locationFilters = [<SearchInput key="q" source="q" alwaysOn />];
 
@@ -354,30 +354,47 @@ const WorkLocationListActions = () => {
     <TopToolbar>
       <FilterButton />
       {!isReadOnly && <CreateButton />}
+      <TableColumnsButton />
     </TopToolbar>
   );
 };
 
+// Столбцы списка (table_column_settings): key — идентификатор столбца, без key — служебный.
+const locationFields = [
+  <TextField key="name" source="name" label="Название" />,
+  <TextField key="address" source="address" label="Адрес" />,
+  <NumberField
+    key="latitude"
+    source="latitude"
+    label="Широта"
+    options={{ maximumFractionDigits: 6 }}
+  />,
+  <NumberField
+    key="longitude"
+    source="longitude"
+    label="Долгота"
+    options={{ maximumFractionDigits: 6 }}
+  />,
+  <NumberField key="radius_meters" source="radius_meters" label="Радиус, м" />,
+  <FunctionField
+    key="created_at"
+    label="Создана"
+    render={(record: RaRecord) => <OrganizationTimeText value={record.created_at} />}
+  />,
+  <WorkLocationDeleteButton variant="row" />,
+];
+
 export const WorkLocationList = () => (
-  <List
-    filters={locationFilters}
-    sort={{ field: 'created_at', order: 'DESC' }}
-    exporter={false}
-    actions={<WorkLocationListActions />}
-  >
-    <Datagrid rowClick="edit" bulkActionButtons={false}>
-      <TextField source="name" label="Название" />
-      <TextField source="address" label="Адрес" />
-      <NumberField source="latitude" label="Широта" options={{ maximumFractionDigits: 6 }} />
-      <NumberField source="longitude" label="Долгота" options={{ maximumFractionDigits: 6 }} />
-      <NumberField source="radius_meters" label="Радиус, м" />
-      <FunctionField
-        label="Создана"
-        render={(record: RaRecord) => <OrganizationTimeText value={record.created_at} />}
-      />
-      <WorkLocationDeleteButton variant="row" />
-    </Datagrid>
-  </List>
+  <TableColumns tableId="work-locations" fields={locationFields}>
+    <List
+      filters={locationFilters}
+      sort={{ field: 'created_at', order: 'DESC' }}
+      exporter={false}
+      actions={<WorkLocationListActions />}
+    >
+      <ColumnsDatagrid rowClick="edit" bulkActionButtons={false} />
+    </List>
+  </TableColumns>
 );
 
 export const WorkLocationEdit = () => (

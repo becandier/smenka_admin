@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import {
   List,
-  Datagrid,
   TextField,
   NumberField,
   FunctionField,
@@ -36,6 +35,7 @@ import {
   type AdjustmentCategory,
 } from './adjustmentCategoryUtils';
 import { ViewModeAlert } from '../components/ViewModeAlert';
+import { ColumnsDatagrid, TableColumns, TableColumnsButton } from '../tableColumns/TableColumns';
 
 // Справочник «Категории начислений» (payroll_breakdown). Права — раздел «Зарплата»
 // (access_profiles): просмотр списка — payroll:view, запись — payroll:manage; маршруты
@@ -46,10 +46,10 @@ const nameValidators = [validateCategoryName];
 
 const CategoryListActions = () => {
   const isReadOnly = useSectionReadOnly('payroll');
-  if (isReadOnly) return <TopToolbar />;
   return (
     <TopToolbar>
-      <CreateButton label="Добавить категорию" />
+      {!isReadOnly && <CreateButton label="Добавить категорию" />}
+      <TableColumnsButton />
     </TopToolbar>
   );
 };
@@ -82,25 +82,35 @@ const CategoriesEmpty = () => {
   );
 };
 
+// Столбцы списка (table_column_settings): key — идентификатор столбца, без key — служебный.
+const categoryFields = [
+  <TextField key="name" source="name" label="Название" />,
+  <NumberField
+    key="adjustments_count"
+    source="adjustments_count"
+    label="Начислений"
+    emptyText="0"
+  />,
+  <FunctionField
+    label=""
+    render={(r: RaRecord) => <CategoryRowActions record={r} />}
+    sortable={false}
+  />,
+];
+
 export const AdjustmentCategoryList = () => {
   return (
-    <List
-      sort={{ field: 'name', order: 'ASC' }}
-      exporter={false}
-      actions={<CategoryListActions />}
-      empty={<CategoriesEmpty />}
-      perPage={100}
-    >
-      <Datagrid rowClick="edit" bulkActionButtons={false}>
-        <TextField source="name" label="Название" />
-        <NumberField source="adjustments_count" label="Начислений" emptyText="0" />
-        <FunctionField
-          label=""
-          render={(r: RaRecord) => <CategoryRowActions record={r} />}
-          sortable={false}
-        />
-      </Datagrid>
-    </List>
+    <TableColumns tableId="adjustment-categories" fields={categoryFields}>
+      <List
+        sort={{ field: 'name', order: 'ASC' }}
+        exporter={false}
+        actions={<CategoryListActions />}
+        empty={<CategoriesEmpty />}
+        perPage={100}
+      >
+        <ColumnsDatagrid rowClick="edit" bulkActionButtons={false} />
+      </List>
+    </TableColumns>
   );
 };
 
