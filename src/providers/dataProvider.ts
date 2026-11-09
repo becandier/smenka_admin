@@ -1559,6 +1559,22 @@ export const dataProvider: DataProvider = {
   // --- Кастомные методы (вызываются через useDataProvider) ---
   getPlatformStats: () => request('/admin/stats'),
 
+  // --- Личные настройки пользователя (table_column_settings/backend.md) ---
+  // Значения непрозрачны для бэка; формат раскладки таблиц — src/tableColumns/layout.ts.
+  getPreferences: async (prefix?: string): Promise<Record<string, unknown>> => {
+    const query = prefix ? `?prefix=${encodeURIComponent(prefix)}` : '';
+    const data = await request(`/users/me/preferences${query}`);
+    const preferences = data?.preferences;
+    return typeof preferences === 'object' && preferences !== null ? preferences : {};
+  },
+  putPreference: (key: string, value: Record<string, unknown>) =>
+    request(`/users/me/preferences/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    }),
+  deletePreference: (key: string): Promise<{ deleted: number }> =>
+    request(`/users/me/preferences/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+
   // --- Тарифы и подписки (tariffs) ---
   // Витрина тарифов (GET /plans, backend.md п.1) — доступно любому авторизованному.
   getPlans: async (): Promise<PlanRow[]> => {
@@ -1795,15 +1811,22 @@ export const dataProvider: DataProvider = {
   // возвращает график к базовым временам для всех дней.
   setScheduleWeeklyRules: (
     scheduleId: string,
-    rules: { weekday: number; is_enabled: boolean; start_time: string | null; end_time: string | null }[],
+    rules: {
+      weekday: number;
+      is_enabled: boolean;
+      start_time: string | null;
+      end_time: string | null;
+    }[],
   ) =>
     request(`${orgBase()}/work-schedules/${scheduleId}/weekly-rules`, {
       method: 'PUT',
-      body: JSON.stringify({ rules: rules.map((rule) => ({
-        ...rule,
-        start_time: rule.is_enabled ? rule.start_time : null,
-        end_time: rule.is_enabled ? rule.end_time : null,
-      })) }),
+      body: JSON.stringify({
+        rules: rules.map((rule) => ({
+          ...rule,
+          start_time: rule.is_enabled ? rule.start_time : null,
+          end_time: rule.is_enabled ? rule.end_time : null,
+        })),
+      }),
     }),
   // Личные переопределения сотрудника: контракт бэка заменяет ВЕСЬ список переопределений
   // сотрудника по ВСЕМ графикам сразу (PUT .../members/{user_id}/schedule-overrides), в отличие
