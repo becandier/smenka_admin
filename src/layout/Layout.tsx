@@ -60,6 +60,7 @@ import { SubscriptionProvider } from '../subscription/SubscriptionContext';
 import { SubscriptionBannerBar } from '../subscription/SubscriptionBanner';
 import { TariffErrorAlertBar } from '../subscription/TariffErrorAlert';
 import { ForbiddenNotifier } from '../components/ForbiddenNotifier';
+import { TableLayoutProvider } from '../tableColumns/TableLayoutProvider';
 
 // AppBar — фирменный синий (primary). Лок-ап слева у TitlePortal; на синем фоне —
 // версия -inverse (белая). Бренд-цвета берём из темы, не хардкодом.
@@ -620,11 +621,14 @@ const MyMenu = () => {
 // не мешая фиксированному AppBar.
 export const Layout = ({ children }: { children: ReactNode }) => (
   <SubscriptionProvider>
-    <RaLayout appBar={MyAppBar} menu={MyMenu}>
-      <SubscriptionBannerBar />
-      <TariffErrorAlertBar />
-      <ForbiddenNotifier />
-      {children}
-    </RaLayout>
+    {/* Раскладки столбцов таблиц текущего пользователя (table_column_settings). */}
+    <TableLayoutProvider>
+      <RaLayout appBar={MyAppBar} menu={MyMenu}>
+        <SubscriptionBannerBar />
+        <TariffErrorAlertBar />
+        <ForbiddenNotifier />
+        {children}
+      </RaLayout>
+    </TableLayoutProvider>
   </SubscriptionProvider>
 );

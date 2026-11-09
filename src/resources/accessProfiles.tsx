@@ -2,7 +2,6 @@ import { useEffect, useMemo } from 'react';
 import {
   Create,
   CreateButton,
-  Datagrid,
   DeleteButton,
   Edit,
   FunctionField,
@@ -43,6 +42,7 @@ import type { AccessCatalogSection } from '../providers/dataProvider';
 import { OrganizationTimeText } from '../components/TimeText';
 import { useIsReadOnly } from '../subscription/SubscriptionContext';
 import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
+import { ColumnsDatagrid, TableColumns, TableColumnsButton } from '../tableColumns/TableColumns';
 
 // Ресурс «Профили доступа» (access_profiles/admin.md, §1): именованные наборы прав по
 // разделам кабинета. Ведут только полные администраторы (owner/admin/super_admin) —
@@ -110,7 +110,12 @@ const ProfileDeleteButton = (props: { record?: RaRecord }) => {
 
 const ProfileListActions = () => {
   const isReadOnly = useIsReadOnly();
-  return <TopToolbar>{!isReadOnly && <CreateButton />}</TopToolbar>;
+  return (
+    <TopToolbar>
+      {!isReadOnly && <CreateButton />}
+      <TableColumnsButton />
+    </TopToolbar>
+  );
 };
 
 const ProfilesEmpty = () => {
@@ -127,37 +132,49 @@ const ProfilesEmpty = () => {
 
 export const AccessProfileList = () => {
   const isReadOnly = useIsReadOnly();
+  // Столбцы (table_column_settings): key — идентификатор столбца, без key — служебный.
+  const fields = [
+    <TextField key="name" source="name" label="Название" />,
+    <TextField
+      key="description"
+      source="description"
+      label="Описание"
+      emptyText="—"
+      sortable={false}
+    />,
+    <FunctionField
+      key="permissions"
+      label="Права"
+      sortable={false}
+      render={(r: RaRecord) => permissionsSummary(r.permissions)}
+    />,
+    <NumberField key="members_count" source="members_count" label="Сотрудников" emptyText="0" />,
+    <FunctionField
+      key="updated_at"
+      label="Обновлён"
+      sortBy="updated_at"
+      render={(r: RaRecord) => <OrganizationTimeText value={r.updated_at} />}
+    />,
+    !isReadOnly && (
+      <FunctionField
+        label=""
+        sortable={false}
+        render={(r: RaRecord) => <ProfileDeleteButton record={r} />}
+      />
+    ),
+  ];
   return (
-    <List
-      sort={{ field: 'name', order: 'ASC' }}
-      exporter={false}
-      actions={<ProfileListActions />}
-      empty={<ProfilesEmpty />}
-      perPage={100}
-    >
-      <Datagrid rowClick="edit" bulkActionButtons={false}>
-        <TextField source="name" label="Название" />
-        <TextField source="description" label="Описание" emptyText="—" sortable={false} />
-        <FunctionField
-          label="Права"
-          sortable={false}
-          render={(r: RaRecord) => permissionsSummary(r.permissions)}
-        />
-        <NumberField source="members_count" label="Сотрудников" emptyText="0" />
-        <FunctionField
-          label="Обновлён"
-          sortBy="updated_at"
-          render={(r: RaRecord) => <OrganizationTimeText value={r.updated_at} />}
-        />
-        {!isReadOnly && (
-          <FunctionField
-            label=""
-            sortable={false}
-            render={(r: RaRecord) => <ProfileDeleteButton record={r} />}
-          />
-        )}
-      </Datagrid>
-    </List>
+    <TableColumns tableId="access-profiles" fields={fields}>
+      <List
+        sort={{ field: 'name', order: 'ASC' }}
+        exporter={false}
+        actions={<ProfileListActions />}
+        empty={<ProfilesEmpty />}
+        perPage={100}
+      >
+        <ColumnsDatagrid rowClick="edit" bulkActionButtons={false} />
+      </List>
+    </TableColumns>
   );
 };
 

@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
   List,
-  Datagrid,
   BooleanInput,
   FunctionField,
   SelectInput,
@@ -35,6 +34,11 @@ import {
   memberDisplayName,
   templateTitle,
 } from './fields';
+import {
+  ColumnsDatagrid,
+  ListActionsWithColumns,
+  TableColumns,
+} from '../../tableColumns/TableColumns';
 
 // Тесты — раздел «Тесты» (access_profiles): просмотр — tests:view, запись — tests:manage;
 // маршруты режет RequireAccess (App.tsx). super_admin сюда не допускается даже сквозным
@@ -215,40 +219,15 @@ const TestAssignmentBulkActions = () => {
   );
 };
 
-const TestAssignmentDatagrid = ({
-  onSelect,
-  onUnassigned,
-  timeZone,
-}: {
-  onSelect: (record: RaRecord) => void;
-  onUnassigned: () => void;
-  timeZone: string;
-}) => {
+const TestAssignmentDatagrid = () => {
   const { isPending, data } = useListContext();
   const isReadOnly = useSectionReadOnly('tests');
   if (!isPending && (data ?? []).length === 0) return <TestAssignmentsEmpty />;
   return (
-    <Datagrid
+    <ColumnsDatagrid
       bulkActionButtons={isReadOnly ? false : <TestAssignmentBulkActions />}
       rowClick={false}
-    >
-      <FunctionField label="Тест" render={templateTitle} />
-      <FunctionField label="Сотрудник" render={memberDisplayName} />
-      <FunctionField label="Статус" render={statusChip} />
-      <FunctionField label="Лучший %" render={bestPercent} />
-      <FunctionField label="Попыток" render={attemptsUsed} />
-      <FunctionField label="Дедлайн" render={(record: RaRecord) => dueAt(record, timeZone)} />
-      <FunctionField
-        label="Последняя сдача"
-        render={(record: RaRecord) => lastAttemptAt(record, timeZone)}
-      />
-      <FunctionField
-        label=""
-        render={(r: RaRecord) => (
-          <RowActions record={r} onSelect={onSelect} onUnassigned={onUnassigned} />
-        )}
-      />
-    </Datagrid>
+    />
   );
 };
 
@@ -256,16 +235,43 @@ const TestAssignmentListInner = () => {
   const [selected, setSelected] = useState<RaRecord | null>(null);
   const refresh = useRefresh();
   const timeZone = useOrgTimezone();
+  // Столбцы (table_column_settings): key — идентификатор столбца, без key — служебный.
+  const fields = [
+    <FunctionField key="template" label="Тест" render={templateTitle} />,
+    <FunctionField key="employee" label="Сотрудник" render={memberDisplayName} />,
+    <FunctionField key="status" label="Статус" render={statusChip} />,
+    <FunctionField key="best_percent" label="Лучший %" render={bestPercent} />,
+    <FunctionField key="attempts" label="Попыток" render={attemptsUsed} />,
+    <FunctionField
+      key="due_at"
+      label="Дедлайн"
+      render={(record: RaRecord) => dueAt(record, timeZone)}
+    />,
+    <FunctionField
+      key="last_attempt_at"
+      label="Последняя сдача"
+      render={(record: RaRecord) => lastAttemptAt(record, timeZone)}
+    />,
+    <FunctionField
+      label=""
+      render={(r: RaRecord) => (
+        <RowActions record={r} onSelect={setSelected} onUnassigned={refresh} />
+      )}
+    />,
+  ];
   return (
     <>
-      <List
-        filters={testAssignmentFilters}
-        sort={{ field: 'created_at', order: 'DESC' }}
-        exporter={false}
-        empty={false}
-      >
-        <TestAssignmentDatagrid onSelect={setSelected} onUnassigned={refresh} timeZone={timeZone} />
-      </List>
+      <TableColumns tableId="test-assignments" fields={fields}>
+        <List
+          filters={testAssignmentFilters}
+          sort={{ field: 'created_at', order: 'DESC' }}
+          exporter={false}
+          empty={false}
+          actions={<ListActionsWithColumns />}
+        >
+          <TestAssignmentDatagrid />
+        </List>
+      </TableColumns>
       {selected && (
         <AssignmentDetailDialog
           assignment={selected}

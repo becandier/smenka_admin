@@ -1559,6 +1559,23 @@ export const dataProvider: DataProvider = {
   // --- Кастомные методы (вызываются через useDataProvider) ---
   getPlatformStats: () => request('/admin/stats'),
 
+  // --- Личные настройки пользователя (table_column_settings/backend.md) ---
+  // Значения непрозрачны для бэка; формат раскладки таблиц — src/tableColumns/layout.ts.
+  // Ответ возвращается как есть ({preferences: {...}}): его форму проверяет вызывающий —
+  // обёртка useDataProvider после разлогина подменяет ответ заглушкой {data: {}}, и её нельзя
+  // принять за пустой набор настроек (src/tableColumns/store.ts).
+  getPreferences: (prefix?: string): Promise<unknown> => {
+    const query = prefix ? `?prefix=${encodeURIComponent(prefix)}` : '';
+    return request(`/users/me/preferences${query}`);
+  },
+  putPreference: (key: string, value: Record<string, unknown>) =>
+    request(`/users/me/preferences/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    }),
+  deletePreference: (key: string): Promise<{ deleted: number }> =>
+    request(`/users/me/preferences/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+
   // --- Тарифы и подписки (tariffs) ---
   // Витрина тарифов (GET /plans, backend.md п.1) — доступно любому авторизованному.
   getPlans: async (): Promise<PlanRow[]> => {

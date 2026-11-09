@@ -1,7 +1,6 @@
 import type { ReactElement } from 'react';
 import {
   List,
-  Datagrid,
   TextField,
   BooleanField,
   BooleanInput,
@@ -30,6 +29,7 @@ import { TariffAwareToolbar } from '../subscription/TariffAwareToolbar';
 import { useHasFeature } from '../subscription/SubscriptionContext';
 import { OrganizationTimeText } from '../components/TimeText';
 import { ViewModeAlert } from '../components/ViewModeAlert';
+import { ColumnsDatagrid, TableColumns, TableColumnsButton } from '../tableColumns/TableColumns';
 
 // Шаблоны штрафов — раздел «Штрафы» (access_profiles): список — penalties:view, запись —
 // penalties:manage; маршруты режет RequireAccess (App.tsx). super_admin штрафы конкретной
@@ -105,44 +105,54 @@ const PenaltyTemplateRowActions = ({ record }: { record: RaRecord }) => {
 const PenaltyTemplateListActions = () => {
   const isReadOnly = useSectionReadOnly('penalties');
   const hasFines = useHasFeature('fines');
-  if (isReadOnly) return null;
+  // «Столбцы» (table_column_settings) — всегда, в том числе в read-only.
   return (
     <TopToolbar>
-      <FeatureLockButton locked={!hasFines} featureLabel="Штрафы" raIcon>
-        <CreateButton label="Добавить шаблон" />
-      </FeatureLockButton>
+      {!isReadOnly && (
+        <FeatureLockButton locked={!hasFines} featureLabel="Штрафы" raIcon>
+          <CreateButton label="Добавить шаблон" />
+        </FeatureLockButton>
+      )}
+      <TableColumnsButton />
     </TopToolbar>
   );
 };
 
+// Столбцы списка (table_column_settings): key — идентификатор столбца, без key — служебный.
+const penaltyTemplateFields = [
+  <TextField key="reason" source="reason" label="Причина" />,
+  <FunctionField key="amount" label="Сумма" render={amountField} />,
+  <TextField key="currency" source="currency" label="Валюта" />,
+  <BooleanField key="is_deleted" source="is_deleted" label="Удалён" />,
+  <FunctionField
+    key="created_at"
+    label="Создан"
+    render={(record: RaRecord) => <OrganizationTimeText value={record.created_at} />}
+  />,
+  <FunctionField
+    key="updated_at"
+    label="Изменён"
+    render={(record: RaRecord) => <OrganizationTimeText value={record.updated_at} />}
+  />,
+  <FunctionField
+    label=""
+    render={(r: RaRecord) => <PenaltyTemplateRowActions record={r} />}
+    sortable={false}
+  />,
+];
+
 export const PenaltyTemplateList = () => {
   return (
-    <List
-      filters={penaltyTemplateFilters}
-      sort={{ field: 'created_at', order: 'DESC' }}
-      exporter={false}
-      actions={<PenaltyTemplateListActions />}
-    >
-      <Datagrid rowClick="edit" bulkActionButtons={false}>
-        <TextField source="reason" label="Причина" />
-        <FunctionField label="Сумма" render={amountField} />
-        <TextField source="currency" label="Валюта" />
-        <BooleanField source="is_deleted" label="Удалён" />
-        <FunctionField
-          label="Создан"
-          render={(record: RaRecord) => <OrganizationTimeText value={record.created_at} />}
-        />
-        <FunctionField
-          label="Изменён"
-          render={(record: RaRecord) => <OrganizationTimeText value={record.updated_at} />}
-        />
-        <FunctionField
-          label=""
-          render={(r: RaRecord) => <PenaltyTemplateRowActions record={r} />}
-          sortable={false}
-        />
-      </Datagrid>
-    </List>
+    <TableColumns tableId="penalty-templates" fields={penaltyTemplateFields}>
+      <List
+        filters={penaltyTemplateFilters}
+        sort={{ field: 'created_at', order: 'DESC' }}
+        exporter={false}
+        actions={<PenaltyTemplateListActions />}
+      >
+        <ColumnsDatagrid rowClick="edit" bulkActionButtons={false} />
+      </List>
+    </TableColumns>
   );
 };
 

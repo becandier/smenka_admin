@@ -1,6 +1,5 @@
 import {
   List,
-  Datagrid,
   TextField,
   EmailField,
   BooleanField,
@@ -16,6 +15,11 @@ import {
   FunctionField,
 } from 'react-admin';
 import { DeviceTimeText } from '../components/TimeText';
+import {
+  ColumnsDatagrid,
+  ListActionsWithColumns,
+  TableColumns,
+} from '../tableColumns/TableColumns';
 
 const roleChoices = [
   { id: 'user', name: 'Пользователь' },
@@ -38,22 +42,33 @@ const userFilters = [
   />,
 ];
 
+// Столбцы списка (table_column_settings): key — идентификатор столбца в раскладке.
+const userFields = [
+  // email nullable (admin_created_accounts/backend.md: учётка может быть заведена
+  // организацией без почты) — EmailField.emptyText реагирует на null, показываем «—».
+  <EmailField key="email" source="email" label="Email" emptyText="—" />,
+  <TextField key="login" source="login" label="Логин" emptyText="—" sortable={false} />,
+  <TextField key="name" source="name" label="Имя" sortable={false} />,
+  <BooleanField key="is_verified" source="is_verified" label="Подтверждён" sortable={false} />,
+  <SelectField key="role" source="role" label="Роль" choices={roleChoices} sortable={false} />,
+  <FunctionField
+    key="created_at"
+    label="Создан"
+    render={(record) => <DeviceTimeText value={record.created_at} />}
+  />,
+];
+
 export const UserList = () => (
-  <List filters={userFilters} sort={{ field: 'created_at', order: 'DESC' }} exporter={false}>
-    <Datagrid rowClick="show">
-      {/* email nullable (admin_created_accounts/backend.md: учётка может быть заведена
-          организацией без почты) — EmailField.emptyText реагирует на null, показываем «—». */}
-      <EmailField source="email" label="Email" emptyText="—" />
-      <TextField source="login" label="Логин" emptyText="—" sortable={false} />
-      <TextField source="name" label="Имя" sortable={false} />
-      <BooleanField source="is_verified" label="Подтверждён" sortable={false} />
-      <SelectField source="role" label="Роль" choices={roleChoices} sortable={false} />
-      <FunctionField
-        label="Создан"
-        render={(record) => <DeviceTimeText value={record.created_at} />}
-      />
-    </Datagrid>
-  </List>
+  <TableColumns tableId="users" fields={userFields}>
+    <List
+      filters={userFilters}
+      sort={{ field: 'created_at', order: 'DESC' }}
+      exporter={false}
+      actions={<ListActionsWithColumns />}
+    >
+      <ColumnsDatagrid rowClick="show" />
+    </List>
+  </TableColumns>
 );
 
 export const UserEdit = () => (

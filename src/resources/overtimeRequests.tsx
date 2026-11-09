@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import {
   List,
-  Datagrid,
   FunctionField,
   SelectInput,
   DateInput,
@@ -39,6 +38,11 @@ import { isDayRangeInvalid } from '../utils/dates';
 import { useSectionReadOnly } from '../utils/useOrgAccess';
 import { OrganizationTimeText } from '../components/TimeText';
 import { useOrgTimezone } from '../utils/useOrgTimezone';
+import {
+  ColumnsDatagrid,
+  ListActionsWithColumns,
+  TableColumns,
+} from '../tableColumns/TableColumns';
 
 const overtimeFilters = [
   <SelectInput
@@ -243,28 +247,27 @@ const RowActions = ({ record }: { record: RaRecord }) => {
   );
 };
 
+// Столбцы реестра заявок (table_column_settings): key — идентификатор столбца, без key —
+// служебный.
+const overtimeFields = [
+  <FunctionField key="employee" label="Сотрудник" render={employeeField} />,
+  <FunctionField key="shift" label="Смена" render={shiftField} sortable={false} />,
+  <FunctionField key="plan" label="План" render={planField} sortable={false} />,
+  <FunctionField key="minutes" label="Переработка" render={minutesField} sortable={false} />,
+  <FunctionField
+    key="comment"
+    label="Комментарий"
+    render={(r: RaRecord) => r.comment ?? '—'}
+    sortable={false}
+  />,
+  <FunctionField key="status" label="Статус" render={statusField} sortable={false} />,
+  <FunctionField label="" render={(r: RaRecord) => <RowActions record={r} />} sortable={false} />,
+];
+
 const OvertimeDatagrid = () => {
   const { isPending, data } = useListContext();
   if (!isPending && (data ?? []).length === 0) return <OvertimeEmpty />;
-  return (
-    <Datagrid bulkActionButtons={false} rowClick={false}>
-      <FunctionField label="Сотрудник" render={employeeField} />
-      <FunctionField label="Смена" render={shiftField} sortable={false} />
-      <FunctionField label="План" render={planField} sortable={false} />
-      <FunctionField label="Переработка" render={minutesField} sortable={false} />
-      <FunctionField
-        label="Комментарий"
-        render={(r: RaRecord) => r.comment ?? '—'}
-        sortable={false}
-      />
-      <FunctionField label="Статус" render={statusField} sortable={false} />
-      <FunctionField
-        label=""
-        render={(r: RaRecord) => <RowActions record={r} />}
-        sortable={false}
-      />
-    </Datagrid>
-  );
+  return <ColumnsDatagrid bulkActionButtons={false} rowClick={false} />;
 };
 
 // Реестр заявок на переработку (раздел «Заявки на переработку», access_profiles: просмотр —
@@ -273,16 +276,19 @@ const OvertimeDatagrid = () => {
 export const OvertimeRequestList = () => {
   const timeZone = useOrgTimezone();
   return (
-    <List
-      filters={overtimeFilters}
-      filter={{ __organization_timezone: timeZone }}
-      filterDefaultValues={{ status: 'pending' }}
-      sort={{ field: 'created_at', order: 'DESC' }}
-      exporter={false}
-      empty={false}
-    >
-      <DateRangeAlertGuard />
-    </List>
+    <TableColumns tableId="overtime-requests" fields={overtimeFields}>
+      <List
+        filters={overtimeFilters}
+        filter={{ __organization_timezone: timeZone }}
+        filterDefaultValues={{ status: 'pending' }}
+        sort={{ field: 'created_at', order: 'DESC' }}
+        exporter={false}
+        empty={false}
+        actions={<ListActionsWithColumns />}
+      >
+        <DateRangeAlertGuard />
+      </List>
+    </TableColumns>
   );
 };
 

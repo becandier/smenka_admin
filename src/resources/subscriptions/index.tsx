@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import {
   BooleanInput,
-  Datagrid,
   FunctionField,
   List,
   SearchInput,
@@ -26,6 +25,11 @@ import { DeviceTimeText } from '../../components/TimeText';
 import { ExtendDialog } from './ExtendDialog';
 import { EditDialog } from './EditDialog';
 import { HistoryDialog } from './HistoryDialog';
+import {
+  ColumnsDatagrid,
+  ListActionsWithColumns,
+  TableColumns,
+} from '../../tableColumns/TableColumns';
 
 // Фильтр по тарифу — выбор из живой витрины GET /plans, а не хардкод стандарт/премиум
 // (тарифы могут добавляться, admin.md/backend.md, «цены и лимиты живут на бэке»).
@@ -130,65 +134,71 @@ const SubscriptionListEmpty = () => (
   </Typography>
 );
 
-// Datagrid как отдельный компонент (не инлайн в List): нужен доступ к isPending/data
-// из useListContext, чтобы показать «Организаций пока нет» на пустой выдаче — Datagrid
-// сам такого prop не имеет (тот же приём, что AdjustmentDatagrid в adjustments.tsx).
-const SubscriptionDatagrid = () => {
-  const { data, isPending } = useListContext();
+// Столбцы реестра (table_column_settings): key — идентификатор столбца, без key — служебный.
+// Хук, а не константа: «Сотрудники»/«Точки» зависят от витрины тарифов (лимиты планов).
+const useSubscriptionFields = () => {
   const { plans, loading: plansLoading } = usePlans();
   const limitOf = (code: string): number | null | undefined =>
     plans.find((p) => p.code === code)?.limits.max_employees;
   const locationLimitOf = (code: string): number | null | undefined =>
     plans.find((p) => p.code === code)?.limits.max_locations;
+  return [
+    <TextField key="organization_name" source="organization_name" label="Организация" />,
+    <TextField key="plan_name" source="plan_name" label="Тариф" sortable={false} />,
+    <FunctionField key="status" label="Статус" render={statusChip} sortable={false} />,
+    <FunctionField
+      key="current_period_end"
+      label="Окончание периода"
+      render={(record: RaRecord) => <DeviceTimeText value={record.current_period_end} />}
+    />,
+    <FunctionField
+      key="days_left"
+      label="Осталось"
+      sortable={false}
+      render={(r: RaRecord) => daysLeftLabel(r.days_left as number | null)}
+    />,
+    <FunctionField
+      key="employees"
+      label="Сотрудники"
+      sortable={false}
+      render={(r: RaRecord) =>
+        usageCell(
+          (r.usage as { employees: number }).employees,
+          r.plan_code as string,
+          limitOf,
+          plansLoading,
+        )
+      }
+    />,
+    <FunctionField
+      key="locations"
+      label="Точки"
+      sortable={false}
+      render={(r: RaRecord) =>
+        usageCell(
+          (r.usage as { locations: number }).locations,
+          r.plan_code as string,
+          locationLimitOf,
+          plansLoading,
+        )
+      }
+    />,
+    <TextField key="note" source="note" label="Заметка" emptyText="—" sortable={false} />,
+    <FunctionField
+      label=""
+      sortable={false}
+      render={(r: RaRecord) => <RowActions record={r as AdminSubscriptionRow} />}
+    />,
+  ];
+};
 
+// Datagrid как отдельный компонент (не инлайн в List): нужен доступ к isPending/data
+// из useListContext, чтобы показать «Организаций пока нет» на пустой выдаче — Datagrid
+// сам такого prop не имеет (тот же приём, что AdjustmentDatagrid в adjustments.tsx).
+const SubscriptionDatagrid = () => {
+  const { data, isPending } = useListContext();
   if (!isPending && (data ?? []).length === 0) return <SubscriptionListEmpty />;
-
-  return (
-    <Datagrid rowClick={false} bulkActionButtons={false}>
-      <TextField source="organization_name" label="Организация" />
-      <TextField source="plan_name" label="Тариф" sortable={false} />
-      <FunctionField label="Статус" render={statusChip} sortable={false} />
-      <FunctionField
-        label="Окончание периода"
-        render={(record: RaRecord) => <DeviceTimeText value={record.current_period_end} />}
-      />
-      <FunctionField
-        label="Осталось"
-        sortable={false}
-        render={(r: RaRecord) => daysLeftLabel(r.days_left as number | null)}
-      />
-      <FunctionField
-        label="Сотрудники"
-        sortable={false}
-        render={(r: RaRecord) =>
-          usageCell(
-            (r.usage as { employees: number }).employees,
-            r.plan_code as string,
-            limitOf,
-            plansLoading,
-          )
-        }
-      />
-      <FunctionField
-        label="Точки"
-        sortable={false}
-        render={(r: RaRecord) =>
-          usageCell(
-            (r.usage as { locations: number }).locations,
-            r.plan_code as string,
-            locationLimitOf,
-            plansLoading,
-          )
-        }
-      />
-      <TextField source="note" label="Заметка" emptyText="—" sortable={false} />
-      <FunctionField
-        label=""
-        sortable={false}
-        render={(r: RaRecord) => <RowActions record={r as AdminSubscriptionRow} />}
-      />
-    </Datagrid>
-  );
+  return <ColumnsDatagrid rowClick={false} bulkActionButtons={false} />;
 };
 
 // Реестр подписок (admin.md, «Раздел «Подписки»»): list-only (подписка появляется вместе
@@ -197,15 +207,21 @@ const SubscriptionDatagrid = () => {
 // не совпадает ни с одним столбцом, поэтому dataProvider не шлёт `sort` в query вовсе, и
 // работает умный дефолт бэка — ближайшее окончание сверху с учётом trialing (trial_ends_at),
 // а не только current_period_end (тот у trialing-организаций ещё не заполнен).
-export const SubscriptionList = () => (
-  <List
-    filters={subscriptionFilters}
-    sort={{ field: 'nearest_expiry', order: 'ASC' }}
-    perPage={20}
-    exporter={false}
-    empty={false}
-  >
-    <SummaryTiles />
-    <SubscriptionDatagrid />
-  </List>
-);
+export const SubscriptionList = () => {
+  const fields = useSubscriptionFields();
+  return (
+    <TableColumns tableId="subscriptions" fields={fields}>
+      <List
+        filters={subscriptionFilters}
+        sort={{ field: 'nearest_expiry', order: 'ASC' }}
+        perPage={20}
+        exporter={false}
+        empty={false}
+        actions={<ListActionsWithColumns />}
+      >
+        <SummaryTiles />
+        <SubscriptionDatagrid />
+      </List>
+    </TableColumns>
+  );
+};

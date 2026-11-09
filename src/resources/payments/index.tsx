@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import {
   AutocompleteInput,
   BooleanInput,
-  Datagrid,
   DateInput,
   FunctionField,
   List,
@@ -24,6 +23,11 @@ import {
   paymentStatusLabel,
 } from '../../utils/format';
 import { PaymentsTotals } from './PaymentsTotals';
+import {
+  ColumnsDatagrid,
+  ListActionsWithColumns,
+  TableColumns,
+} from '../../tableColumns/TableColumns';
 
 // Фильтр по организации — живой список из /admin/organizations (тот же приём, что
 // MemberSelectFilter для участников), а не платформенный ReferenceInput: организаций мало
@@ -119,40 +123,56 @@ const PaymentListEmpty = () => (
   </Typography>
 );
 
+// Столбцы реестра (table_column_settings): key — идентификатор столбца, без key — служебный.
+const paymentFields = [
+  <FunctionField
+    key="created_at"
+    label="Дата"
+    render={(record: RaRecord) => <DeviceTimeText value={record.created_at} />}
+    sortable={false}
+  />,
+  <TextField
+    key="organization_name"
+    source="organization_name"
+    label="Организация"
+    sortable={false}
+  />,
+  <FunctionField
+    key="purpose"
+    label="Назначение"
+    sortable={false}
+    render={(r: RaRecord) =>
+      paymentPurposeLabel({
+        kind: r.kind as 'extend' | 'upgrade',
+        plan_name: r.plan_name as string,
+        months: (r.months as number | null) ?? null,
+      })
+    }
+  />,
+  <FunctionField
+    key="amount"
+    label="Сумма"
+    sortable={false}
+    render={(r: RaRecord) => formatMoneyMinor(r.amount_minor as number)}
+  />,
+  <FunctionField key="status" label="Статус" sortable={false} render={statusChip} />,
+  <FunctionField
+    key="created_by"
+    label="Кто инициировал"
+    sortable={false}
+    render={createdByCell}
+  />,
+  <FunctionField label="" sortable={false} render={testChip} />,
+  <FunctionField label="" sortable={false} render={rowLinks} />,
+];
+
 const PaymentDatagrid = () => {
   const { data, isPending } = useListContext();
   if (!isPending && (data ?? []).length === 0) return <PaymentListEmpty />;
   return (
     // Read-only реестр (admin.md: «Список только для чтения: платежи не создаются и не
     // редактируются из админки») — без bulk-действий и rowClick-мутаций.
-    <Datagrid rowClick={false} bulkActionButtons={false} rowSx={paymentRowSx}>
-      <FunctionField
-        label="Дата"
-        render={(record: RaRecord) => <DeviceTimeText value={record.created_at} />}
-        sortable={false}
-      />
-      <TextField source="organization_name" label="Организация" sortable={false} />
-      <FunctionField
-        label="Назначение"
-        sortable={false}
-        render={(r: RaRecord) =>
-          paymentPurposeLabel({
-            kind: r.kind as 'extend' | 'upgrade',
-            plan_name: r.plan_name as string,
-            months: (r.months as number | null) ?? null,
-          })
-        }
-      />
-      <FunctionField
-        label="Сумма"
-        sortable={false}
-        render={(r: RaRecord) => formatMoneyMinor(r.amount_minor as number)}
-      />
-      <FunctionField label="Статус" sortable={false} render={statusChip} />
-      <FunctionField label="Кто инициировал" sortable={false} render={createdByCell} />
-      <FunctionField label="" sortable={false} render={testChip} />
-      <FunctionField label="" sortable={false} render={rowLinks} />
-    </Datagrid>
+    <ColumnsDatagrid rowClick={false} bulkActionButtons={false} rowSx={paymentRowSx} />
   );
 };
 
@@ -161,16 +181,19 @@ const PaymentDatagrid = () => {
 // /admin/payments (backend.md п.7); totals по текущему фильтру — в PaymentsTotals (тот же
 // ответ, без отдельного запроса, см. providers/dataProvider.ts).
 export const PaymentList = () => (
-  <List
-    filters={paymentFilters}
-    filterDefaultValues={{ hide_test: true }}
-    sort={{ field: 'created_at', order: 'DESC' }}
-    perPage={20}
-    exporter={false}
-    empty={false}
-  >
-    <DateRangeAlert />
-    <PaymentsTotals />
-    <PaymentDatagrid />
-  </List>
+  <TableColumns tableId="payments" fields={paymentFields}>
+    <List
+      filters={paymentFilters}
+      filterDefaultValues={{ hide_test: true }}
+      sort={{ field: 'created_at', order: 'DESC' }}
+      perPage={20}
+      exporter={false}
+      empty={false}
+      actions={<ListActionsWithColumns />}
+    >
+      <DateRangeAlert />
+      <PaymentsTotals />
+      <PaymentDatagrid />
+    </List>
+  </TableColumns>
 );

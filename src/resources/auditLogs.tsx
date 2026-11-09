@@ -1,6 +1,5 @@
 import {
   List,
-  Datagrid,
   TextField,
   FunctionField,
   SelectInput,
@@ -15,6 +14,11 @@ import { isDayRangeInvalid } from '../utils/dates';
 import { MemberSelectFilter } from '../components/MemberSelectFilter';
 import { DateRangeAlert } from '../components/DateRangeAlert';
 import { DeviceTimeText } from '../components/TimeText';
+import {
+  ColumnsDatagrid,
+  ListActionsWithColumns,
+  TableColumns,
+} from '../tableColumns/TableColumns';
 
 // summary — jsonb произвольной формы: объектом считаем только не-null, не-массив.
 const asObject = (value: unknown): Record<string, unknown> | null =>
@@ -122,6 +126,26 @@ const AuditEmpty = () => (
   </Box>
 );
 
+// Столбцы ленты аудита (table_column_settings): key — идентификатор столбца в раскладке.
+const auditFields = [
+  <FunctionField
+    key="created_at"
+    label="Когда"
+    render={(record: RaRecord) => <DeviceTimeText value={record.created_at} />}
+  />,
+  <FunctionField key="actor" label="Инициатор" render={actorField} />,
+  <FunctionField key="action" label="Действие" render={actionField} />,
+  <FunctionField key="resource_type" label="Объект" render={resourceTypeField} />,
+  <TextField
+    key="resource_id"
+    source="resource_id"
+    label="ID объекта"
+    emptyText="—"
+    sortable={false}
+  />,
+  <TextField key="ip_address" source="ip_address" label="IP" emptyText="—" sortable={false} />,
+];
+
 const AuditDatagrid = () => {
   const { isPending, data, filterValues } = useListContext();
   // При невалидном диапазоне запрос заблокирован — не показываем устаревшие данные/empty.
@@ -129,32 +153,25 @@ const AuditDatagrid = () => {
   if (!isPending && (data ?? []).length === 0) return <AuditEmpty />;
   return (
     // Read-only: без bulk-действий, без rowClick-мутаций; детали — в раскрытии строки.
-    <Datagrid bulkActionButtons={false} rowClick={false} expand={<AuditExpand />}>
-      <FunctionField
-        label="Когда"
-        render={(record: RaRecord) => <DeviceTimeText value={record.created_at} />}
-      />
-      <FunctionField label="Инициатор" render={actorField} />
-      <FunctionField label="Действие" render={actionField} />
-      <FunctionField label="Объект" render={resourceTypeField} />
-      <TextField source="resource_id" label="ID объекта" emptyText="—" sortable={false} />
-      <TextField source="ip_address" label="IP" emptyText="—" sortable={false} />
-    </Datagrid>
+    <ColumnsDatagrid bulkActionButtons={false} rowClick={false} expand={<AuditExpand />} />
   );
 };
 
 // Лента аудита организации (read-only): серверная пагинация и фильтры,
 // сортировка фиксирована на бэке (created_at DESC), записи неизменяемы.
 export const AuditLogList = () => (
-  <List
-    filters={auditFilters}
-    sort={{ field: 'created_at', order: 'DESC' }}
-    exporter={false}
-    empty={false}
-  >
-    <DateRangeAlert />
-    <AuditDatagrid />
-  </List>
+  <TableColumns tableId="audit-logs" fields={auditFields}>
+    <List
+      filters={auditFilters}
+      sort={{ field: 'created_at', order: 'DESC' }}
+      exporter={false}
+      empty={false}
+      actions={<ListActionsWithColumns />}
+    >
+      <DateRangeAlert />
+      <AuditDatagrid />
+    </List>
+  </TableColumns>
 );
 
 // Деталь/summary показываем в раскрытии строки, отдельный <Show> не нужен:

@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
   List,
-  Datagrid,
   TextField,
   BooleanInput,
   FunctionField,
@@ -65,6 +64,7 @@ import {
   compareCategoryNames,
   type AdjustmentCategory,
 } from './adjustmentCategoryUtils';
+import { ColumnsDatagrid, TableColumns, TableColumnsButton } from '../tableColumns/TableColumns';
 
 // Ручные начисления/удержания (manual_time_entry B1-B4, payroll_adjustments). Ресурс
 // «Начисления» (`/adjustments`) — owner/admin своей org; super_admin сквозным доступом не видит
@@ -678,6 +678,34 @@ const AdjustmentRowActions = ({ record }: { record: Adjustment }) => {
   );
 };
 
+// Столбцы начислений (table_column_settings): key — идентификатор столбца, без key — служебный.
+const adjustmentFields = [
+  <FunctionField key="employee" label="Сотрудник" render={nameField} sortable={false} />,
+  <FunctionField key="amount" label="Сумма" render={amountField} sortable={false} />,
+  <TextField key="reason" source="reason" label="Основание" sortable={false} />,
+  <FunctionField key="category" label="Категория" render={categoryField} sortable={false} />,
+  <FunctionField
+    key="occurred_at"
+    label="Дата"
+    render={(record: RaRecord) => (
+      <OrganizationTimeText
+        value={record.occurred_at}
+        timeZone={record.organization_timezone}
+        kind="date"
+      />
+    )}
+    sortable={false}
+  />,
+  <FunctionField key="shift" label="Смена" render={shiftLinkField} sortable={false} />,
+  <TextField key="created_by" source="created_by_name" label="Кто создал" sortable={false} />,
+  <TextField key="comment" source="comment" label="Комментарий" emptyText="—" sortable={false} />,
+  <FunctionField
+    label=""
+    render={(r: RaRecord) => <AdjustmentRowActions record={r as Adjustment} />}
+    sortable={false}
+  />,
+];
+
 const AdjustmentsEmpty = () => (
   <Box sx={{ textAlign: 'center', m: 6, color: 'text.secondary' }}>
     <Typography variant="h6">Начислений пока нет</Typography>
@@ -705,37 +733,13 @@ const AdjustmentDatagrid = () => {
     // ветки, что и до подмены, просто TS не может это доказать после spread) — приведение типа
     // к тому же самому объявленному типу, форму объекта не меняем.
     <ListContextProvider value={{ ...listContext, data: filteredData } as typeof listContext}>
-      <Datagrid
+      <ColumnsDatagrid
         bulkActionButtons={false}
         // unified_soft_delete: удалённые строки (include_deleted=true) визуально погашены —
         // тот же приём, что у смен (manual_time_entry §1.3, см. orgShifts.tsx).
         rowSx={(record) => (record.is_deleted ? { opacity: 0.55 } : {})}
         sx={wideDatagridScrollSx}
-      >
-        <FunctionField label="Сотрудник" render={nameField} sortable={false} />
-        <FunctionField label="Сумма" render={amountField} sortable={false} />
-        <TextField source="reason" label="Основание" sortable={false} />
-        <FunctionField label="Категория" render={categoryField} sortable={false} />
-        <FunctionField
-          label="Дата"
-          render={(record: RaRecord) => (
-            <OrganizationTimeText
-              value={record.occurred_at}
-              timeZone={record.organization_timezone}
-              kind="date"
-            />
-          )}
-          sortable={false}
-        />
-        <FunctionField label="Смена" render={shiftLinkField} sortable={false} />
-        <TextField source="created_by_name" label="Кто создал" sortable={false} />
-        <TextField source="comment" label="Комментарий" emptyText="—" sortable={false} />
-        <FunctionField
-          label=""
-          render={(r: RaRecord) => <AdjustmentRowActions record={r as Adjustment} />}
-          sortable={false}
-        />
-      </Datagrid>
+      />
     </ListContextProvider>
   );
 };
@@ -778,13 +782,15 @@ const AdjustmentListActions = () => {
   const refresh = useRefresh();
   const isReadOnly = useSectionReadOnly('payroll');
   const [open, setOpen] = useState(false);
-  if (isReadOnly) return <TopToolbar />;
+  // «Столбцы» (table_column_settings) — всегда, в том числе в read-only.
   return (
     <TopToolbar>
-      <Button startIcon={<AddIcon />} onClick={() => setOpen(true)}>
-        Добавить начисление
-      </Button>
-      {open && (
+      {!isReadOnly && (
+        <Button startIcon={<AddIcon />} onClick={() => setOpen(true)}>
+          Добавить начисление
+        </Button>
+      )}
+      {!isReadOnly && open && (
         <AdjustmentFormDialog
           editing={null}
           onClose={() => setOpen(false)}
@@ -794,6 +800,7 @@ const AdjustmentListActions = () => {
           }}
         />
       )}
+      <TableColumnsButton />
     </TopToolbar>
   );
 };
@@ -804,16 +811,18 @@ const AdjustmentListActions = () => {
 export const AdjustmentList = () => {
   const timeZone = useOrgTimezone();
   return (
-    <List
-      filters={adjustmentFilters}
-      filter={{ __organization_timezone: timeZone }}
-      sort={{ field: 'occurred_at', order: 'DESC' }}
-      exporter={false}
-      empty={false}
-      actions={<AdjustmentListActions />}
-    >
-      <DateRangeAlert />
-      <AdjustmentDatagrid />
-    </List>
+    <TableColumns tableId="adjustments" fields={adjustmentFields}>
+      <List
+        filters={adjustmentFilters}
+        filter={{ __organization_timezone: timeZone }}
+        sort={{ field: 'occurred_at', order: 'DESC' }}
+        exporter={false}
+        empty={false}
+        actions={<AdjustmentListActions />}
+      >
+        <DateRangeAlert />
+        <AdjustmentDatagrid />
+      </List>
+    </TableColumns>
   );
 };

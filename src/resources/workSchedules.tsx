@@ -3,7 +3,6 @@ import { useParams } from 'react-router-dom';
 import { useWatch } from 'react-hook-form';
 import {
   List,
-  Datagrid,
   TextField,
   BooleanField,
   BooleanInput,
@@ -61,6 +60,7 @@ import { networkErrorMessage } from '../utils/networkError';
 import { useSectionReadOnly } from '../utils/useOrgAccess';
 import { persistWeeklyRulesAfterCreate, validateWeeklyRules, type WeeklyRule } from './weeklyRules';
 import { ViewModeAlert } from '../components/ViewModeAlert';
+import { ColumnsDatagrid, TableColumns, TableColumnsButton } from '../tableColumns/TableColumns';
 
 const scheduleFilters = [
   <SearchInput key="q" source="q" alwaysOn />,
@@ -117,15 +117,25 @@ const AudienceCell = (props: { label?: string }) => {
 
 // Read-only (backend.md «Read-only режим») прячет создание графика — не входит
 // в список исключений.
+// «Столбцы» (table_column_settings) — всегда, в том числе в read-only.
 const WorkScheduleListActions = () => {
   const isReadOnly = useSectionReadOnly('schedules');
-  if (isReadOnly) return null;
   return (
     <TopToolbar>
-      <CreateButton />
+      {!isReadOnly && <CreateButton />}
+      <TableColumnsButton />
     </TopToolbar>
   );
 };
+
+// Столбцы списка графиков (table_column_settings): key — идентификатор столбца в раскладке.
+const scheduleFields = [
+  <TextField key="name" source="name" label="Название" />,
+  <FunctionField key="time" label="Время" render={timeField} sortable={false} />,
+  <FunctionField key="duration" label="Длительность" render={durationField} sortable={false} />,
+  <AudienceCell key="audience" label="Кому" />,
+  <BooleanField key="is_paused" source="is_paused" label="Приостановлен" />,
+];
 
 // bulkActionButtons не был задан вовсе — Datagrid рендерил дефолтный BulkDeleteButton
 // (canDelete=true, authProvider.canAccess не реализован). В read-only-организации это
@@ -134,20 +144,16 @@ const WorkScheduleListActions = () => {
 export const WorkScheduleList = () => {
   const isReadOnly = useSectionReadOnly('schedules');
   return (
-    <List
-      filters={scheduleFilters}
-      sort={{ field: 'created_at', order: 'DESC' }}
-      exporter={false}
-      actions={<WorkScheduleListActions />}
-    >
-      <Datagrid rowClick="edit" bulkActionButtons={isReadOnly ? false : undefined}>
-        <TextField source="name" label="Название" />
-        <FunctionField label="Время" render={timeField} sortable={false} />
-        <FunctionField label="Длительность" render={durationField} sortable={false} />
-        <AudienceCell label="Кому" />
-        <BooleanField source="is_paused" label="Приостановлен" />
-      </Datagrid>
-    </List>
+    <TableColumns tableId="work-schedules" fields={scheduleFields}>
+      <List
+        filters={scheduleFilters}
+        sort={{ field: 'created_at', order: 'DESC' }}
+        exporter={false}
+        actions={<WorkScheduleListActions />}
+      >
+        <ColumnsDatagrid rowClick="edit" bulkActionButtons={isReadOnly ? false : undefined} />
+      </List>
+    </TableColumns>
   );
 };
 

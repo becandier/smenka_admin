@@ -1,6 +1,5 @@
 import {
   List,
-  Datagrid,
   TextField,
   NumberField,
   BooleanField,
@@ -19,6 +18,11 @@ import { Button } from '@mui/material';
 import LoginIcon from '@mui/icons-material/Login';
 import { useCurrentOrg } from '../orgContext';
 import { DeviceTimeText } from '../components/TimeText';
+import {
+  ColumnsDatagrid,
+  ListActionsWithColumns,
+  TableColumns,
+} from '../tableColumns/TableColumns';
 
 const deletedChoices = [
   { id: 'true', name: 'Удалённые' },
@@ -54,20 +58,37 @@ const OpenCabinetButton = () => {
   );
 };
 
+// Столбцы списка (table_column_settings): key — идентификатор столбца, без key — служебный.
+const organizationFields = [
+  <TextField key="name" source="name" label="Название" />,
+  <TextField
+    key="owner_email"
+    source="owner_email"
+    label="Владелец"
+    emptyText="—"
+    sortable={false}
+  />,
+  <NumberField key="member_count" source="member_count" label="Участников" sortable={false} />,
+  <BooleanField key="is_deleted" source="is_deleted" label="Удалена" sortable={false} />,
+  <FunctionField
+    key="created_at"
+    label="Создана"
+    render={(record) => <DeviceTimeText value={record.created_at} />}
+  />,
+  <OpenCabinetButton />,
+];
+
 export const OrganizationList = () => (
-  <List filters={orgFilters} sort={{ field: 'created_at', order: 'DESC' }} exporter={false}>
-    <Datagrid rowClick={false} bulkActionButtons={false}>
-      <TextField source="name" label="Название" />
-      <TextField source="owner_email" label="Владелец" emptyText="—" sortable={false} />
-      <NumberField source="member_count" label="Участников" sortable={false} />
-      <BooleanField source="is_deleted" label="Удалена" sortable={false} />
-      <FunctionField
-        label="Создана"
-        render={(record) => <DeviceTimeText value={record.created_at} />}
-      />
-      <OpenCabinetButton />
-    </Datagrid>
-  </List>
+  <TableColumns tableId="organizations" fields={organizationFields}>
+    <List
+      filters={orgFilters}
+      sort={{ field: 'created_at', order: 'DESC' }}
+      exporter={false}
+      actions={<ListActionsWithColumns />}
+    >
+      <ColumnsDatagrid rowClick={false} bulkActionButtons={false} />
+    </List>
+  </TableColumns>
 );
 
 export const OrganizationCreate = () => (
