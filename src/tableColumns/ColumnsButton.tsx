@@ -6,22 +6,10 @@ import {
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import {
-  Badge,
-  Box,
-  Button,
-  Divider,
-  IconButton,
-  Popover,
-  Switch,
-  Tooltip,
-  Typography,
-} from '@mui/material';
-import { alpha } from '@mui/material/styles';
+import { Badge, Box, Button, Divider, Popover } from '@mui/material';
 import ViewColumnIcon from '@mui/icons-material/ViewColumn';
-import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
-import LockIcon from '@mui/icons-material/Lock';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import { ColumnsList } from './ColumnsList';
 
 // Кнопка «Столбцы» с выпадающим списком (table_column_settings/admin.md, «Экраны и действия»;
 // поведение — макет mockup.html, вкладка «А»). Не знает ни о Datagrid, ни о хранилище:
@@ -75,8 +63,6 @@ export const ColumnsButton = ({
   });
 
   useEffect(() => () => stopDrag.current?.(), []);
-
-  const hiddenSet = new Set(hidden);
 
   const moveTo = (id: string, toIndex: number) => {
     const ids = latest.current.ids;
@@ -186,88 +172,19 @@ export const ColumnsButton = ({
           },
         }}
       >
-        <Box component="ul" ref={listRef} sx={{ listStyle: 'none', m: 0, p: 1 }}>
-          {columns.map((column, index) => {
-            const locked = index === 0;
-            const off = hiddenSet.has(column.id);
-            return (
-              <Box
-                component="li"
-                key={column.id}
-                sx={(theme) => ({
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 0.5,
-                  height: 36,
-                  pl: 0.25,
-                  pr: 0.5,
-                  borderRadius: 1,
-                  '&:hover': { bgcolor: 'action.hover' },
-                  ...(dragId === column.id && {
-                    bgcolor: alpha(theme.palette.primary.main, 0.12),
-                    boxShadow: `0 2px 8px ${alpha(theme.palette.primary.main, 0.25)}`,
-                    '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.12) },
-                  }),
-                })}
-              >
-                {locked ? (
-                  <Box sx={{ width: 30, flex: 'none' }} />
-                ) : (
-                  <IconButton
-                    size="small"
-                    ref={(el: HTMLButtonElement | null) => {
-                      if (el === null) grips.current.delete(column.id);
-                      else grips.current.set(column.id, el);
-                    }}
-                    aria-label={`Переместить столбец «${column.label}». Стрелки вверх и вниз меняют порядок`}
-                    onPointerDown={(e) => onGripPointerDown(e, column.id)}
-                    onKeyDown={(e) => onGripKeyDown(e, column.id)}
-                    sx={{
-                      cursor: dragId === null ? 'grab' : 'grabbing',
-                      touchAction: 'none',
-                      color: 'text.disabled',
-                      '&:hover': { color: 'text.secondary' },
-                      '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
-                    }}
-                  >
-                    <DragIndicatorIcon fontSize="small" />
-                  </IconButton>
-                )}
-                <Typography
-                  variant="body2"
-                  noWrap
-                  sx={{ flex: 1, minWidth: 0, color: off ? 'text.disabled' : 'text.primary' }}
-                >
-                  {column.label}
-                </Typography>
-                {locked ? (
-                  <Tooltip title="Этот столбец показывается всегда">
-                    <Box
-                      component="span"
-                      role="img"
-                      aria-label="Этот столбец показывается всегда"
-                      sx={{
-                        width: 40,
-                        display: 'grid',
-                        placeItems: 'center',
-                        color: 'text.disabled',
-                      }}
-                    >
-                      <LockIcon sx={{ fontSize: 16 }} />
-                    </Box>
-                  </Tooltip>
-                ) : (
-                  <Switch
-                    size="small"
-                    checked={!off}
-                    onChange={() => onToggle(column.id)}
-                    inputProps={{ 'aria-label': `Показывать столбец «${column.label}»` }}
-                  />
-                )}
-              </Box>
-            );
-          })}
-        </Box>
+        <ColumnsList
+          columns={columns}
+          hidden={hidden}
+          dragId={dragId}
+          listRef={listRef}
+          gripRef={(id, el) => {
+            if (el === null) grips.current.delete(id);
+            else grips.current.set(id, el);
+          }}
+          onGripPointerDown={onGripPointerDown}
+          onGripKeyDown={onGripKeyDown}
+          onToggle={onToggle}
+        />
         <Divider />
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 1 }}>
           <Button size="small" startIcon={<RestartAltIcon />} disabled={!changed} onClick={onReset}>
